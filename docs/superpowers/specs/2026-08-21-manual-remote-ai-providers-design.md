@@ -85,17 +85,11 @@ Extend `config/models.yaml` with a `remote_providers` mapping:
       "input_usd_per_million": 0.20,
       "output_usd_per_million": 1.20
     }
-  },
-  "remote_limits": {
-    "daily_calls": 20,
-    "monthly_calls": 200,
-    "daily_budget_usd": 0.25,
-    "monthly_budget_usd": 5.0
   }
 }
 ```
 
-DeepSeek support is enabled but cannot make a request without the manual CLI gates and an environment key. OpenAI support is present but disabled because the operator currently has ChatGPT Plus rather than an OpenAI Platform API key.
+DeepSeek support is enabled but cannot make a request without the manual CLI gates and an environment key. OpenAI support is present but disabled because the operator currently has ChatGPT Plus rather than an OpenAI Platform API key. There is no monetary or call-count budget ceiling in this version; the per-request input/output token limits remain as a data-volume and latency safeguard, and every call is still manually confirmed.
 
 ## Data minimization
 
@@ -136,7 +130,7 @@ Example:
 python -m src_auto remote-triage --run-id RUN_ID --finding-id 1 --provider deepseek --confirm-external --confirm-digest SHA256
 ```
 
-It repeats every preview check, verifies the digest, checks STOP and persistent call/budget limits, reads the provider key from its environment variable, performs one non-streaming request, records the normalized review, and exits. It does not retry automatically.
+It repeats every preview check, verifies the digest, checks STOP, reads the provider key from its environment variable, performs one non-streaming request, records the normalized review, and exits. It does not retry automatically.
 
 ## Persistence and accounting
 
@@ -148,7 +142,7 @@ disposition, confidence, reason, suggested_checks_json,
 input_tokens, output_tokens, estimated_cost_usd, created_at
 ```
 
-Add store methods to insert and list reviews and to summarize daily/monthly remote call count and estimated USD cost. Remote reviews remain separate from the canonical local triage JSON, so a remote opinion cannot overwrite local evidence or status.
+Add store methods to insert and list reviews and to summarize remote call count and estimated USD cost. Remote reviews remain separate from the canonical local triage JSON, so a remote opinion cannot overwrite local evidence or status.
 
 ## Error handling
 
@@ -162,7 +156,7 @@ Return explicit fail-closed reasons for:
 - missing `--confirm-external`;
 - payload digest mismatch;
 - STOP requested;
-- call or budget limit reached;
+- per-request token limit exceeded;
 - timeout, DNS/TLS error, HTTP 401/402/403/429/5xx;
 - empty, malformed, or schema-invalid model output.
 
@@ -179,7 +173,7 @@ Use Python 3.8 `unittest` and injected fake HTTP responses. Tests must cover:
 - provider-disabled and missing-key behavior without network contact;
 - preview never contacts the network;
 - missing confirmation and digest mismatch never contact the network;
-- Scope, STOP, daily call, monthly call, daily budget, and monthly budget blocks;
+- Scope, STOP, and per-request token limit blocks;
 - successful normalized review persistence;
 - malformed output and HTTP failure are not persisted as successful reviews;
 - secrets are absent from CLI output, SQLite rows, reports, and tracked configuration;
