@@ -20,6 +20,7 @@ scope_candidate / scope_confirmed
 - `src_auto.store`: SQLite runs, assets, snapshots/diff, findings/dedup, evidence, checkpoints, reports and accounting records.
 - `src_auto.controls`: budget, project-directory disk, resource and manual STOP gates.
 - `src_auto.adapters`: version/status checks and a safe subprocess boundary for BBOT, Subfinder, httpx, Katana, Nuclei, reconFTW and ZAP.
+- `src_auto.live_plan`: validates a human-authored external plan, rejects shell/prohibited markers, and records a stable digest before any live adapter can start.
 - `src_auto.pipeline`: deterministic local-lab E2E and an external fail-closed gate; it does not invent scanner behavior.
 - `src_auto.ai`: switchable bulk/primary/expert lanes with a no-API deterministic fallback.
 - `src_auto.reporting`: minimal evidence packaging and a Chinese manual-review draft report.

@@ -47,10 +47,36 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertEqual(len(self.store.list_findings(run_id)), 1)
 
+    def test_duplicate_finding_remains_visible_in_each_run(self):
+        first_run = self.store.create_run("local-lab", "scope-a", "local")
+        second_run = self.store.create_run("local-lab", "scope-a", "local")
+        finding = {
+            "title": "Missing security header",
+            "url": "http://localhost:8765/",
+            "severity": "low",
+            "evidence": "header absent",
+        }
+        finding["run_id"] = first_run
+        self.store.insert_finding(finding)
+        finding["run_id"] = second_run
+        self.store.insert_finding(finding)
+        self.assertEqual(len(self.store.list_findings(first_run)), 1)
+        self.assertEqual(len(self.store.list_findings(second_run)), 1)
+        self.assertEqual(self.store.list_findings(second_run)[0]["run_id"], second_run)
+
     def test_checkpoint_round_trip(self):
         run_id = self.store.create_run("local-lab", "scope-a", "local")
         self.store.save_checkpoint(run_id, "crawl", {"cursor": 3})
         self.assertEqual(self.store.load_checkpoint(run_id, "crawl"), {"cursor": 3})
+
+    def test_spend_and_submission_audit_are_persistent(self):
+        run_id = self.store.create_run("local-lab", "scope-a", "local")
+        self.store.record_spend(0.25, "ollama_triage", run_id)
+        self.store.record_submission("abc123", "accepted", 50.0, 12.0)
+        summary = self.store.spend_summary()
+        self.assertAlmostEqual(summary["total"], 0.25)
+        self.assertEqual(summary["by_category"]["ollama_triage"], 0.25)
+        self.assertEqual(self.store.list_submissions()[0]["status"], "accepted")
 
 
 if __name__ == "__main__":

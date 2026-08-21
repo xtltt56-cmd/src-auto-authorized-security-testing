@@ -1,0 +1,12 @@
+{
+  "name": "replace-with-reviewed-authorization",
+  "operator": "replace-with-human-operator",
+  "authorization_note": "replace-with-platform-program-and-ticket-reference",
+  "manual_execution_confirmed": false,
+  "target_urls": ["https://replace-with-authorized-host.example/"],
+  "sequence": ["httpx", "katana"],
+  "commands": {
+    "httpx": ["-silent", "-no-color", "-u", "https://replace-with-authorized-host.example/"],
+    "katana": ["-silent", "-u", "https://replace-with-authorized-host.example/", "-d", "1", "-jc", "false"]
+  }
+}

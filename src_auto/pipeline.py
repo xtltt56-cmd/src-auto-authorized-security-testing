@@ -126,6 +126,8 @@ class PipelineRunner:
         target_urls: Iterable[str],
         adapters: Optional[Mapping[str, Any]] = None,
         execute: bool = False,
+        sequence: Optional[Iterable[str]] = None,
+        tool_args: Optional[Mapping[str, Iterable[str]]] = None,
     ) -> Dict[str, Any]:
         """Run an explicitly wired tool sequence only after a confirmed scope and execute flag.
 
@@ -145,14 +147,21 @@ class PipelineRunner:
         if not adapters:
             self.store.set_run_status(run_id, "blocked_adapter")
             return {"status": "blocked_adapter", "reason": "adapter_configuration_required", "stages": []}
-        sequence = ["bbot", "subfinder", "httpx", "katana", "nuclei", "zap", "reconftw"]
+        blocked = self._guard(run_id)
+        if blocked:
+            return blocked
+        sequence = list(sequence or ["bbot", "subfinder", "httpx", "katana", "nuclei", "zap", "reconftw"])
+        tool_args = dict(tool_args or {})
         results = []
         for name in sequence:
+            stopped = self._stop_if_requested(run_id, [item["tool"] for item in results])
+            if stopped:
+                return stopped
             adapter = adapters.get(name)
             if adapter is None:
                 self.store.set_run_status(run_id, "blocked_adapter")
                 return {"status": "blocked_adapter", "reason": "missing_" + name, "stages": results}
-            result = adapter.run([], self.scope_guard, target_urls=target_urls)
+            result = adapter.run(list(tool_args.get(name, [])), self.scope_guard, target_urls=target_urls)
             result_dict = getattr(result, "__dict__", result)
             results.append({"tool": name, "result": result_dict})
             self.store.record_event(run_id, "info", "external_tool", {"tool": name, "result": result_dict})

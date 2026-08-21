@@ -2,6 +2,8 @@
 
 一个面向补天 SRC 的低成本、CPU 友好、人工确认门控控制层。V1 的目标不是“扫描数量”，而是缩短人工复核时间、降低误报和重复、形成最小证据，并让每一个真实目标请求都可审计、可停止、可恢复。
 
+完整中文使用手册：`USER_MANUAL.md`
+
 ## 快速开始（本地靶场）
 
 在 PowerShell 中：
@@ -21,6 +23,17 @@ python -m src_auto reports
 ## 真实 SRC 的唯一人工步骤
 
 把平台规则、测试时间、允许的根域/主机/端口、排除项和授权来源写入独立的 `scope_confirmed.yaml`，由人复核后将 `confirmed` 和 `allow_network_contact` 都设为 `true`。候选文件不能直接升级权限。之后仍需人工查看候选报告并在补天平台手动提交。
+
+## 受控外部计划（默认关闭）
+
+外部适配器现在可以通过 `config/live_plan.example.yaml` 这一类人工审阅计划进入命令行，但 `config/policy.yaml` 的 `network.allow_real_targets` 默认是 `false`。只有在当前平台规则、授权来源、时间窗口和 Scope 都经人工核对后，才可以复制示例计划、填写目标和参数，并显式打开策略开关；每次执行仍需 `--execute-live`。桌面一键启动器永远只运行 local-lab。
+
+```powershell
+python -m src_auto run-live --run-id <REAL_RUN_ID> --scope config/targets/<id>/scope_confirmed.yaml --plan config/live_plan.example.yaml
+python -m src_auto run-live --run-id <REAL_RUN_ID> --scope config/targets/<id>/scope_confirmed.yaml --plan config/live_plan.example.yaml --execute-live
+```
+
+第一条命令只做计划和策略检查；第二条才可能启动已列入计划的工具。计划不会自动发现目标、扩大 Scope 或提交补天报告。
 
 ## 重要限制
 

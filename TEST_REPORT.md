@@ -4,7 +4,7 @@ Date: 2026-08-21 (Asia/Shanghai)
 
 ## Automated tests
 
-`python -m unittest discover -s tests -v` — **23 tests passed, 0 failed**.
+`python -m unittest discover -s tests -v` — **32 tests passed, 0 failed**.
 
 Coverage includes:
 
@@ -12,9 +12,14 @@ Coverage includes:
 - candidate scope cannot grant permission;
 - SQLite run/checkpoint/asset baseline and incremental diff;
 - deterministic finding fingerprint and deduplication;
+- duplicate Finding remains visible in every run through the historical run association;
 - budget daily/monthly gates, disk 80/90 GiB simulation, resource pause, and manual STOP/RESUME;
+- Ollama JSON Provider, secret/query redaction, model output validation, and heuristic fallback;
+- SQLite spend/submission audit persistence and one-click launcher safety contract;
+- validated external-plan structure, shell/prohibited-argument rejection, custom sequence/argument forwarding, and the default live policy gate;
 - out-of-scope adapter rejection before process start and explicit missing-tool status;
 - external sequence requires an explicit `execute=True` and injected adapters;
+- external adapters honor the manual STOP marker before process start and between tools;
 - loopback HTTP server, pipeline ordering, minimal evidence and manual Butian report generation.
 
 `python -m compileall -q src_auto lab tests` — **passed**.
@@ -26,6 +31,7 @@ Coverage includes:
 - `httpx.exe -silent -u http://127.0.0.1:8765/` — **passed**, loopback only.
 - `katana.exe -silent -u http://127.0.0.1:8765/ -d 1` — **passed**, loopback only.
 - No real Butian or third-party target was contacted.
+- `run-live` with the example plan — **blocked_policy** as designed because `allow_real_targets` remains `false`; no external process was started.
 
 ## Tool verification
 

@@ -70,6 +70,13 @@ class Store:
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS finding_runs (
+                run_id TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                PRIMARY KEY(run_id, fingerprint)
+            );
             CREATE TABLE IF NOT EXISTS evidence (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 finding_fingerprint TEXT NOT NULL,
@@ -97,6 +104,7 @@ class Store:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 amount REAL NOT NULL,
                 category TEXT NOT NULL,
+                run_id TEXT,
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS reports (
@@ -113,6 +121,13 @@ class Store:
                 created_at TEXT NOT NULL
             );
             """
+        )
+        spend_columns = {row[1] for row in self.conn.execute("PRAGMA table_info(spend)")}
+        if "run_id" not in spend_columns:
+            self.conn.execute("ALTER TABLE spend ADD COLUMN run_id TEXT")
+        self.conn.execute(
+            "INSERT OR IGNORE INTO finding_runs(run_id,fingerprint,first_seen,last_seen) "
+            "SELECT run_id,fingerprint,first_seen,last_seen FROM findings WHERE run_id <> ''"
         )
         self.conn.commit()
 
@@ -160,6 +175,40 @@ class Store:
             (run_id, level, message, json.dumps(payload or {}, ensure_ascii=False, sort_keys=True), utc_now()),
         )
         self.conn.commit()
+
+    def record_spend(self, amount: float, category: str, run_id: Optional[str] = None) -> None:
+        if float(amount) < 0:
+            raise ValueError("spend amount cannot be negative")
+        self.conn.execute(
+            "INSERT INTO spend(amount,category,run_id,created_at) VALUES(?,?,?,?)",
+            (float(amount), str(category), run_id, utc_now()),
+        )
+        self.conn.commit()
+
+    def spend_summary(self) -> Dict[str, Any]:
+        total = float(self.conn.execute("SELECT COALESCE(SUM(amount),0) FROM spend").fetchone()[0])
+        by_category = {
+            str(row[0]): float(row[1])
+            for row in self.conn.execute("SELECT category,SUM(amount) FROM spend GROUP BY category")
+        }
+        return {"total": total, "by_category": by_category}
+
+    def record_submission(
+        self,
+        finding_fingerprint: str,
+        status: str,
+        bounty: Optional[float] = None,
+        manual_time_minutes: Optional[float] = None,
+    ) -> int:
+        cursor = self.conn.execute(
+            "INSERT INTO submissions(finding_fingerprint,status,bounty,manual_time_minutes,created_at) VALUES(?,?,?,?,?)",
+            (str(finding_fingerprint), str(status), bounty, manual_time_minutes, utc_now()),
+        )
+        self.conn.commit()
+        return int(cursor.lastrowid)
+
+    def list_submissions(self) -> List[Dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute("SELECT * FROM submissions ORDER BY id DESC")]
 
     def list_events(self, run_id: str) -> List[Dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM events WHERE run_id=? ORDER BY id", (run_id,)).fetchall()
@@ -228,6 +277,13 @@ class Store:
         inserted = self.conn.execute("SELECT changes()").fetchone()[0] == 1
         if not inserted:
             self.conn.execute("UPDATE findings SET last_seen=? WHERE fingerprint=?", (now, fingerprint))
+        run_id = str(finding.get("run_id", ""))
+        if run_id:
+            self.conn.execute(
+                "INSERT INTO finding_runs(run_id,fingerprint,first_seen,last_seen) VALUES(?,?,?,?) "
+                "ON CONFLICT(run_id,fingerprint) DO UPDATE SET last_seen=excluded.last_seen",
+                (run_id, fingerprint, now, now),
+            )
         self.conn.commit()
         row = self.conn.execute("SELECT id FROM findings WHERE fingerprint=?", (fingerprint,)).fetchone()
         return InsertResult(inserted, fingerprint, int(row[0]))
@@ -241,12 +297,18 @@ class Store:
 
     def list_findings(self, run_id: Optional[str] = None) -> List[Dict[str, Any]]:
         if run_id:
-            rows = self.conn.execute("SELECT * FROM findings WHERE run_id=? ORDER BY id", (run_id,)).fetchall()
+            rows = self.conn.execute(
+                "SELECT f.* FROM findings f JOIN finding_runs fr ON fr.fingerprint=f.fingerprint "
+                "WHERE fr.run_id=? ORDER BY f.id",
+                (run_id,),
+            ).fetchall()
         else:
             rows = self.conn.execute("SELECT * FROM findings ORDER BY id").fetchall()
         result = []
         for row in rows:
             item = dict(row)
+            if run_id:
+                item["run_id"] = run_id
             item["triage"] = json.loads(item.pop("triage_json"))
             result.append(item)
         return result
