@@ -16,7 +16,7 @@
 - Create: `tests/test_remote_ai.py`
 - Modify: `tests/test_store.py`
 
-- [ ] **Step 1: Write the failing provider tests**
+- [x] **Step 1: Write the failing provider tests**
 
 Add tests for `RemoteReviewRequest`, `DeepSeekProvider`, and `OpenAIProvider` that use an injected fake `urlopen` and assert:
 
@@ -31,7 +31,7 @@ The DeepSeek fake response must assert the POST path, `Authorization: Bearer ...
 
 Add Store tests that expect `insert_ai_review`, `list_ai_reviews`, and a summary of remote call count/estimated USD cost.
 
-- [ ] **Step 2: Run the focused tests and verify the expected RED state**
+- [x] **Step 2: Run the focused tests and verify the expected RED state**
 
 Run:
 
@@ -47,11 +47,11 @@ Expected result: import or attribute failures because the remote provider module
 - Create: `src_auto/remote_ai.py`
 - Modify: `src_auto/ai.py`
 
-- [ ] **Step 1: Implement canonical payload and digest**
+- [x] **Step 1: Implement canonical payload and digest**
 
 Reuse `sanitize_finding`, then add `RemoteReviewRequest.from_finding` that removes query, fragment, credentials, and secrets, caps the fields, adds an unconfirmed-observation instruction, serializes with sorted keys, and computes SHA-256.
 
-- [ ] **Step 2: Implement DeepSeek transport**
+- [x] **Step 2: Implement DeepSeek transport**
 
 Use `urllib.request.Request` and `urlopen` with:
 
@@ -67,7 +67,7 @@ stream: false
 
 Read the key only from the configured environment variable. Never include the key in exceptions, returned dictionaries, or logs.
 
-- [ ] **Step 3: Implement OpenAI Responses transport**
+- [x] **Step 3: Implement OpenAI Responses transport**
 
 Use the same sanitized payload with:
 
@@ -82,11 +82,11 @@ text.format: strict json_schema
 
 Read the key only from `OPENAI_API_KEY`. Keep the provider disabled by configuration until the operator has an independent OpenAI Platform key.
 
-- [ ] **Step 4: Normalize and validate output**
+- [x] **Step 4: Normalize and validate output**
 
 Accept only the four allowed dispositions, clamp confidence to `[0, 1]`, cap reasons and suggested checks, parse usage when present, calculate configured estimated USD cost, and raise a typed provider error for empty/malformed/invalid responses.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run the same focused command. Expected result: all provider and Store contract tests pass without a live network call.
 
@@ -98,27 +98,27 @@ Run the same focused command. Expected result: all provider and Store contract t
 - Modify: `src_auto/scope.py` only if the existing Finding URL decision helper needs a narrow reusable call
 - Create: `tests/test_remote_cli.py`
 
-- [ ] **Step 1: Write failing CLI gate tests**
+- [x] **Step 1: Write failing CLI gate tests**
 
 Test that `remote-status` does not contact the network, `remote-preview` prints a redacted payload and digest without contact, and `remote-triage` refuses missing `--confirm-external`, a mismatched digest, missing key, disabled provider, Scope mismatch, or STOP. Use a temporary Store and injected provider transport where the CLI boundary permits it; otherwise test the extracted helper directly.
 
-- [ ] **Step 2: Add SQLite migration and review methods**
+- [x] **Step 2: Add SQLite migration and review methods**
 
 Create `ai_reviews` with run ID, Finding fingerprint, provider/model, payload digest, normalized disposition, confidence, reason, suggested checks JSON, token usage, estimated USD cost, and timestamp. Add migration logic for existing databases and methods to insert/list/summarize reviews. Never overwrite canonical local triage.
 
-- [ ] **Step 3: Add `remote-status`**
+- [x] **Step 3: Add `remote-status`**
 
 Report provider/model/enabled/manual-only/key-present state only. Do not probe a remote endpoint and do not print the key or any derived secret value.
 
-- [ ] **Step 4: Add `remote-preview`**
+- [x] **Step 4: Add `remote-preview`**
 
 Resolve the run and Finding association, verify the Scope decision, build the canonical payload, and print `network_contact: false` plus the digest.
 
-- [ ] **Step 5: Add `remote-triage`**
+- [x] **Step 5: Add `remote-triage`**
 
 Repeat the preview checks, require `--confirm-external` and an exact `--confirm-digest`, check STOP, read the environment key, send exactly one request, persist the normalized review, and return an explicit status. Do not implement automatic retry or remote fallback.
 
-- [ ] **Step 6: Run CLI-focused tests and the existing full suite**
+- [x] **Step 6: Run CLI-focused tests and the existing full suite**
 
 Run:
 
@@ -140,15 +140,15 @@ Expected result: all new gates and the existing local 32-test baseline pass.
 - Modify: `TEST_REPORT.md`
 - Modify: `IMPLEMENTATION_REPORT.md`
 
-- [ ] **Step 1: Configure providers without secrets**
+- [x] **Step 1: Configure providers without secrets**
 
 Add the DeepSeek and disabled OpenAI provider entries, endpoints, models, environment variable names, token limits, and peak price metadata. Do not add a key or a budget ceiling.
 
-- [ ] **Step 2: Document manual-only operation**
+- [x] **Step 2: Document manual-only operation**
 
 Document environment setup using placeholders, key rotation after the chat exposure, preview/digest/send commands, data minimization, no automatic fallback, no ChatGPT Plus browser reuse, and the fact that OpenAI remains unverified without an OpenAI Platform key.
 
-- [ ] **Step 3: Update test and implementation reports**
+- [x] **Step 3: Update test and implementation reports**
 
 Record fake-provider verification and clearly distinguish it from a live DeepSeek probe. Do not claim the provided exposed key was used.
 

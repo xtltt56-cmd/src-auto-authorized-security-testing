@@ -1,6 +1,6 @@
 # SRC-Auto 平台完整使用手册
 
-版本：V0.1.1（本地 Ollama 接入版）  
+版本：V0.1.2（本地 Ollama + 人工启用远程审阅版）
 项目路径：D:\网络安全文件夹\SRC-Auto  
 适用系统：Windows 11 / PowerShell  
 当前 Git 基线：d9db9fa（受控外部计划和本地 Ollama 接入）
@@ -22,6 +22,8 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 - 生成最小证据和补天人工审核报告；
 - 在 loopback 本地靶场执行完整 E2E；
 - 对外部工具保持显式适配器门控。
+- 在人工选择 Finding、确认脱敏摘要和 SHA-256 摘要后，单次调用 DeepSeek V4 Flash 做辅助审阅；
+- 保留一个默认关闭的 OpenAI Responses API 适配器，等待独立的 OpenAI Platform API 密钥。
 
 当前不能做：
 
@@ -63,7 +65,7 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 
 当前验收基线：
 
-- 32 项自动化测试通过；
+- 44 项自动化测试通过（包含远程 Provider 的假响应和 CLI 门控测试）；
 - compileall 通过；
 - loopback E2E 通过；
 - STOP/RESUME 通过；
@@ -83,6 +85,7 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
     │  ├─ ai.py                  Ollama + 启发式回退
     │  ├─ reporting.py           Evidence 和报告草稿
     │  ├─ live_plan.py           外部计划校验
+    │  ├─ remote_ai.py           DeepSeek/OpenAI 人工审阅适配器
     │  └─ cli.py                 命令行入口
     ├─ config\                   策略和模型配置
     ├─ lab\                      loopback 靶场和 fixture
@@ -346,6 +349,62 @@ Ollama 服务如果没有运行，手动启动：
 
 一键启动脚本会在本地手动启动它，但不会注册开机自启动。
 
+## 12.1 人工启用 DeepSeek V4 Flash 审阅
+
+远程模型是“对已经存在的 Finding 提供第二意见”，不是自动扫描器，也不会参与本地 Ollama 的故障回退。桌面快捷方式、`run --local-lab` 和普通 `run` 都不会连接远程 API。每一次远程调用都必须由人选定 Finding、查看脱敏预览、核对摘要并显式确认。
+
+### 12.1.1 密钥和提供商状态
+
+项目只读取进程环境变量，不把密钥写入配置、SQLite、报告、事件或 Git：
+
+    $env:DEEPSEEK_API_KEY = "<轮换后的新密钥>"
+    python -m src_auto remote-status
+
+`remote-status` 只显示 `key_present: true/false`，不显示密钥、长度、哈希或请求结果。你在聊天中粘贴过的密钥已经暴露，不能继续使用；请先在 DeepSeek 控制台撤销并创建新密钥，再在当前 PowerShell 会话设置环境变量。关闭会话后环境变量会失效。
+
+当前配置：
+
+| 提供商 | 模型 | 状态 | 用途 |
+|---|---|---|---|
+| DeepSeek | `deepseek-v4-flash` | 已接入、人工启用 | 单次 Finding 审阅，非自动回退 |
+| OpenAI | `gpt-5.6-luna` | 默认关闭 | 仅保留适配器，等待独立 Platform API 密钥 |
+
+ChatGPT Plus 订阅与 OpenAI Platform API 是两套独立的账户/计费体系，Plus 登录态不能当作 API 密钥，也不使用浏览器 Cookie 自动调用。需要 GPT 时，必须另外创建 Platform API key，再由人工审查后启用配置。
+
+### 12.1.2 预览、摘要确认和单次调用
+
+先完成一次本地运行并查看 Finding：
+
+    python -m src_auto findings --run-id <RUN_ID>
+
+生成远程请求预览。预览只从 SQLite 读取 Finding，不接触网络：
+
+    $preview = python -m src_auto remote-preview --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml | ConvertFrom-Json
+    $preview.payload
+    $preview.payload_digest
+
+预览中的 URL 会移除查询参数、片段、用户名和密码；证据中的 Authorization、Cookie、Token、Secret、Password 和 API key 会被脱敏。预览还会标明 `network_contact: false`。如果 URL、Scope hash、Finding 关联或提供商状态不满足要求，命令会 fail closed。
+
+确认内容确实是本次要发送的最小观察后，才执行一次人工确认的请求：
+
+    python -m src_auto remote-triage --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml --confirm-external --confirm-digest $preview.payload_digest
+
+发送命令会重新从 SQLite 构造同一 payload 并再次核对摘要；摘要不一致、缺少 `--confirm-external`、STOP 文件存在、密钥缺失、Scope 未确认或 Finding 越界时，不会发出请求。一次命令最多发出一次非流式请求，不自动重试。远程结果只写入 `ai_reviews`，不会覆盖本地 `findings.triage_json`，也不能自动提交补天。
+
+### 12.1.3 成本和数据边界
+
+本版本按你的要求不设置金额上限或调用次数上限。仍保留单次请求 `max_input_tokens: 2000`、`max_output_tokens: 256`，用于控制数据量、延迟和意外长响应；每次响应记录实际 token（若服务返回）和估算美元成本，但不会因累计金额自动阻断。DeepSeek 价格以官方页面为准，配置中的价格只是峰值估算元数据。
+
+远程模型只收到标题、脱敏后的 URL、参数名、严重性、最小证据和“未确认观察”标记，不收到完整响应、Cookie、凭据、用户数据、工具输出或文件。模型意见只能作为人工复核线索，不能证明漏洞存在、扩大授权范围或生成破坏性操作。
+
+### 12.1.4 远程审阅审计
+
+远程意见保存在 SQLite 的 `ai_reviews` 表，包含提供商、模型、payload 摘要、标准化结论、建议检查、token 和估算成本。查看记录：
+
+    python -c "import sqlite3; c=sqlite3.connect(r'D:\网络安全文件夹\SRC-Auto\data\src_auto.sqlite3'); print([dict(r) for r in c.execute('select id,run_id,finding_fingerprint,provider,model,disposition,confidence,input_tokens,output_tokens,estimated_cost_usd,created_at from ai_reviews order by id desc')]); c.close()"
+
+审阅记录与 `spend` 分开，便于在不设置预算上限的前提下做事后核算。不要把输出中的任何密钥或个人数据复制到报告。
+
 ## 13. AI 分诊结果
 
 分诊结果常见状态：
@@ -426,7 +485,9 @@ Evidence 只保留：
     CPU target: <=70%
     memory target: <=20 GiB
 
-当前 AI 使用本地 Ollama，成本按 ¥0 计；如果将来接入付费 API，必须显式配置预算和审计。
+本地 Ollama 成本按 ¥0 计。远程 DeepSeek 审阅按本项目约定不设置金额上限或调用次数上限；仅执行每次请求的输入/输出 token 限制，并把服务返回的 token 与估算成本写入 `ai_reviews` 供事后查看。远程请求始终需要人工预览、摘要确认和 `--confirm-external`，不会自动回退、自动重试或自动扩大范围。
+
+磁盘、CPU、内存和 STOP 是安全与稳定性控制，不是远程 API 的消费预算。若你希望未来增加预算开关，应先修改设计、测试和操作手册，再启用付费模型。
 
 项目目录大小检查：
 
@@ -491,6 +552,22 @@ BBOT/reconFTW 需要 Linux/WSL。安装 WSL2 可能需要管理员权限和重�
     python -m src_auto model-status
 
 如果 API 不可用，系统会自动使用启发式分诊；这不会扩大 Scope，也不会自动扫描真实目标。
+
+### remote provider_key_missing 或 key_present=false
+
+在当前 PowerShell 会话设置轮换后的环境变量，再重新执行 `remote-status`。不要把密钥写进 `config/models.yaml`、脚本、SQLite 或聊天记录；不要继续使用已经粘贴到聊天中的旧密钥。
+
+### blocked_confirmation 或 blocked_digest
+
+先运行同一 Finding 的 `remote-preview`，完整查看脱敏 payload，再把该次输出的 `payload_digest` 原样传给 `--confirm-digest`，并添加 `--confirm-external`。任何 Finding、Scope、参数或证据变化都会使摘要变化。
+
+### remote_http_401、403、402、429 或 5xx
+
+系统不会自动重试。先检查密钥是否已轮换、账户权限和服务状态，再由人决定是否重新预览并重新确认；不要通过并发或脚本循环规避限制。
+
+### OpenAI provider_disabled
+
+ChatGPT Plus 不是 Platform API 额度。OpenAI 适配器默认关闭，只有在单独拥有 Platform API key、审查数据流和价格后，才可由人工修改配置并进行假响应/小范围验证。
 
 ### 端口冲突
 

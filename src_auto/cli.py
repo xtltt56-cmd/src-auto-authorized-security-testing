@@ -1,5 +1,7 @@
 import argparse
+import hmac
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -9,6 +11,7 @@ from .config import load_mapping
 from .controls import BudgetGovernor
 from .live_plan import LivePlanError, validate_live_plan
 from .pipeline import PipelineRunner
+from .remote_ai import DeepSeekProvider, OpenAIProvider, RemoteProviderError, RemoteReviewRequest
 from .scope import ScopeGuard, ScopePolicy
 from .scope_resolver import ScopeResolver
 from .store import Store
@@ -20,6 +23,7 @@ DEFAULT_LOCAL_SCOPE = PROJECT_ROOT / "config" / "targets" / "local-lab" / "scope
 DEFAULT_LOCAL_FIXTURE = PROJECT_ROOT / "lab" / "fixtures.json"
 POLICY_PATH = PROJECT_ROOT / "config" / "policy.yaml"
 MODELS_PATH = PROJECT_ROOT / "config" / "models.yaml"
+REMOTE_PROVIDER_NAMES = ("deepseek", "openai")
 
 
 def _json(value: Any) -> None:
@@ -43,6 +47,102 @@ def _runner(store: Store, guard: ScopeGuard) -> PipelineRunner:
         spend_callback=lambda amount, category: store.record_spend(amount, category),
     )
     return PipelineRunner(store, guard, PROJECT_ROOT, ai_triage=ai)
+
+
+def _remote_config(provider: str) -> Dict[str, Any]:
+    name = str(provider).strip().lower()
+    if name not in REMOTE_PROVIDER_NAMES:
+        raise ValueError("unsupported_remote_provider")
+    models = load_mapping(MODELS_PATH)
+    configs = models.get("remote_providers", {})
+    if not isinstance(configs, dict) or not isinstance(configs.get(name), dict):
+        raise ValueError("remote_provider_not_configured")
+    config = dict(configs[name])
+    config["provider"] = name
+    return config
+
+
+def _remote_provider(
+    provider: str, config: Dict[str, Any], urlopen_fn=None
+):
+    common = {
+        "endpoint": str(config.get("endpoint", "")),
+        "model": str(config.get("model", "")),
+        "key_env": str(config.get("key_env", "")),
+        "timeout_seconds": int(config.get("timeout_seconds", 60)),
+        "max_input_tokens": int(config.get("max_input_tokens", 2000)),
+        "max_output_tokens": int(config.get("max_output_tokens", 256)),
+        "input_usd_per_million": float(
+            config.get("peak_input_usd_per_million", config.get("input_usd_per_million", 0.0))
+        ),
+        "output_usd_per_million": float(
+            config.get("peak_output_usd_per_million", config.get("output_usd_per_million", 0.0))
+        ),
+        "enabled": bool(config.get("enabled", False)),
+        "manual_only": bool(config.get("manual_only", True)),
+        "urlopen_fn": urlopen_fn,
+    }
+    if provider == "deepseek":
+        return DeepSeekProvider(**common)
+    if provider == "openai":
+        return OpenAIProvider(**common)
+    raise ValueError("unsupported_remote_provider")
+
+
+def _remote_finding_context(store: Store, run_id: str, finding_id: str, scope_path: str):
+    run = store.get_run(run_id)
+    if not run:
+        return None, None, {"status": "error", "reason": "run_not_found"}
+    try:
+        guard = _scope(scope_path)
+    except (OSError, ValueError, TypeError):
+        return None, None, {"status": "error", "reason": "scope_invalid"}
+    if run["scope_hash"] != guard.policy.digest():
+        return None, None, {"status": "blocked_scope", "reason": "scope_hash_mismatch"}
+    try:
+        wanted_id = int(finding_id)
+    except (TypeError, ValueError):
+        return None, None, {"status": "error", "reason": "finding_id_invalid"}
+    finding = next((item for item in store.list_findings(run_id) if int(item.get("id", -1)) == wanted_id), None)
+    if finding is None:
+        return None, None, {"status": "error", "reason": "finding_not_associated_with_run"}
+    decision = guard.decide(str(finding.get("url", "")))
+    if not decision.allowed:
+        return None, None, {"status": "blocked_scope", "reason": decision.reason}
+    return run, finding, guard
+
+
+def _remote_provider_gate(provider: str):
+    try:
+        config = _remote_config(provider)
+    except ValueError as exc:
+        return None, {"status": "error", "reason": str(exc)}
+    if not bool(config.get("enabled", False)):
+        return None, {"status": "blocked_provider", "reason": "provider_disabled"}
+    if not bool(config.get("manual_only", True)):
+        return None, {"status": "blocked_provider", "reason": "manual_only_required"}
+    return config, None
+
+
+def _remote_status() -> Dict[str, Any]:
+    models = load_mapping(MODELS_PATH)
+    configs = models.get("remote_providers", {})
+    result = {}
+    for provider in REMOTE_PROVIDER_NAMES:
+        config = configs.get(provider, {}) if isinstance(configs, dict) else {}
+        if not isinstance(config, dict):
+            config = {}
+        key_env = str(config.get("key_env", ""))
+        result[provider] = {
+            "provider": provider,
+            "model": str(config.get("model", "")),
+            "enabled": bool(config.get("enabled", False)),
+            "manual_only": bool(config.get("manual_only", True)),
+            "key_env": key_env,
+            "key_present": bool(key_env and os.environ.get(key_env, "").strip()),
+            "network_contact": False,
+        }
+    return result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +176,20 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("--fixture", default=str(DEFAULT_LOCAL_FIXTURE))
     sub.add_parser("tool-status", help="verify installed external tools")
     sub.add_parser("model-status", help="check configured local model endpoint")
+    remote_status = sub.add_parser("remote-status", help="show manually enabled remote AI providers without network contact")
+    remote_status.set_defaults(command="remote-status")
+    remote_preview = sub.add_parser("remote-preview", help="preview a redacted remote Finding review payload")
+    remote_preview.add_argument("--run-id", required=True)
+    remote_preview.add_argument("--finding-id", required=True)
+    remote_preview.add_argument("--provider", choices=REMOTE_PROVIDER_NAMES, required=True)
+    remote_preview.add_argument("--scope", default=str(DEFAULT_LOCAL_SCOPE))
+    remote_triage = sub.add_parser("remote-triage", help="send one manually confirmed remote Finding review")
+    remote_triage.add_argument("--run-id", required=True)
+    remote_triage.add_argument("--finding-id", required=True)
+    remote_triage.add_argument("--provider", choices=REMOTE_PROVIDER_NAMES, required=True)
+    remote_triage.add_argument("--scope", default=str(DEFAULT_LOCAL_SCOPE))
+    remote_triage.add_argument("--confirm-external", action="store_true", help="confirm one external AI transmission")
+    remote_triage.add_argument("--confirm-digest", required=True, help="exact SHA-256 digest shown by remote-preview")
     resolve = sub.add_parser("resolve-scope", help="normalize an explicit rule snapshot into a candidate")
     resolve.add_argument("--snapshot", required=True)
     resolve.add_argument("--output-dir", required=True)
@@ -111,6 +225,114 @@ def main(argv=None) -> int:
             available = provider.health() if provider is not None else False
             _json({"lane": route.lane, "provider": route.provider, "model": route.model, "endpoint": route.endpoint, "available": available})
             return 0 if available else 4
+        if args.command == "remote-status":
+            _json(_remote_status())
+            return 0
+        if args.command in ("remote-preview", "remote-triage"):
+            config, provider_error = _remote_provider_gate(args.provider)
+            if provider_error:
+                _json(provider_error)
+                return 3
+            run, finding, context = _remote_finding_context(store, args.run_id, args.finding_id, args.scope)
+            if isinstance(context, dict):
+                _json(context)
+                return 3 if context.get("status", "").startswith("blocked") else 2
+            request = RemoteReviewRequest.from_finding(finding)
+            if args.command == "remote-preview":
+                _json(
+                    {
+                        "status": "preview",
+                        "network_contact": False,
+                        "run_id": args.run_id,
+                        "finding_id": int(finding["id"]),
+                        "finding_fingerprint": finding["fingerprint"],
+                        "provider": args.provider,
+                        "model": str(config.get("model", "")),
+                        "payload": request.payload,
+                        "payload_digest": request.digest,
+                    }
+                )
+                return 0
+            if not args.confirm_external:
+                _json(
+                    {
+                        "status": "blocked_confirmation",
+                        "reason": "confirm_external_required",
+                        "network_contact": False,
+                        "payload_digest": request.digest,
+                    }
+                )
+                return 3
+            supplied_digest = str(args.confirm_digest or "").strip().lower()
+            if not hmac.compare_digest(supplied_digest, request.digest):
+                _json(
+                    {
+                        "status": "blocked_digest",
+                        "reason": "payload_digest_mismatch",
+                        "network_contact": False,
+                        "payload_digest": request.digest,
+                    }
+                )
+                return 3
+            if (PROJECT_ROOT / "STOP").exists() or str(run.get("status", "")) == "stopped":
+                _json({"status": "blocked_stop", "reason": "stop_requested", "network_contact": False})
+                return 3
+            key_env = str(config.get("key_env", ""))
+            if not key_env or not os.environ.get(key_env, "").strip():
+                _json({"status": "blocked_provider", "reason": "provider_key_missing", "network_contact": False})
+                return 3
+            try:
+                provider = _remote_provider(args.provider, config)
+            except (TypeError, ValueError, KeyError):
+                _json({"status": "error", "reason": "remote_provider_configuration_invalid", "network_contact": False})
+                return 2
+            network_attempted = True
+            try:
+                review = provider.review(finding)
+            except RemoteProviderError as exc:
+                reason = str(exc) or "remote_provider_failed"
+                if reason in ("remote_input_token_limit_exceeded", "provider_key_missing", "provider_disabled"):
+                    network_attempted = False
+                store.record_event(args.run_id, "warning", "remote_ai_review_failed", {"provider": args.provider, "reason": reason})
+                _json({"status": "failed", "reason": reason, "network_contact": network_attempted})
+                return 4
+            except (OSError, TypeError, ValueError):
+                store.record_event(args.run_id, "warning", "remote_ai_review_failed", {"provider": args.provider, "reason": "remote_provider_failed"})
+                _json({"status": "failed", "reason": "remote_provider_failed", "network_contact": network_attempted})
+                return 4
+            review_id = store.insert_ai_review(
+                {
+                    **review,
+                    "run_id": args.run_id,
+                    "finding_fingerprint": finding["fingerprint"],
+                    "payload_digest": request.digest,
+                }
+            )
+            store.record_event(
+                args.run_id,
+                "info",
+                "remote_ai_review_completed",
+                {
+                    "provider": review.get("provider", args.provider),
+                    "model": review.get("model", config.get("model", "")),
+                    "payload_digest": request.digest,
+                    "estimated_cost_usd": review.get("estimated_cost_usd", 0.0),
+                    "ai_review_id": review_id,
+                },
+            )
+            _json(
+                {
+                    "status": "completed",
+                    "network_contact": True,
+                    "ai_review_id": review_id,
+                    "run_id": args.run_id,
+                    "finding_id": int(finding["id"]),
+                    "finding_fingerprint": finding["fingerprint"],
+                    "payload_digest": request.digest,
+                    "review": review,
+                }
+            )
+            return 0
         if args.command == "run-live":
             run = store.get_run(args.run_id)
             if not run:

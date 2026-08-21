@@ -120,6 +120,22 @@ class Store:
                 manual_time_minutes REAL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS ai_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                finding_fingerprint TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                payload_digest TEXT NOT NULL,
+                disposition TEXT NOT NULL,
+                confidence REAL NOT NULL DEFAULT 0,
+                reason TEXT NOT NULL DEFAULT '',
+                suggested_checks_json TEXT NOT NULL DEFAULT '[]',
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                estimated_cost_usd REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
             """
         )
         spend_columns = {row[1] for row in self.conn.execute("PRAGMA table_info(spend)")}
@@ -192,6 +208,90 @@ class Store:
             for row in self.conn.execute("SELECT category,SUM(amount) FROM spend GROUP BY category")
         }
         return {"total": total, "by_category": by_category}
+
+    def insert_ai_review(self, review: Dict[str, Any]) -> int:
+        """Persist one manually confirmed remote review without changing Finding state."""
+        try:
+            confidence = max(0.0, min(1.0, float(review.get("confidence", 0.0))))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        try:
+            input_tokens = max(0, int(review.get("input_tokens", 0)))
+        except (TypeError, ValueError):
+            input_tokens = 0
+        try:
+            output_tokens = max(0, int(review.get("output_tokens", 0)))
+        except (TypeError, ValueError):
+            output_tokens = 0
+        try:
+            estimated_cost_usd = max(0.0, float(review.get("estimated_cost_usd", 0.0)))
+        except (TypeError, ValueError):
+            estimated_cost_usd = 0.0
+        checks = review.get("suggested_checks", [])
+        if not isinstance(checks, list):
+            checks = []
+        cursor = self.conn.execute(
+            "INSERT INTO ai_reviews(run_id,finding_fingerprint,provider,model,payload_digest,"
+            "disposition,confidence,reason,suggested_checks_json,input_tokens,output_tokens,"
+            "estimated_cost_usd,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(review.get("run_id", "")),
+                str(review.get("finding_fingerprint", "")),
+                str(review.get("provider", "")),
+                str(review.get("model", "")),
+                str(review.get("payload_digest", "")),
+                str(review.get("disposition", "manual_review")),
+                confidence,
+                str(review.get("reason", "")),
+                json.dumps(checks, ensure_ascii=False, sort_keys=True),
+                input_tokens,
+                output_tokens,
+                estimated_cost_usd,
+                utc_now(),
+            ),
+        )
+        self.conn.commit()
+        return int(cursor.lastrowid)
+
+    def list_ai_reviews(
+        self, run_id: Optional[str] = None, finding_fingerprint: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        clauses = []
+        values = []
+        if run_id:
+            clauses.append("run_id=?")
+            values.append(str(run_id))
+        if finding_fingerprint:
+            clauses.append("finding_fingerprint=?")
+            values.append(str(finding_fingerprint))
+        query = "SELECT * FROM ai_reviews"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY id DESC"
+        rows = self.conn.execute(query, values).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["suggested_checks"] = json.loads(item.pop("suggested_checks_json"))
+            result.append(item)
+        return result
+
+    def ai_review_summary(self) -> Dict[str, Any]:
+        count, estimated_cost = self.conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(estimated_cost_usd),0) FROM ai_reviews"
+        ).fetchone()
+        by_provider = {
+            str(row[0]): {"count": int(row[1]), "estimated_cost_usd": float(row[2] or 0)}
+            for row in self.conn.execute(
+                "SELECT provider,COUNT(*),COALESCE(SUM(estimated_cost_usd),0) "
+                "FROM ai_reviews GROUP BY provider ORDER BY provider"
+            )
+        }
+        return {
+            "count": int(count),
+            "estimated_cost_usd": float(estimated_cost),
+            "by_provider": by_provider,
+        }
 
     def record_submission(
         self,

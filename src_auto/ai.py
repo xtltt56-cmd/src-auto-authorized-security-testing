@@ -22,8 +22,21 @@ class Route:
 
 def _redact(value: Any, limit: int = 1600) -> str:
     text = str(value or "")
+    # Headers and cookie values often contain a scheme or a series of
+    # name=value pairs.  Consume the complete value so that replacing
+    # ``Authorization: Bearer secret`` cannot leave ``secret`` behind.
     text = re.sub(
-        r"(?i)(token|secret|password|authorization|cookie|api[_-]?key)\s*[:=]\s*[^\s;&,]+",
+        r"(?i)\b(authorization)\b\s*[:=]\s*(?:[A-Za-z][A-Za-z0-9_-]*\s+)?[^\s;&,]+",
+        r"\1=[REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(cookie)\b\s*[:=]\s*[^\r\n;&,]+",
+        r"\1=[REDACTED]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\b(token|secret|password|api[_-]?key)\b\s*[:=]\s*[^\s;&,]+",
         r"\1=[REDACTED]",
         text,
     )

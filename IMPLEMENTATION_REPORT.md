@@ -41,7 +41,9 @@ SQLite stores runs/status, assets, snapshots, incremental diff, global findings/
 
 ## Model router and AI cost
 
-`ModelRouter` has bulk/primary/expert lanes from `config/models.yaml`. Primary now connects to local Ollama using `qwen-agent-stable:30b`, expert is configured for `qwen3-coder:30b`, and failed/invalid/slow calls fall back to the deterministic local heuristic. `AITriage` returns candidate/manual-review dispositions and hands off to manual review when the budget gate is exhausted. Remote API use is disabled and no API key is present. Finding data is redacted before a local model call.
+`ModelRouter` has bulk/primary/expert lanes from `config/models.yaml`. Primary now connects to local Ollama using `qwen-agent-stable:30b`, expert is configured for `qwen3-coder:30b`, and failed/invalid/slow calls fall back to the deterministic local heuristic. `AITriage` returns candidate/manual-review dispositions and hands off to manual review when the budget gate is exhausted. Finding data is redacted before a local model call.
+
+The manual remote path is separate: `DeepSeekProvider` targets `deepseek-v4-flash` through the OpenAI-compatible Chat Completions endpoint, while `OpenAIProvider` targets the Responses API and is disabled by configuration. Neither provider is an automatic fallback. `remote-preview` builds a canonical redacted payload and SHA-256 digest without network contact; `remote-triage` requires a fresh exact digest and `--confirm-external`, checks Scope/STOP, sends one non-streaming request, and stores the advisory result in `ai_reviews` without overwriting local triage. Keys are read only from `DEEPSEEK_API_KEY` or `OPENAI_API_KEY` and are never persisted.
 
 ## Disk and resource controls
 
@@ -53,7 +55,7 @@ Official Windows amd64 release archives for Subfinder v2.15.0, httpx v1.10.0, Ka
 
 ## Tests and E2E
 
-See `TEST_REPORT.md`: 32 automated tests passed, compileall passed, loopback HTTP and CLI E2E passed, Ollama Provider was tested with a local model, and STOP/RESUME passed. The out-of-scope fixture was rejected and never requested.
+See `TEST_REPORT.md`: 44 automated tests passed, compileall passed, loopback HTTP and CLI E2E passed, fake DeepSeek/OpenAI provider contracts and remote CLI gates passed, Ollama Provider was tested with a local model, and STOP/RESUME passed. No live remote AI call is claimed; the exposed chat key must be revoked and replaced before a live DeepSeek probe.
 
 ## Operations
 
@@ -62,6 +64,7 @@ See `TEST_REPORT.md`: 32 automated tests passed, compileall passed, loopback HTT
 - Resume: `python -m src_auto resume --run-id ... --local-lab`.
 - View status/findings/reports: `STATUS.bat`, `python -m src_auto findings`, `python -m src_auto reports`.
 - Desktop one-click start: `START_SYSTEM.ps1`; it starts local Ollama when needed and runs only the local-lab workflow.
+- Manual remote review: set a rotated `DEEPSEEK_API_KEY`, run `remote-preview`, inspect the redacted payload/digest, then use `remote-triage --confirm-external --confirm-digest ...`; there is no monetary or call-count ceiling by design, only per-request token limits and after-the-fact estimated-cost logging.
 - First real target: create a new candidate from current platform rules, manually create a matching `scope_confirmed.yaml`, then create a real run and review the scope hash. No real target was used in this build.
 - Controlled external path: copy `config/live_plan.example.yaml`, keep the plan false until final review, run the dry gate, and use `--execute-live` only after policy and Scope approval. No real target was used in this build.
 

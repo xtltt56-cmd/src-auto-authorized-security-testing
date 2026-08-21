@@ -20,6 +20,21 @@ python -m src_auto reports
 
 也可使用 `START.bat`、`STOP.bat`、`STATUS.bat`；它们不会创建开机自启动或后台任务。
 
+## 人工启用的 DeepSeek V4 Flash 审阅
+
+DeepSeek 只审阅已经落库的单个 Finding，不参与自动发现、自动回退或桌面一键启动。API key 只从环境变量读取，且不会写入项目：
+
+```powershell
+$env:DEEPSEEK_API_KEY = "<轮换后的新密钥>"
+python -m src_auto remote-status
+$preview = python -m src_auto remote-preview --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml | ConvertFrom-Json
+python -m src_auto remote-triage --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml --confirm-external --confirm-digest $preview.payload_digest
+```
+
+`remote-preview` 不联网，只输出脱敏 payload 和 SHA-256 摘要；`remote-triage` 会重新构造 payload、再次校验 Scope 和摘要，最多发送一次非流式请求。远程结论写入独立的 `ai_reviews` 表，不会自动确认漏洞或提交补天。按照当前设计不设置金额或调用次数上限，只保留每次请求的输入/输出 token 限制并记录估算成本。
+
+你在聊天中粘贴过的 key 已经暴露，实际联调前必须在 DeepSeek 控制台撤销并换新。ChatGPT Plus 登录态也不能作为 OpenAI API key；OpenAI 适配器默认关闭，需独立 Platform API key 和人工审查后再启用。
+
 ## 真实 SRC 的唯一人工步骤
 
 把平台规则、测试时间、允许的根域/主机/端口、排除项和授权来源写入独立的 `scope_confirmed.yaml`，由人复核后将 `confirmed` 和 `allow_network_contact` 都设为 `true`。候选文件不能直接升级权限。之后仍需人工查看候选报告并在补天平台手动提交。

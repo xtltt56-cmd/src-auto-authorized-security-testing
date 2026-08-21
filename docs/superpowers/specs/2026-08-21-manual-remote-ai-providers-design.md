@@ -1,7 +1,7 @@
 # Manual Remote AI Providers Design
 
 Date: 2026-08-21  
-Status: approved in conversation, pending written-spec review
+Status: implemented; fake-provider and CLI gate verification passed; live DeepSeek probe pending key rotation
 
 ## Goal
 

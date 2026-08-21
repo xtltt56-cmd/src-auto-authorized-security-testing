@@ -4,7 +4,7 @@ Date: 2026-08-21 (Asia/Shanghai)
 
 ## Automated tests
 
-`python -m unittest discover -s tests -v` — **32 tests passed, 0 failed**.
+`python -m unittest discover -s tests -v` — **44 tests passed, 0 failed**.
 
 Coverage includes:
 
@@ -21,6 +21,11 @@ Coverage includes:
 - external sequence requires an explicit `execute=True` and injected adapters;
 - external adapters honor the manual STOP marker before process start and between tools;
 - loopback HTTP server, pipeline ordering, minimal evidence and manual Butian report generation.
+- DeepSeek V4 Flash fake transport, sanitized payload and stable digest;
+- OpenAI Responses fake transport with `store: false`, no tools and strict JSON schema;
+- `remote-status` network-free behavior, `remote-preview` no-contact behavior, digest/confirmation gates and successful separate `ai_reviews` persistence;
+- provider missing-key/disabled/malformed-output fail-closed behavior without saving a false successful review.
+- provider input-token-limit enforcement before HTTP contact and digest mismatch rejection before provider lookup.
 
 `python -m compileall -q src_auto lab tests` — **passed**.
 
@@ -31,6 +36,7 @@ Coverage includes:
 - `httpx.exe -silent -u http://127.0.0.1:8765/` — **passed**, loopback only.
 - `katana.exe -silent -u http://127.0.0.1:8765/ -d 1` — **passed**, loopback only.
 - No real Butian or third-party target was contacted.
+- No live remote AI call was made; remote verification used injected fake responses only. A live DeepSeek call remains pending key rotation and an operator-set `DEEPSEEK_API_KEY`.
 - `run-live` with the example plan — **blocked_policy** as designed because `allow_real_targets` remains `false`; no external process was started.
 
 ## Tool verification

@@ -15,7 +15,8 @@ Only non-destructive, platform-permitted observations are allowed: asset invento
 ## Cost and resource limits
 
 - Default profile: `balanced`.
-- Monthly AI ceiling: `¥100`; daily soft ceiling: `¥10`.
+- The automatic local pipeline retains the monthly/daily `BudgetGovernor` controls for the existing Ollama route (`¥100`/`¥10` defaults).
+- Manually confirmed remote Finding reviews have no monetary or call-count ceiling by design; they remain bounded per request (`2000` input tokens / `256` output tokens), require an exact preview digest and are recorded in `ai_reviews` for after-the-fact accounting.
 - No paid asset APIs, VPS, residential proxies, or commercial scanners in V1.
 - Project data warning at 80 GiB and hard stop at 90 GiB; evidence is retained minimally.
 - CPU target <=70% and RAM target <=20 GiB; unknown metrics are reported as unknown rather than fabricated.

@@ -16,6 +16,32 @@ python -m src_auto reports
 
 The desktop one-click launcher is `START_SYSTEM.ps1`. It manually starts the local Ollama service when needed, runs the local-lab workflow, and prints Findings/reports. It never starts a real target workflow.
 
+## Manual remote AI review
+
+DeepSeek V4 Flash is an optional, operator-triggered reviewer for one existing Finding. It is not wired into the automatic local path, the desktop launcher, or external target discovery. The OpenAI Responses provider is present but disabled by default.
+
+Use a rotated key only in the current PowerShell process; never put a key in a file, command script, SQLite database, report, or Git:
+
+```powershell
+$env:DEEPSEEK_API_KEY = "<rotated-key>"
+python -m src_auto remote-status
+```
+
+The key pasted into the chat must be revoked before any live request. `remote-status` performs no network request and reports only whether the named environment variable is non-empty.
+
+Review workflow:
+
+```powershell
+$preview = python -m src_auto remote-preview --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml | ConvertFrom-Json
+$preview.payload
+$preview.payload_digest
+python -m src_auto remote-triage --run-id <RUN_ID> --finding-id <FINDING_ID> --provider deepseek --scope config/targets/local-lab/scope_confirmed.yaml --confirm-external --confirm-digest $preview.payload_digest
+```
+
+The preview is network-free and strips URL queries/fragments/credentials and secret-like evidence. The send command rebuilds the same payload, requires the exact digest and explicit confirmation, checks the run Scope and STOP marker, and makes at most one non-streaming request. No automatic retry or fallback is performed. Reviews are stored separately in `ai_reviews`; local triage and Finding status are not overwritten.
+
+There is intentionally no monetary or call-count budget ceiling for remote review. Each request remains bounded by `max_input_tokens=2000` and `max_output_tokens=256`, and the returned usage/estimated cost is recorded for after-the-fact accounting. This does not authorize testing a target or submitting to 补天.
+
 ## STOP and RESUME
 
 ```powershell
