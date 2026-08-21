@@ -1,0 +1,25 @@
+{
+  "profile": "balanced",
+  "monthly_ai_budget_yuan": 100,
+  "daily_ai_budget_yuan": 10,
+  "disk_warning_gb": 80,
+  "disk_hard_limit_gb": 90,
+  "max_cpu_percent": 70,
+  "max_memory_gb": 20,
+  "network": {
+    "require_scope_confirmation": true,
+    "default_deny_third_party": true,
+    "allow_real_targets": false,
+    "manual_submission_only": true
+  },
+  "prohibited": [
+    "brute_force",
+    "credential_stuffing",
+    "destructive_write",
+    "delete",
+    "dos",
+    "persistence",
+    "lateral_movement",
+    "bulk_personal_data"
+  ]
+}

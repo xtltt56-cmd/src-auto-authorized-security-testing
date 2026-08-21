@@ -1,0 +1,13 @@
+{
+  "default_lane": "primary",
+  "lanes": {
+    "bulk": {"provider": "local", "model": "heuristic-v1", "estimated_cost": 0},
+    "primary": {"provider": "local", "model": "heuristic-v1", "estimated_cost": 0},
+    "expert": {"provider": "local", "model": "heuristic-v1", "estimated_cost": 0}
+  },
+  "remote_api": {
+    "enabled": false,
+    "require_explicit_key": true,
+    "store_prompts": false
+  }
+}

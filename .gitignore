@@ -1,0 +1,27 @@
+# Local state and potentially sensitive material
+data/*.sqlite3
+data/*.sqlite3-*
+runs/*
+logs/*
+evidence/*
+reports/*
+!reports/.gitkeep
+*.log
+*.token
+*.key
+*.pem
+.env
+.venv/
+STOP
+
+# Tool downloads and generated binaries
+vendor/
+lab/.cache/
+__pycache__/
+*.pyc
+
+# Keep the directory structure without committing artifacts
+!data/.gitkeep
+!runs/.gitkeep
+!logs/.gitkeep
+!evidence/.gitkeep

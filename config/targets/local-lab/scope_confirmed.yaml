@@ -1,0 +1,12 @@
+{
+  "target_id": "local-lab",
+  "vendor": "owned-loopback-fixture",
+  "authorization_source": "local process started by operator",
+  "root_domains": ["localhost"],
+  "allowed_hosts": ["localhost", "127.0.0.1"],
+  "excluded_hosts": ["admin.localhost"],
+  "allowed_ports": [8765],
+  "test_window": "operator-invoked only",
+  "confirmed": true,
+  "allow_network_contact": true
+}
