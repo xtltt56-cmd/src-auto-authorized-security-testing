@@ -3,7 +3,7 @@
 版本：V0.1.1（本地 Ollama 接入版）  
 项目路径：D:\网络安全文件夹\SRC-Auto  
 适用系统：Windows 11 / PowerShell  
-当前 Git 基线：cee87db2eede55965a02ffa0e9c329697937eab8
+当前 Git 基线：d9db9fa（受控外部计划和本地 Ollama 接入）
 
 > 本手册描述当前已经落地的控制层、本地模型接入和本地靶场流程。它不授予任何真实网站测试权限。
 
