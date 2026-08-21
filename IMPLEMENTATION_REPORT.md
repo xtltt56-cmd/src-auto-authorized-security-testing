@@ -13,6 +13,8 @@ Existing sibling artifacts were left outside the project and were not edited:
 - `D:\网络安全文件夹\qa_zut_report`
 - `D:\网络安全文件夹\build_zut_report.py`
 
+The current SHA-256 snapshot is recorded in `preservation_manifest.sha256`; the manifest is an audit aid and is not permission to modify either sibling path.
+
 ## Environment snapshot
 
 - Windows PowerShell host; Python 3.8.10; Git 2.55.0; Java 17.0.10 LTS.
