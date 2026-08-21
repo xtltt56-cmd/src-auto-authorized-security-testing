@@ -1,0 +1,30 @@
+{
+  "assets": [
+    {"host": "localhost", "port": 8765, "url": "http://localhost:8765/", "kind": "web", "metadata": {"source": "loopback-fixture"}}
+  ],
+  "urls": ["http://localhost:8765/", "http://localhost:8765/health"],
+  "headers": {"server": "SRC-Auto-Lab", "x-content-type-options": "absent"},
+  "findings": [
+    {
+      "title": "Missing security response header",
+      "url": "http://localhost:8765/",
+      "parameter": "",
+      "severity": "low",
+      "evidence": "Loopback fixture intentionally omits X-Content-Type-Options; no payload or state change was used."
+    },
+    {
+      "title": "Missing security response header",
+      "url": "http://localhost:8765/",
+      "parameter": "",
+      "severity": "low",
+      "evidence": "Duplicate fixture entry exercises finding deduplication."
+    },
+    {
+      "title": "Out-of-scope redirect candidate",
+      "url": "https://third-party.example/redirect",
+      "parameter": "location",
+      "severity": "info",
+      "evidence": "This entry must be rejected by ScopeGuard and never requested."
+    }
+  ]
+}
