@@ -1,26 +1,32 @@
-# SRC-Auto Policy v1
+# SRC-Auto 安全策略 v1
 
-## Authorization gate
+## 授权门控
 
-`scope_candidate.yaml` is descriptive only. A real run requires a separately reviewed `scope_confirmed.yaml` containing `confirmed: true`, `allow_network_contact: true`, explicit hosts/ports, and a recorded authorization source. The control layer rejects a scope hash mismatch.
+`scope_candidate.yaml` 只有描述作用。真实运行必须使用人工单独复核的
+`scope_confirmed.yaml`，其中包含 `confirmed: true`、`allow_network_contact: true`、明确的
+主机/端口和授权来源。控制层会拒绝 Scope 摘要不一致的运行。
 
-## Default-deny rules
+## 默认拒绝规则
 
-The guard denies third-party SSO/CDN/payment/cloud/API hosts unless explicitly listed, denies excluded hosts and subdomains, rejects credentials in URLs, rejects non-HTTP(S) schemes, rejects disallowed ports, and fails closed on redirects outside the confirmed set.
+ScopeGuard 会拒绝未明确列出的第三方 SSO/CDN/支付/云/API 主机，拒绝排除主机和子域名，
+拒绝 URL 中的凭据，拒绝非 HTTP(S) 协议、错误端口以及越界重定向，并在任何不确定时关闭。
 
-## Allowed testing
+## 允许的测试
 
-Only non-destructive, platform-permitted observations are allowed: asset inventory, HTTP metadata, bounded crawling, passive checks, and safe candidate detection. Stop after sufficient proof. No brute force, credential testing, modification/deletion, DoS, persistence, lateral movement, or bulk personal-data collection.
+只允许平台规则许可的非破坏性观察：资产清单、HTTP 元数据、受限爬取、被动检查和安全候选
+检测。取得足够证据后应停止。禁止暴力破解、凭据测试、修改/删除数据、拒绝服务、持久化、
+横向移动和批量收集个人数据。
 
-## Cost and resource limits
+## 成本和资源
 
-- Default profile: `balanced`.
-- The automatic local pipeline retains the monthly/daily `BudgetGovernor` controls for the existing Ollama route (`¥100`/`¥10` defaults).
-- Manually confirmed remote Finding reviews have no monetary or call-count ceiling by design; they remain bounded per request (`2000` input tokens / `256` output tokens), require an exact preview digest and are recorded in `ai_reviews` for after-the-fact accounting.
-- No paid asset APIs, VPS, residential proxies, or commercial scanners in V1.
-- Project data warning at 80 GiB and hard stop at 90 GiB; evidence is retained minimally.
-- CPU target <=70% and RAM target <=20 GiB; unknown metrics are reported as unknown rather than fabricated.
+- 默认资源配置：`balanced`；
+- 自动本地流水线保留 Ollama 路由的月/日预算控制（默认 ¥100/¥10）；
+- 人工确认的远程 Finding 审阅按设计没有金额或调用次数上限，但单次请求限制为 2000 输入 token / 256 输出 token，并写入 `ai_reviews`；
+- V1 不使用付费资产 API、VPS、住宅代理或商业扫描器；
+- 项目磁盘使用量达到 80 GiB 警告，达到 90 GiB 强制停止；
+- CPU 目标不超过 70%，RAM 目标不超过 20 GiB；无法取得指标时报告 unknown，不虚构数据。
 
-## Human decisions
+## 必须由人工决定的事项
 
-The user must manually confirm the first real target's authorization snapshot, handle login/CAPTCHA, approve any paid action, and review the final report before submitting it to 补天.
+用户必须人工确认第一个真实目标的授权规则和时间窗口，人工处理登录/CAPTCHA，批准任何付费
+操作，并在提交补天前审阅最终报告。中文界面不会改变这些授权和安全要求。

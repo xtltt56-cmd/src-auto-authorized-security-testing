@@ -8,7 +8,17 @@ from .models import ToolResult
 from .scope import ScopeGuard
 
 
-DEFAULT_TOOLS = ["bbot", "subfinder", "httpx", "katana", "nuclei", "reconftw", "zap"]
+DEFAULT_TOOLS = [
+    "bbot",
+    "subfinder",
+    "httpx",
+    "katana",
+    "nuclei",
+    "reconftw",
+    "zap",
+    "schemathesis",
+    "testssl",
+]
 
 
 class ToolRegistry:
@@ -24,7 +34,12 @@ class ToolRegistry:
         if discovered:
             return discovered
         for directory in self.search_paths:
-            for candidate in (directory / name, directory / (name + ".exe"), directory / (name + ".bat")):
+            for candidate in (
+                directory / name,
+                directory / (name + ".exe"),
+                directory / (name + ".bat"),
+                directory / (name + ".cmd"),
+            ):
                 if candidate.is_file():
                     return str(candidate)
         return None

@@ -1,13 +1,15 @@
 {
-  "generated_at": "2026-08-21",
-  "policy": "verify-current-official-release-before-install",
+  "generated_at": "2026-08-23",
+  "policy": "digest-pinned containers or checksummed project-local binaries; never weaken endpoint security",
   "tools": {
-    "bbot": {"command": "bbot", "version": "3.0.1", "status": "blocked-python10-wsl", "source": "https://github.com/blacklanternsecurity/bbot"},
+    "bbot": {"command": "vendor/bin/bbot.cmd", "version": "3.0.1", "status": "verified-docker-fallback", "image_digest": "sha256:0b5c3904e3f3f270e8cd31dd84655317de28064bc380d7fa1fd9b78a7d89a47e", "source": "https://github.com/blacklanternsecurity/bbot"},
     "subfinder": {"command": "vendor/bin/subfinder.exe", "version": "v2.15.0", "status": "verified", "sha256": "37fca8541b4cb9e2a9b542a94defd671a9fd2f6003b2cc64c38d20c736b28be4", "source": "https://github.com/projectdiscovery/subfinder"},
     "httpx": {"command": "vendor/bin/httpx.exe", "version": "v1.10.0", "status": "verified", "sha256": "5b157473d301a289e6c7c33e31130db019f9ea51e112cff509bc60eb9c2072ba", "source": "https://github.com/projectdiscovery/httpx"},
     "katana": {"command": "vendor/bin/katana.exe", "version": "v1.7.0", "status": "verified", "sha256": "8d9632f95dfeae3bd6847971dbf6bef18f395056236fe7e43499d46b9789d278", "source": "https://github.com/projectdiscovery/katana"},
-    "nuclei": {"command": "vendor/bin/nuclei.exe", "version": "v3.11.1", "status": "blocked-by-endpoint-security", "sha256": "bb6cb9ff8939b753f6fcab06fd30a15f5bc61d8382a597871334c007a85ff9d2", "source": "https://github.com/projectdiscovery/nuclei"},
-    "reconftw": {"command": "reconftw", "version": "current", "status": "blocked-linux-shell-wsl", "source": "https://github.com/six2dez/reconftw"},
-    "zap": {"command": "vendor/zap/ZAP_2.17.0/zap.bat", "version": "2.17.0", "status": "verified-version-only", "sha256": "0cb73b7f72d12c263fb61de304edb82a455d7aa4e1813c216c061765c306f5b7", "source": "https://www.zaproxy.org/"}
+    "nuclei": {"command": "vendor/bin/nuclei.cmd", "version": "v3.11.1", "status": "verified-docker-fallback", "image_digest": "sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb", "native_archive_sha256": "bb6cb9ff8939b753f6fcab06fd30a15f5bc61d8382a597871334c007a85ff9d2", "source": "https://github.com/projectdiscovery/nuclei"},
+    "reconftw": {"command": "", "version": "not-installed", "status": "intentionally-disabled-linux-orchestrator", "source": "https://github.com/six2dez/reconftw"},
+    "zap": {"command": "vendor/bin/zap.cmd", "version": "2.17.0", "status": "verified", "sha256": "0cb73b7f72d12c263fb61de304edb82a455d7aa4e1813c216c061765c306f5b7", "source": "https://github.com/zaproxy/zaproxy"},
+    "schemathesis": {"command": "vendor/bin/schemathesis.cmd", "version": "4.25.0", "status": "verified-project-venv", "source": "https://github.com/schemathesis/schemathesis"},
+    "testssl": {"command": "vendor/bin/testssl.cmd", "version": "3.3dev-container", "status": "verified-docker-fallback", "image_digest": "sha256:47d623064463c66ce3b02d37486c75dd1bff8fcef0d9947b37a5051b937ccd69", "source": "https://github.com/testssl/testssl.sh"}
   }
 }

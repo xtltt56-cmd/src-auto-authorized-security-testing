@@ -1,0 +1,161 @@
+name: src-auto-local-labs
+
+services:
+  juice-shop:
+    image: bkimminich/juice-shop@sha256:73c53fbf442e8337b3ea3d98c7e8550308854701ebdfce4cc39768f36b75430e
+    container_name: src-auto-juice-shop
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - lab-internal
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    cpus: "1.50"
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - >-
+          require('http').get('http://127.0.0.1:3000/', r =>
+          process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () =>
+          process.exit(1))
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  dvwa:
+    image: ghcr.io/digininja/dvwa@sha256:38d8f4894c9ec064e42e43eaf423d55ad09a7f59cada82414217113db6129c3e
+    container_name: src-auto-dvwa
+    environment:
+      - DB_SERVER=db
+      - DB_DATABASE=dvwa
+      - DB_USER=dvwa
+      - DB_PASSWORD=p@ssw0rd
+      - DEFAULT_SECURITY_LEVEL=low
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:80"
+    networks:
+      - lab-internal
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    cpus: "1.00"
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://127.0.0.1/login.php >/dev/null
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  db:
+    image: mariadb@sha256:8020e05c4c498d06c87f0a1db010eb79bd6f8fb30e9b763d4690c34ce1e61008
+    container_name: src-auto-dvwa-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=dvwa
+      - MYSQL_DATABASE=dvwa
+      - MYSQL_USER=dvwa
+      - MYSQL_PASSWORD=p@ssw0rd
+    volumes:
+      - dvwa-db-data:/var/lib/mysql
+    networks:
+      - lab-internal
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: "0.75"
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - healthcheck.sh --connect --innodb_initialized
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  webgoat:
+    image: webgoat/webgoat@sha256:3101bd9e7bcfe122d7ef91e690ef3720de36cc4e86b3d06763a1ddf2e2751a4b
+    container_name: src-auto-webgoat
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      - lab-internal
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1024m
+    cpus: "1.50"
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:8080/WebGoat/actuator/health >/dev/null
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 25s
+
+  vampi:
+    image: erev0s/vampi@sha256:0a5a224b6e14ae7da6a6ea265178ff71286ff903aec74adee98f660bb0e4ca12
+    container_name: src-auto-vampi
+    environment:
+      - vulnerable=1
+      - tokentimetolive=300
+    ports:
+      - "127.0.0.1:8083:5000"
+    networks:
+      - lab-internal
+    restart: "no"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 384m
+    cpus: "0.75"
+    pids_limit: 128
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:5000/ui/', timeout=2);
+          raise SystemExit(0 if r.status == 200 else 1)
+      interval: 5s
+      timeout: 3s
+      retries: 18
+      start_period: 8s
+
+networks:
+  lab-internal:
+    # Docker Desktop for Windows cannot publish host loopback ports from an
+    # internal-only bridge.  The host-side RuntimePolicy and browser request
+    # interceptor remain the authoritative external-contact gates.
+    driver: bridge
+
+volumes:
+  dvwa-db-data:

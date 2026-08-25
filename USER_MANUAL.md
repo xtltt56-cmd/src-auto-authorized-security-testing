@@ -1,11 +1,111 @@
 # SRC-Auto 平台完整使用手册
 
-版本：V0.1.2（本地 Ollama + 人工启用远程审阅版）
+> 当前三期升级后的简体中文主手册请优先阅读 [`docs/THREE_PHASE_USER_MANUAL.md`](docs/THREE_PHASE_USER_MANUAL.md)，最终验收摘要见 [`docs/THREE_PHASE_UPGRADE_REPORT.md`](docs/THREE_PHASE_UPGRADE_REPORT.md)。本文件保留历史命令与兼容入口，旧的“三靶场/159 项”数字不覆盖 2026-08-24 的最新验收结果；本机生成的验证报告位于被 Git 忽略的 `validation/` 目录。
+
+版本：V0.5.0（WSL2/Docker + 三回环靶场 + 非破坏性安全回归版）
 项目路径：D:\网络安全文件夹\SRC-Auto  
 适用系统：Windows 11 / PowerShell  
-当前 Git 基线：d9db9fa（受控外部计划和本地 Ollama 接入）
+当前 Git 基线：工作区保留既有未提交改动；设计快照已单独记录（以实际 `git status` 为准）
 
 > 本手册描述当前已经落地的控制层、本地模型接入和本地靶场流程。它不授予任何真实网站测试权限。
+
+> **2026-08-21 当前状态：** 已按操作者授权安装 WSL2 2.7.12、Ubuntu 和 Docker Desktop
+> 4.87.0。Ubuntu 位于 `D:\网络安全文件夹\WSL\Ubuntu`，Docker WSL 数据位于
+> `D:\网络安全文件夹\DockerData\wsl`；Docker Desktop 程序本身按官方 per-user 方式
+> 保留在用户目录，属于已批准的系统组件例外。`juice-shop` 当前只映射
+> `127.0.0.1:3000`，远程 AI 调用为 0。旧的“Docker 未安装”文字只代表安装前快照，
+> 以本手册第 23 节和 `JUICE_SHOP_VALIDATION_REPORT.md` 第 0 节为准。
+
+> **2026-08-22 最终本地验收：** 已在同一 Compose 项目中固定并启动 Juice Shop
+> `127.0.0.1:3000`、DVWA `127.0.0.1:8081` 与 WebGoat `127.0.0.1:8082`，三个应用靶场各完成 3 轮。
+> DVWA 的 MariaDB 仅在 Compose 网络内运行，不发布宿主端口。准确逐轮成绩见
+> `validation\autotest\LOCAL_LAB_TEST_REPORT.md`，机器源数据见
+> `validation\autotest\LOCAL_LAB_SCORE.json`。另有 6 个安全回归用例共 18 次执行，18/18 通过，
+> 见 `validation\autotest\local_regression\LOCAL_REGRESSION_REPORT.md`。这些结果均为本地控制项/表面
+> 回归基准，不是赏金漏洞命中率；`bounty_ready_count=0`、外部目标接触为 0、远程 AI 调用为 0。
+
+## 界面语言和输出兼容性
+
+当前版本以简体中文作为操作者界面的默认语言。桌面快捷方式、PowerShell 启动器、
+Juice Shop 状态/基线/ZAP 摘要、CLI 帮助和错误提示都使用中文；第三方工具原始输出仍
+保留在受限、脱敏的 JSON 工件中。
+
+机器字段继续使用英文，避免破坏已有脚本和历史报告。例如：
+
+```json
+{
+  "status": "POSSIBLE_FINDINGS",
+  "status_zh": "存在待人工复核的可能项",
+  "reason": "manual_verification_required",
+  "reason_zh": "需要人工复核后才能确认"
+}
+```
+
+交互式终端默认显示中文摘要；管道、脚本捕获和 `--json` 使用机器可读 JSON；需要强制
+中文时使用 `--human`。例如：
+
+    python -m src_auto juice-shop-status --human
+    python -m src_auto juice-shop-status --json
+
+未指定模式时，程序会根据 stdout 是否为交互终端自动选择；这保证桌面启动器的
+`ConvertFrom-Json` 管道不会被中文提示污染。
+如果旧版 PowerShell 终端显示乱码，可先执行：
+
+    $env:PYTHONIOENCODING = "utf-8"
+
+## 桌面图形主菜单与补天目标录入
+
+桌面上的 **SRC-Auto 一键启动** 现在直接打开简体中文 WinForms 主菜单。主菜单顶部会明确显示
+“默认仅本机回环靶场”和“真实目标不会自动执行”，因此打开窗口不会自动访问任何补天项目。
+所有状态、报告和密钥密文仍写入 `D:\网络安全文件夹\SRC-Auto`。
+
+主菜单按钮用途如下：
+
+| 按钮 | 作用 |
+|---|---|
+| 本地靶场检测 | 打开独立终端并以 `-RunLocalLab` 启动既有三靶场本地验收；仅访问 `127.0.0.1` |
+| 新建授权目标 | 打开补天目标录入表单，可保存未确认草稿，或在人工勾选两项确认后生成 Scope 并离线审阅 |
+| 选择已有目标 | 打开文件夹优先选择器，可从 `config\\targets` 根目录或任意下级分组查看已有 Scope |
+| 离线审阅目标范围 | 选择一个或多个完整目标，逐个调用 `target-review` 并生成本地汇总；不会发出网络请求 |
+| 查看 Findings 和报告 | 打开项目内 `reports` 文件夹，供人工阅读和整理补天报告草稿 |
+| AI 模型与密钥设置 | 仅打开既有 DeepSeek / OpenRouter 密钥保存工具；默认不启用远程 AI，也不会在界面显示明文密钥 |
+
+### 离线审阅目标范围选择器
+
+点击 **选择已有目标** 或 **离线审阅目标范围** 后，会打开同一个本地目标选择器。它解决了旧版只能逐层进入目录、
+最后必须点选单个 `scope_confirmed.yaml` 的问题。
+
+1. 路径框默认指向 `D:\网络安全文件夹\SRC-Auto\config\targets`。可以直接粘贴该目录内的高级别分组目录并按 Enter。
+2. **项目目标根** 一键返回 `config\\targets`；**上一级** 返回父目录，但不会越过安全根目录。
+3. **选择文件夹** 打开 Windows 文件夹选择窗口；**刷新** 重新读取当前路径。
+4. 选择高级别目录时，程序会递归显示所有包含 Scope 或人工计划文件的下级目标，无需逐层打开。
+5. 只有同时存在 `scope_confirmed.yaml` 和 `live_plan.yaml` 的项目显示为 **可审阅**，并允许勾选。
+6. 只有 `scope_candidate.yaml` 的项目显示为 **候选 Scope（不可审阅）**；已有确认 Scope 但缺少计划的项目显示为
+   **缺少 live_plan.yaml**。这些项目会标灰，不能通过全选或手工勾选进入审阅。
+7. 可勾选一个或多个目标，然后点击 **开始离线审阅**。每个目标单独执行，授权范围不会合并。
+8. 结果窗口会显示每个目标的“通过”“已阻止”或“需要人工复核”，安全汇总写入
+   `D:\网络安全文件夹\SRC-Auto\reports\offline-review\`。
+
+路径输入仍被严格限制在项目的 `config\\targets` 下。项目外路径、缺失目录、错误文件名、Scope 与计划不在同一目录、
+候选 Scope 和不完整配置都会被阻止。选择器只调用 `target-review --confirm-selection --json`，不会启动 `run-live`、
+不会调用外部扫描器，也不会连接目标网站；汇总文件固定记录 `network_contact=false`。
+
+### 新建授权目标的填写顺序
+
+1. 点击 **新建授权目标**。
+2. 填写项目编号（仅小写英文、数字、`_` 或 `-`）、平台/项目名称、补天项目规则或授权来源。
+3. 在 **起始地址** 填写完整的 `https://` 地址，例如 `https://example.com/`；不得填写用户名、查询串或片段。
+4. 填写允许的根域名、允许主机（每行或逗号分隔）、排除主机和允许端口。目标主机必须同时出现在允许主机中，且端口必须在允许端口列表中；表单默认端口为 `443`。
+5. 补充测试时间窗和操作者名称，先点 **保存草稿** 检查格式，或在确认授权后同时勾选：
+   - “我已人工核对补天项目规则、资产归属和排除项”；
+   - “项目规则明确允许低频、非破坏性自动化测试”。
+6. 点击 **保存并离线审阅**。程序会把配置写入 `config\\targets\\<项目编号>\\`，然后仅在本机运行目标范围审阅。审阅窗口显示的结果仍需要人工复核；它不会自动执行真实目标测试、不会调用外部扫描器、也不会提交补天报告。
+
+表单校验失败时会显示明确原因码，例如 `target_host_not_allowed`、
+`target_port_not_allowed` 或 `target_url_must_be_clean`。配置写入前会做路径边界检查，不能写到项目目录之外。
+
+> 真实目标的后续测试必须另行阅读补天项目规则、再次人工确认授权和低频/非破坏性边界。图形菜单只是减少录入错误，
+> 不会把“草稿”升级为授权，也不会替操作者做最终执行决定。
 
 ---
 
@@ -34,6 +134,39 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 - 保证漏洞被接受、保证收益或保证获得赏金。
 
 补天项目当前规则优先于本手册。某些众测场景对自动化扫描有明确限制，开始真实目标前必须读取项目规则并人工确认。[补天官方帮助页](https://zhongce.butian.net/Help.html)
+
+## 1.1 三个本地靶场与安全回归入口
+
+当前 Compose 清单固定以下服务，全部只发布到本机回环地址：
+
+| 靶场 | 地址 | 用途 |
+|---|---|---|
+| OWASP Juice Shop | `http://127.0.0.1:3000/` | 公开首页、前端/API 表面和 ZAP 控制项 |
+| DVWA + MariaDB | `http://127.0.0.1:8081/login.php` | 登录边界、SQLi 训练页面、无害反射标记；数据库不发布宿主端口 |
+| OWASP WebGoat | `http://127.0.0.1:8082/WebGoat/` | 登录边界和课程入口；注册随机合成账号，不保存凭据 |
+
+启动/状态/停止：
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+python -m src_auto local-labs status --json
+python -m src_auto local-labs start
+python -m src_auto local-labs stop
+```
+
+控制项验收会运行有限静态发现、ZAP quick scan 和保守裁决；它的
+`TRUE_POSITIVE` 只代表本地控制项，不代表可提交漏洞。推荐先运行不发送利用 payload 的回归：
+
+```powershell
+python tools/run_local_regression.py --local-only --repeat-rounds 2 --json
+# 只运行一个安全边界用例
+python -m src_auto local-regression --local-only --lab dvwa --case dvwa-auth-boundary --json
+```
+
+回归用例固定为 `config\validation\local_regression_cases.json`，仅允许 GET/POST、显式断言和
+`destructive=false`。客户端不跟随重定向，发送前检查 RuntimePolicy，响应只记录长度、SHA-256、
+状态码和脱敏头；工件不含响应正文、Cookie、Token、账号密码。若想新增用例，必须先写测试，
+保持 loopback、无破坏性动作，并在 `tests\test_local_regression.py` 中验证失败关闭。
 
 ## 2. 安全边界
 
@@ -65,7 +198,7 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 
 当前验收基线：
 
-- 44 项自动化测试通过（包含远程 Provider 的假响应和 CLI 门控测试）；
+- 159 项自动化测试通过（包含运行时白名单、三靶场生命周期、Juice Shop 只读探测、ZAP 解析/CLI 门控、Ground Truth、远程 Provider 假响应、离线 target-review、中文 UTF-8 控制台回归、本机安全回归、启动会话同意硬门、DPAPI 密钥存储、WinForms 主菜单分派、按钮真实点击和目标录入表单运行时测试）；
 - compileall 通过；
 - loopback E2E 通过；
 - STOP/RESUME 通过；
@@ -86,6 +219,13 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
     │  ├─ reporting.py           Evidence 和报告草稿
     │  ├─ live_plan.py           外部计划校验
     │  ├─ remote_ai.py           DeepSeek/OpenAI 人工审阅适配器
+    │  ├─ runtime_policy.py      local-only AI/主机/端口/并发硬门控
+    │  ├─ juice_shop.py          127.0.0.1:3000 只读验证适配器
+    │  ├─ target_review.py        人工目标选择/Scope 预览（不联网）
+    │  ├─ validation.py          Ground Truth、Finding 归一化和指标
+    │  ├─ local_labs.py          固定镜像的三靶场生命周期
+    │  ├─ local_discovery.py     回环静态表面发现
+    │  ├─ adjudication.py        控制项裁决与精确指标
     │  └─ cli.py                 命令行入口
     ├─ config\                   策略和模型配置
     ├─ lab\                      loopback 靶场和 fixture
@@ -94,6 +234,9 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
     ├─ evidence\                 最小证据
     ├─ reports\                  报告草稿
     ├─ vendor\                   便携工具和 ZAP
+    ├─ tools\                   本机自动化验收编排器
+    ├─ validation\autotest\     预检、轮次、稳定性和最终报告
+    │  └─ local_labs\            三靶场逐轮工件
     ├─ START_SYSTEM.ps1          一键启动脚本
     ├─ START.bat                 已有运行入口
     ├─ STOP.bat                  人工停止入口
@@ -102,20 +245,23 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 
 项目外的 qa_zut_report 和 build_zut_report.py 属于用户既有文件，不应写入或提交到本项目 Git。
 
-## 5. 一键启动本地系统
+## 5. 一键启动图形主菜单与本地系统
 
-桌面快捷方式现在指向 START_SYSTEM.ps1。双击桌面上的 SRC-Auto 一键启动快捷方式后，脚本会：
+桌面快捷方式指向 `START_SYSTEM.ps1`，并以隐藏宿主终端、STA 模式启动图形主菜单。双击桌面上的
+**SRC-Auto 一键启动** 后，默认只显示目标录入和本地操作菜单，不会启动 Docker、不询问远程 AI，
+也不会连接真实补天目标。
 
-1. 切换到 D:\网络安全文件夹\SRC-Auto；
-2. 检查本机 Ollama；
-3. 如果 Ollama 没有运行，则手动启动 ollama serve；
-4. 等待本地 API 127.0.0.1:11434；
-5. 创建 local-lab 运行记录；
-6. 执行本地 loopback E2E；
-7. 输出 Findings 和报告索引；
-8. 保持窗口打开，等待你查看结果。
+在主菜单点击 **本地靶场检测** 后，才会打开独立终端并使用 `START_SYSTEM.ps1 -RunLocalLab` 执行本地流程：
 
-这个快捷方式只是一种“手动点击启动”，不会创建 Windows 服务、计划任务或开机自启动，也不会连接真实补天目标。
+1. 切换到 `D:\网络安全文件夹\SRC-Auto`；
+2. 按启动前的人工选择决定是否启用 DeepSeek；未启用时整个会话不调用远程 AI；
+3. 检查本机 Ollama（不可用时安全回退，不伪造成功）；
+4. 通过固定 Compose 启动 Juice Shop `127.0.0.1:3000`、DVWA `127.0.0.1:8081` 和 WebGoat `127.0.0.1:8082`；
+5. 等待三个应用容器健康后，执行三靶场 local-only 验收和非破坏性安全回归；
+6. 输出 `LOCAL_LAB_SCORE.json`、逐轮发现/裁决工件和中文摘要，并保持终端窗口供人工查看。
+
+快捷方式只是手动点击启动，不会创建 Windows 服务、计划任务或开机自启动。真实目标只能从主菜单人工录入并进行离线审阅；
+没有独立、明确的人工授权和平台规则确认时，程序不会把它变成可执行计划。
 
 脚本位置：
 
@@ -124,9 +270,14 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 如需从 PowerShell 启动：
 
     Set-Location 'D:\网络安全文件夹\SRC-Auto'
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\START_SYSTEM.ps1
+    # 打开图形主菜单
+    powershell -NoProfile -Sta -ExecutionPolicy Bypass -File .\START_SYSTEM.ps1
 
-如果 Ollama 不可用，启动器会继续执行本地流水线，并使用启发式分诊回退。
+    # 仅在你明确要跑本机靶场时使用
+    powershell -NoProfile -Sta -ExecutionPolicy Bypass -File .\START_SYSTEM.ps1 -RunLocalLab
+
+如果 Ollama 不可用，启动器会继续执行本地流水线，并使用启发式分诊回退。桌面启动器
+永远不进入真实目标流程，也不调用远程 AI。
 
 ## 6. 手动运行本地靶场
 
@@ -291,6 +442,50 @@ STOP 会创建项目根目录的 STOP 文件。只有 resume 会清除它。停�
 
 第一条命令只验证计划、策略和 Scope；第二条才会按计划创建 `SafeToolAdapter` 并启动工具。它不会自动发现新域名、自动扩大授权范围、处理登录验证码、上传数据或提交补天。计划摘要会写入 SQLite 事件，便于复核。
 
+## 10.2 人工目标选择与范围预览（不联网）
+
+当你已经取得补天项目的明确授权、但希望先手动选择目标时，使用 `target-review`。Scope 和计划都必须位于项目根目录内：
+
+    python -m src_auto target-review --scope config/targets/<id>/scope_confirmed.yaml --plan config/live_plan.example.yaml --human
+
+命令会逐个显示目标的允许/拒绝、主机、端口、目标类型以及 Scope/计划 SHA-256 摘要；不会读取或打印工具命令参数、Cookie、Token，也不会发 HTTP 请求。没有 `--confirm-selection` 时返回 `awaiting_selection`；加上该开关只记录“人工选择已审阅”，返回 `selection_reviewed`，并提示下一步仍为：
+
+    run-live --execute-live
+
+这是第二道人工执行门。即便目标是非本地地址，当前测试也只允许离线 Scope Guard/mock 审阅，不会实际连接；`run-live` 还会继续检查 `allow_real_targets`、确认 Scope、人工计划摘要和 `--execute-live`。
+
+## 10.3 本机自动化验收计划
+
+当前 canonical 验收入口会自主管理三个固定回环应用靶场，不需要先手动运行旧的单容器命令：
+
+    python -m src_auto local-labs status --json
+    python -m src_auto local-labs start
+    python -m src_auto local-validation --local-only --repeat-rounds 2
+
+等价的脚本入口为：
+
+    python tools/run_local_lab_validation.py --local-only --repeat-rounds 2
+
+`--local-only` 是默认且唯一模式；脚本只使用 `http://127.0.0.1:3000/`、
+`http://127.0.0.1:8081/login.php` 和 `http://127.0.0.1:8082/WebGoat/actuator/health`，每轮先重置服务，再等待健康检查、执行有限静态发现和
+ZAP quick scan，并使用本地控制项裁决规则。旧 ZAP 文件不会被当作新轮次结果，命令失败时写
+`NOT_TESTED`。`repeat-rounds 2` 表示额外重复 2 次，总计 3 轮/靶场。
+
+工件目录：
+
+    D:\网络安全文件夹\SRC-Auto\validation\autotest\
+
+最终结果是 `LOCAL_LAB_TEST_REPORT.md`（人读）和 `LOCAL_LAB_SCORE.json`（机器读）；逐轮文件在
+`local_labs\<lab>\round_nn\`，包括生命周期、发现、ZAP、裁决和分数。P0 核对 Scope Escape、Remote AI Calls、Secret Leakage、Crash 和
+External Targets Contacted；完整 Juice Shop Ground Truth 未执行时 Precision/Recall 仍保持
+`null`/`NOT_TESTED`。
+
+最终三轮结果：DVWA、Juice Shop、WebGoat 的控制项 Precision/Recall/F1 以
+`LOCAL_LAB_SCORE.json` 最新轮为准；这是控制项基准，不是赏金漏洞评分，三个靶场均
+`bounty_ready_count=0`。独立的 `local-regression` 入口执行 6 个非破坏性用例，三轮共 18 次
+全部通过；结果位于 `local_regression\LOCAL_REGRESSION_SCORE.json` 和
+`local_regression\LOCAL_REGRESSION_REPORT.md`。
+
 ## 11. 外部工具状态
 
 执行：
@@ -304,10 +499,10 @@ STOP 会创建项目根目录的 STOP 文件。只有 resume 会清除它。停�
 | Subfinder v2.15.0 | 便携包和版本验证通过 |
 | httpx v1.10.0 | 版本和 loopback 验证通过 |
 | Katana v1.7.0 | 版本和 loopback 验证通过 |
-| OWASP ZAP 2.17.0 | D 盘 Core 包和版本验证通过 |
+| OWASP ZAP 2.17.0 | D 盘 Core 包、版本验证和 loopback quick scan 通过；候选待人工复核 |
 | Nuclei v3.11.1 | 包哈希通过，但被端点安全软件阻止执行 |
 | BBOT 3.0.1 | 当前 Python/Windows/WSL 环境无法运行 |
-| reconFTW | 当前没有 Linux shell/WSL |
+| reconFTW | WSL 已具备，但工具尚未接入或执行 |
 
 工具目录：
 
@@ -351,16 +546,31 @@ Ollama 服务如果没有运行，手动启动：
 
 ## 12.1 人工启用 DeepSeek V4 Flash 审阅
 
-远程模型是“对已经存在的 Finding 提供第二意见”，不是自动扫描器，也不会参与本地 Ollama 的故障回退。桌面快捷方式、`run --local-lab` 和普通 `run` 都不会连接远程 API。每一次远程调用都必须由人选定 Finding、查看脱敏预览、核对摘要并显式确认。
+远程模型是“对已经存在的 Finding 提供第二意见”，不是自动扫描器，也不会参与本地 Ollama 的故障回退。点击图形主菜单的 **本地靶场检测** 后，独立的本地验收启动器才会询问 DeepSeek 是否启用；选择否时，本次进程树设置会话级硬门，所有远程 Provider 在建连前返回 `remote_ai_disabled_for_session`。选择是也不会自动调用，仍必须由人选定 Finding、查看脱敏预览、核对摘要并显式确认 `remote-triage`。
 
 ### 12.1.1 密钥和提供商状态
 
-项目只读取进程环境变量，不把密钥写入配置、SQLite、报告、事件或 Git：
+项目支持“当前进程环境变量”和“当前 Windows 用户 DPAPI 加密文件”两种方式，不把密钥明文写入配置、SQLite、报告、事件或 Git。推荐只运行一次隐藏保存工具：
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File tools\save_deepseek_key.ps1
+
+密钥加密后固定保存在 `config\secrets\deepseek_api_key.dpapi`，该目录已被 Git 排除。DPAPI 文件只能由当前电脑上的当前 Windows 用户解密；换电脑或换用户后需要重新保存。以后桌面启动器选择“是”时自动解密到当前启动进程，选择“否”时不会读取或解密该文件。
+
+不希望保存时，也可以只在当前 PowerShell 会话临时设置：
 
     $env:DEEPSEEK_API_KEY = "<轮换后的新密钥>"
+    # 不经过桌面启动器时，必须由操作者在当前会话显式授权；默认仍为拒绝
+    $env:SRC_AUTO_REMOTE_AI_CONSENT = "enabled"
+    $env:SRC_AUTO_DEEPSEEK_CONSENT = "enabled"
     python -m src_auto remote-status
 
-`remote-status` 只显示 `key_present: true/false`，不显示密钥、长度、哈希或请求结果。你在聊天中粘贴过的密钥已经暴露，不能继续使用；请先在 DeepSeek 控制台撤销并创建新密钥，再在当前 PowerShell 会话设置环境变量。关闭会话后环境变量会失效。
+`remote-status` 只显示 `key_present: true/false`，不显示密钥、长度、哈希或请求结果。曾经直接粘贴到聊天中的密钥不能继续使用；请先在 DeepSeek 控制台撤销并创建新密钥。临时环境变量会在会话关闭后失效，DPAPI 加密文件可通过重新运行保存工具进行轮换。
+
+点击 **本地靶场检测** 后，独立终端的提示为“是否启用 DeepSeek v4 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用”。
+选择 `N`、`否` 或回车会设置 `SRC_AUTO_DEEPSEEK_CONSENT=disabled`；即使环境变量中存在
+`DEEPSEEK_API_KEY`，也不会发出远程请求。选择 `Y`/`是` 只对当前进程树生效，关闭窗口后不会保存授权。
+直接运行 Python 命令时不会额外弹窗；如果没有在当前会话显式设置上述两个 `CONSENT` 变量，
+同样保持拒绝。不要把授权变量写入脚本、系统环境变量或配置文件。
 
 当前配置：
 
@@ -609,11 +819,12 @@ ChatGPT Plus 不是 Platform API 额度。OpenAI 适配器默认关闭，只有�
 
 当前限制：
 
-1. WSL2/Ubuntu 未安装；
+1. WSL2/Ubuntu 已安装，但 Ubuntu/WSL 不是本项目的扫描器配置；
 2. BBOT 受 Python 版本和 POSIX 环境限制；
-3. reconFTW 需要 Linux shell；
+3. reconFTW 需要 Linux shell，当前仍未接入或执行；
 4. Nuclei 被端点安全软件阻止；
-5. ZAP 当前只做版本验证；
+5. 三靶场 ZAP quick scan 已完成三轮控制项裁决，但仍不代表真实漏洞；完整 Juice Shop 官方
+   116 条题目 Ground Truth 回归尚未执行；
 6. 外部工具输出目前主要保留在工具事件中，尚未自动归一化为完整 Finding；实时参数仍需经过人工审核的工具计划；
 7. 本地 Ollama 推理速度受 CPU 和模型大小影响；
 8. 不保证漏洞接受、赏金或利润。
@@ -640,4 +851,181 @@ ChatGPT Plus 不是 Platform API 额度。OpenAI 适配器默认关闭，只有�
 - START_SYSTEM.ps1：一键启动脚本；
 - config/live_plan.example.yaml：受控外部工具计划模板（默认不执行）；
 - src_auto/live_plan.py：外部计划校验和摘要；
+- validation\autotest\LOCAL_LAB_TEST_REPORT.md：三靶场人读最终成绩；
+- validation\autotest\LOCAL_LAB_SCORE.json：三靶场机器成绩和 P0 计数；
+- validation\autotest\local_regression\LOCAL_REGRESSION_REPORT.md：非破坏性回归人读摘要；
+- validation\autotest\local_regression\LOCAL_REGRESSION_SCORE.json：非破坏性回归机器成绩；
 - preservation_manifest.sha256：既有文件保护快照。
+
+## 23. OWASP Juice Shop 本地验证
+
+这一节只适用于操作者自己启动的本地 Juice Shop。它不授予任何公网目标权限，
+也不会把 Juice Shop 的外链、第三方 API 或子域名加入范围。
+
+### 23.1 固定边界
+
+验证配置：
+
+    config\validation\local_only.json
+    config\targets\juice-shop-local\scope_confirmed.yaml
+
+允许主机严格为 `127.0.0.1` 和 `localhost`，允许端口严格为 `3000`、`8081`、`8082`，并发上限为 5。
+本地验证配置强制 `AI_PROVIDER=local`、`LOCAL_LLM_ONLY=true`、
+`ALLOW_REMOTE_LLM=false`。即使 PowerShell 中存在 `DEEPSEEK_API_KEY`，
+`remote-preview` 和 `remote-triage` 也会返回 `blocked_runtime`，不会联网。
+
+### 23.2 启动本地 Juice Shop（当前已完成）
+
+桌面快捷方式指向 `START_SYSTEM.ps1`，双击后先打开图形主菜单；它不会启动 Docker，也不会触碰公网目标。
+点击主菜单的 **本地靶场检测** 才会传入 `-RunLocalLab`，随后启动 Docker Desktop（若尚未运行），
+通过 `docker-compose.local-labs.yml` 确保 `src-auto-juice-shop`、`src-auto-dvwa`、`src-auto-webgoat`
+使用固定镜像摘要、回环端口 `127.0.0.1:3000`/`127.0.0.1:8081`/`127.0.0.1:8082`，等待健康检查，
+然后运行三靶场 local-only 验收和安全回归。它不会触碰公网目标，也不会自动提交报告。
+
+如果当前 PowerShell 没有 Docker 路径，先执行：
+
+    Set-Location 'D:\网络安全文件夹\SRC-Auto'
+    $env:Path = "C:\Users\lenovo\AppData\Local\Programs\DockerDesktop\resources\bin;$env:Path"
+    docker version
+
+启动器已验证的手动等价命令（只适用于本机三靶场）：
+
+    docker compose -f docker-compose.local-labs.yml up -d --wait
+    python -m src_auto local-labs status --json
+
+容器必须绑定到 loopback；不要改成 `-p 3000:3000` 或绑定公网地址。Docker Desktop 的
+程序位置是官方 per-user 默认位置，Docker 镜像、容器和 WSL 虚拟磁盘位于：
+
+    D:\网络安全文件夹\DockerData\wsl
+
+安装器仍保留在 `vendor\docker-installer\Docker Desktop Installer.exe`，SHA-256 为：
+
+    9ac03d4e900c0fdee981d4bde083a55fdfb28ffba2cae77726eff2a437254822
+
+结束本地验证后，如需释放容器资源：
+
+    python -m src_auto local-labs stop
+
+### 23.3 检查和执行基线
+
+先做不启动工具的状态检查：
+
+    python -m src_auto juice-shop-status --human
+    python -m src_auto juice-shop-status --url http://localhost:3000/ --human
+
+目标可达时再执行：
+
+    python -m src_auto juice-shop-baseline --human
+
+适配器只做有限 GET、`httpx` 和 `katana` 的表面发现，固定目标 URL，不跟随越界重定向，
+不会执行暴力、删除、修改、DoS 或自动提交。结果写入：
+
+    validation\juice-shop\baseline_results.json
+    validation\juice-shop\baseline_metrics.json
+
+当前实际基线为 `COMPLETED_DISCOVERY_ONLY`：保留 31 个 loopback URL，排除 15 个外部
+URL，只计算 1 次控制层 preflight 请求；因为尚未对 Ground Truth 做人工裁决，
+TP/FP/FN、precision、recall、F1 和 scanner-detectable recall 仍保持 `null`。如果
+Docker 未安装、容器未启动或 3000 端口拒绝连接，结果会回到 `BLOCKED_DEPENDENCY`，
+`Finding=0` 仍不能解读为“没有漏洞”。
+
+### 23.3.1 人工确认的本地 ZAP 快速扫描
+
+基线完成后，如需运行候选漏洞扫描，必须显式确认目标仍是本机靶场：
+
+    python -m src_auto juice-shop-zap --confirm-local --human
+
+命令固定调用项目内的 ZAP 2.17.0 quick scan，只接受已确认的本地回环目标，输出 `POSSIBLE`
+候选，不自动复现、不自动提交、不调用远程 AI。当前三轮三靶场验收的候选数为：Juice Shop
+`5、4、5`、DVWA `9、8、9`、WebGoat `0、0、0`；数量可能随扫描时序变化。它们可能是安全配置或信息披露
+提示，不能直接当作补天漏洞，精确控制项指标请以 `validation/autotest/LOCAL_LAB_SCORE.json` 为准。
+
+ZAP 工件：
+
+    validation\juice-shop\zap_quick_report.json
+    validation\juice-shop\zap_findings.json
+
+人工复核每个候选时，只能在授权的本地靶场做最小、无破坏性的验证，记录请求、响应、
+影响和复现条件；真实 SRC 目标必须重新建立平台 Scope，不能沿用本地 Scope。
+
+### 23.3.2 输出模式和中文摘要
+
+交互式终端会优先显示简体中文摘要；脚本管道和 `--json` 保持机器可读 JSON。需要把
+结果交给 `ConvertFrom-Json` 或其他程序时，显式使用：
+
+    python -m src_auto juice-shop-status --json
+    python -m src_auto juice-shop-baseline --json
+    python -m src_auto juice-shop-zap --confirm-local --json
+
+JSON 中原有的 `status`、`reason`、`network_contact`、`finding_count` 等英文字段不变，
+新运行会在适用时增加 `status_zh`、`reason_zh`。这两个字段只是解释，不改变安全决策。
+
+### 23.4 Ground Truth 和回归
+
+Ground Truth 来自官方 Juice Shop `data/static/challenges.yml` 的元数据，只用于扫描后
+比对，不包含题目提示、payload 或解法：
+
+    validation\juice-shop\ground_truth.json
+    validation\juice-shop\schema.json
+
+本版本会记录挑战总数、保守可检测数、业务逻辑/认证分类，但不会自动把题目当作 Finding。
+只有成功的同一目标基线之后，才可以再运行相同序列并填写：
+
+    validation\juice-shop\regression_results.json
+    validation\juice-shop\regression_metrics.json
+
+当前文件仍明确标记为 `NOT_RUN`，原因是 ZAP 候选尚未完成 Ground Truth 的人工裁决；
+这不表示本地基线失败，也不表示检测器没有漏洞。
+
+完整结果见：
+
+    JUICE_SHOP_VALIDATION_REPORT.md
+
+阶段分析工件：
+
+    validation\juice-shop\BASELINE_ANALYSIS.md
+    validation\juice-shop\REGRESSION_ANALYSIS.md
+    validation\juice-shop\FALSE_POSITIVES.md
+    validation\juice-shop\FALSE_NEGATIVES.md
+    validation\juice-shop\DISCOVERY_REPORT.md
+    validation\juice-shop\VERIFICATION_REPORT.md
+    validation\juice-shop\AUTH_SESSION_REPORT.md
+    validation\juice-shop\MATURITY_ASSESSMENT.md
+    validation\juice-shop\validation_checkpoint.json
+
+如果 Docker 不可用，这些文件必须显示 `BLOCKED_DEPENDENCY`、`NOT_RUN` 或
+`NOT_TESTED`；当前 Docker 已可用，但 ZAP 候选仍是 `POSSIBLE`，不能被解释为扫描
+通过、漏洞成立或漏洞不存在。
+
+### 23.5 一次性执行本机验收计划
+
+当前三靶场控制项 canonical 入口为：
+
+    python tools/run_local_lab_validation.py --local-only --repeat-rounds 2
+
+脚本只允许 `http://127.0.0.1:3000/`、`http://127.0.0.1:8081/login.php` 和
+`http://127.0.0.1:8082/WebGoat/actuator/health`，重置三个应用服务后
+等待健康状态；不会访问外部 URL，也不会发送远程 AI 请求。所有工件写到：
+
+    validation\autotest\
+
+重点文件为 `LOCAL_LAB_TEST_REPORT.md`、`LOCAL_LAB_SCORE.json` 和
+`local_labs/<lab>/round_nn/`。如果某轮 ZAP 未完成，报告会写 `NOT_TESTED`，不会复制或解释
+上一次的旧 Finding；完整官方挑战 Ground Truth 未执行时，官方 Precision/Recall/FN 保持
+`null`。旧版 `run_autonomous_validation.py` 仅为 Juice Shop 历史兼容入口，不作为本轮三靶场
+成绩来源。
+
+### 23.6 非破坏性安全回归
+
+控制项验收完成后，可运行独立回归矩阵：
+
+    python tools/run_local_regression.py --local-only --repeat-rounds 2 --json
+
+它执行 6 个固定用例：Juice Shop 公开首页；DVWA 未登录 SQLi 边界、登录后 SQLi 页面、普通文本
+反射标记；WebGoat 未登录课程边界、随机合成账号登录后课程入口。三轮共 18 次执行，当前
+`18/18` 通过（`pass_rate=1.000000`）。每个用例只记录 HTTP 状态、响应长度、SHA-256、脱敏头和
+断言结果；不记录正文、Cookie、Token 或密码，不执行脚本、命令、上传、修改密码、盲注或 DoS。
+
+机器结果：`validation\\autotest\\local_regression\\LOCAL_REGRESSION_SCORE.json`；人读结果：
+`validation\\autotest\\local_regression\\LOCAL_REGRESSION_REPORT.md`。回归通过不等于漏洞确认，
+也不会把任何 Finding 标记为 `submission_ready`。

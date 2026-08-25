@@ -20,6 +20,28 @@ from .ai import _redact, sanitize_finding
 
 
 ALLOWED_DISPOSITIONS = {"candidate", "manual_review", "needs_manual_validation", "false_positive"}
+REMOTE_AI_CONSENT_ENV = "SRC_AUTO_REMOTE_AI_CONSENT"
+
+
+def _truthy_consent(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "enabled", "enable", "是", "启用"}
+
+
+def remote_session_consent_enabled(provider: str, consent_env: str = "") -> bool:
+    """Return whether the current startup session explicitly enabled a provider.
+
+    Consent is process-scoped and defaults to denied.  A provider-specific
+    variable, when present, overrides the generic remote-AI consent variable.
+    This lets the launcher enable DeepSeek without implicitly enabling OpenAI.
+    """
+
+    name = str(provider or "").strip().lower()
+    configured = str(consent_env or "").strip()
+    if not configured:
+        configured = "SRC_AUTO_{}_CONSENT".format(re.sub(r"[^A-Za-z0-9]+", "_", name).upper())
+    if configured in os.environ:
+        return _truthy_consent(os.environ.get(configured))
+    return _truthy_consent(os.environ.get(REMOTE_AI_CONSENT_ENV))
 
 
 class RemoteProviderError(RuntimeError):
@@ -129,6 +151,8 @@ class _RemoteProvider:
         output_usd_per_million: float = 0.0,
         enabled: bool = True,
         manual_only: bool = True,
+        allow_remote_llm: bool = False,
+        consent_env: str = "",
         urlopen_fn: Optional[Callable[..., Any]] = None,
     ):
         parsed_endpoint = urlsplit(str(endpoint))
@@ -155,13 +179,19 @@ class _RemoteProvider:
         self.output_usd_per_million = float(output_usd_per_million)
         self.enabled = bool(enabled)
         self.manual_only = bool(manual_only)
+        self.allow_remote_llm = bool(allow_remote_llm)
+        self.consent_env = str(consent_env or "").strip()
         self.urlopen_fn = urlopen_fn or urlopen
 
     def _key(self) -> str:
+        if not remote_session_consent_enabled(self.provider_name, self.consent_env):
+            raise RemoteProviderError("remote_ai_disabled_for_session")
         if not self.enabled:
             raise RemoteProviderError("provider_disabled")
         if not self.manual_only:
             raise RemoteProviderError("manual_only_required")
+        if not self.allow_remote_llm:
+            raise RemoteProviderError("remote_llm_disabled_by_runtime")
         key = os.environ.get(self.key_env, "").strip()
         if not key:
             raise RemoteProviderError("provider_key_missing")
@@ -246,6 +276,46 @@ class DeepSeekProvider(_RemoteProvider):
         if not isinstance(usage, dict):
             usage = {}
         return self._normalize(_parse_json_text(content), usage)
+
+
+class OpenRouterProvider(_RemoteProvider):
+    provider_name = "openrouter"
+
+    def review(self, finding: Mapping[str, Any]) -> Dict[str, Any]:
+        text = self._payload_text(finding)
+        response = self._post(
+            {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Review only this redacted, unconfirmed observation. Do not claim exploitation success, expand scope, request secrets, or suggest destructive actions. Return JSON with disposition, confidence, reason, suggested_checks.",
+                    },
+                    {"role": "user", "content": text},
+                ],
+                "provider": {
+                    "data_collection": "deny",
+                    "allow_fallbacks": False,
+                },
+                "reasoning": {"effort": "low"},
+                "response_format": {"type": "json_object"},
+                "max_tokens": self.max_output_tokens,
+                "stream": False,
+            }
+        )
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise RemoteProviderError("openrouter_response_missing_choices")
+        message = choices[0].get("message", {})
+        content = message.get("content") if isinstance(message, dict) else None
+        usage = response.get("usage", {})
+        if not isinstance(usage, dict):
+            usage = {}
+        value = _parse_json_text(content)
+        if str(value.get("disposition", "")) not in ALLOWED_DISPOSITIONS:
+            value = dict(value)
+            value["disposition"] = "manual_review"
+        return self._normalize(value, usage)
 
 
 class OpenAIProvider(_RemoteProvider):

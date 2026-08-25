@@ -1,0 +1,12 @@
+{
+  "target_id": "vampi-local",
+  "vendor": "project-owned Docker local lab",
+  "authorization_source": "operator-started fixed local VAmPI container",
+  "root_domains": ["localhost"],
+  "allowed_hosts": ["localhost", "127.0.0.1"],
+  "excluded_hosts": [],
+  "allowed_ports": [8083],
+  "test_window": "operator-invoked only",
+  "confirmed": true,
+  "allow_network_contact": true
+}

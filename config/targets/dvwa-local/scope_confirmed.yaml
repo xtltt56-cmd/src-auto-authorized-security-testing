@@ -1,0 +1,12 @@
+{
+  "target_id": "dvwa-local",
+  "vendor": "project-pinned-local-docker",
+  "authorization_source": "local DVWA container created by SRC-Auto",
+  "root_domains": [],
+  "allowed_hosts": ["127.0.0.1", "localhost"],
+  "excluded_hosts": [],
+  "allowed_ports": [8081],
+  "test_window": "operator-invoked local validation only",
+  "confirmed": true,
+  "allow_network_contact": true
+}

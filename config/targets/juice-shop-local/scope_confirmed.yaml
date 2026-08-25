@@ -1,0 +1,12 @@
+{
+  "target_id": "juice-shop-local",
+  "vendor": "operator-started-local-docker",
+  "authorization_source": "local Docker instance started by operator",
+  "root_domains": [],
+  "allowed_hosts": ["127.0.0.1", "localhost"],
+  "excluded_hosts": [],
+  "allowed_ports": [3000],
+  "test_window": "operator-invoked local validation only",
+  "confirmed": true,
+  "allow_network_contact": true
+}

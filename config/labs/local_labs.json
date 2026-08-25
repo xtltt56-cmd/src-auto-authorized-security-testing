@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "mode": "local-only",
+  "description": "固定 digest、仅回环发布的本地训练靶场清单",
+  "labs": [
+    {
+      "lab_id": "juice-shop",
+      "service": "juice-shop",
+      "image": "bkimminich/juice-shop",
+      "digest": "sha256:73c53fbf442e8337b3ea3d98c7e8550308854701ebdfce4cc39768f36b75430e",
+      "container_port": 3000,
+      "host": "127.0.0.1",
+      "host_port": 3000,
+      "health_url": "http://127.0.0.1:3000/"
+    },
+    {
+      "lab_id": "dvwa",
+      "service": "dvwa",
+      "image": "ghcr.io/digininja/dvwa",
+      "digest": "sha256:38d8f4894c9ec064e42e43eaf423d55ad09a7f59cada82414217113db6129c3e",
+      "container_port": 80,
+      "host": "127.0.0.1",
+      "host_port": 8081,
+      "health_url": "http://127.0.0.1:8081/login.php"
+    },
+    {
+      "lab_id": "webgoat",
+      "service": "webgoat",
+      "image": "webgoat/webgoat",
+      "digest": "sha256:3101bd9e7bcfe122d7ef91e690ef3720de36cc4e86b3d06763a1ddf2e2751a4b",
+      "container_port": 8080,
+      "host": "127.0.0.1",
+      "host_port": 8082,
+      "health_url": "http://127.0.0.1:8082/WebGoat/actuator/health"
+    },
+    {
+      "lab_id": "vampi",
+      "service": "vampi",
+      "image": "erev0s/vampi",
+      "digest": "sha256:0a5a224b6e14ae7da6a6ea265178ff71286ff903aec74adee98f660bb0e4ca12",
+      "container_port": 5000,
+      "host": "127.0.0.1",
+      "host_port": 8083,
+      "health_url": "http://127.0.0.1:8083/ui/"
+    }
+  ]
+}

@@ -1,8 +1,9 @@
-# Delivery Plan
+# 交付计划
 
-1. Freeze the workspace and preserve the two existing sibling artifacts.
-2. Implement and test scope, SQLite, controls, adapters, pipeline, AI fallback, evidence and reporting.
-3. Add local-lab fixtures and manual START/STOP/STATUS/RESUME commands.
-4. Verify every control-plane invariant, failure path, E2E path, and resource/disk path.
-5. Install or verify free official tools only when the environment permits it; document missing WSL/admin-dependent tools honestly.
-6. Produce final operations and implementation reports; never auto-submit a vulnerability report.
+1. 冻结工作区并保护两个既有的用户兄弟路径；
+2. 实现并测试 Scope、SQLite、控制器、适配器、流水线、本地 AI 回退、证据和报告；
+3. 增加 local-lab fixture 以及人工 START/STOP/STATUS/RESUME 命令；
+4. 验证每个控制层不变量、失败路径、E2E 路径、资源和磁盘路径；
+5. 只在环境允许时安装或验证免费的官方工具，并诚实记录缺失 WSL/管理员权限的工具；
+6. 生成最终运维和实现报告，绝不自动提交漏洞报告；
+7. 将操作者界面和说明默认本地化为简体中文，同时保留英文机器字段和安全枚举值。

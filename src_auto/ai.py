@@ -172,6 +172,7 @@ class ModelRouter:
         config = config or {}
         self.default_lane = str(config.get("default_lane", "primary"))
         self.lanes = dict(config.get("lanes", {}))
+        self.runtime_policy = dict(config.get("runtime_policy", {}))
         self.urlopen_fn = urlopen_fn
 
     def route(self, task: str, complexity: str = "normal") -> Route:
@@ -188,6 +189,9 @@ class ModelRouter:
         )
 
     def provider_for(self, route: Route) -> Optional[OllamaProvider]:
+        if bool(self.runtime_policy.get("LOCAL_LLM_ONLY", self.runtime_policy.get("local_llm_only", False))):
+            if route.provider.lower() not in ("ollama", "local"):
+                return None
         if route.provider.lower() != "ollama" or not route.enabled:
             return None
         return OllamaProvider(route.endpoint, route.model, route.timeout_seconds, self.urlopen_fn)

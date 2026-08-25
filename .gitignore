@@ -11,6 +11,8 @@ reports/*
 *.key
 *.pem
 .env
+config/secrets/
+config/sessions/
 .venv/
 STOP
 
@@ -19,6 +21,15 @@ vendor/
 lab/.cache/
 __pycache__/
 *.pyc
+
+# Generated local validation evidence, scanner caches, and encrypted test data
+.schemathesis/
+validation/
+JUICE_SHOP_VALIDATION_REPORT.md
+*.dpapi
+
+# Internal agent planning material is not part of the distributable project
+docs/superpowers/
 
 # Keep the directory structure without committing artifacts
 !data/.gitkeep

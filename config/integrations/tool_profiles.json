@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "tools": {
+    "subfinder": {
+      "role": "asset_discovery",
+      "command": "vendor/bin/subfinder.exe",
+      "source": "https://github.com/projectdiscovery/subfinder",
+      "allowed_modes": ["passive"],
+      "is_vulnerability_scanner": false,
+      "optional": false
+    },
+    "httpx": {
+      "role": "http_probe",
+      "command": "vendor/bin/httpx.exe",
+      "source": "https://github.com/projectdiscovery/httpx",
+      "allowed_modes": ["bounded-probe"],
+      "is_vulnerability_scanner": false,
+      "optional": false
+    },
+    "katana": {
+      "role": "web_crawler",
+      "command": "vendor/bin/katana.exe",
+      "source": "https://github.com/projectdiscovery/katana",
+      "allowed_modes": ["bounded-crawl"],
+      "is_vulnerability_scanner": false,
+      "optional": false
+    },
+    "nuclei": {
+      "role": "template_vulnerability_scanner",
+      "command": "vendor/bin/nuclei.cmd",
+      "source": "https://github.com/projectdiscovery/nuclei",
+      "allowed_modes": ["reviewed-templates", "passive"],
+      "is_vulnerability_scanner": true,
+      "optional": true
+    },
+    "zap": {
+      "role": "web_application_scanner",
+      "command": "vendor/bin/zap.cmd",
+      "source": "https://github.com/zaproxy/zaproxy",
+      "allowed_modes": ["passive", "reviewed-active"],
+      "is_vulnerability_scanner": true,
+      "optional": false
+    },
+    "bbot": {
+      "role": "external_attack_surface",
+      "command": "vendor/bin/bbot.cmd",
+      "source": "https://github.com/blacklanternsecurity/bbot",
+      "allowed_modes": ["passive", "easm"],
+      "is_vulnerability_scanner": false,
+      "optional": true
+    },
+    "schemathesis": {
+      "role": "api_schema_testing",
+      "command": "vendor/bin/schemathesis.cmd",
+      "source": "https://github.com/schemathesis/schemathesis",
+      "allowed_modes": ["schema-smoke", "local-stateful"],
+      "is_vulnerability_scanner": false,
+      "optional": true
+    },
+    "testssl": {
+      "role": "tls_assessment",
+      "command": "vendor/bin/testssl.cmd",
+      "source": "https://github.com/testssl/testssl.sh",
+      "allowed_modes": ["bounded-tls"],
+      "is_vulnerability_scanner": false,
+      "optional": true
+    },
+    "reconftw": {
+      "role": "linux_orchestrator",
+      "command": "vendor/reconftw/reconftw.sh",
+      "source": "https://github.com/six2dez/reconftw",
+      "allowed_modes": ["disabled"],
+      "is_vulnerability_scanner": false,
+      "optional": true
+    }
+  }
+}

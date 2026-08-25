@@ -6,6 +6,7 @@ from unittest.mock import patch
 from src_auto.remote_ai import (
     DeepSeekProvider,
     OpenAIProvider,
+    OpenRouterProvider,
     RemoteProviderError,
     RemoteReviewRequest,
 )
@@ -27,6 +28,16 @@ class FakeResponse:
 
 class RemoteAITests(unittest.TestCase):
     def setUp(self):
+        self._consent = patch.dict(
+            os.environ,
+            {
+                "SRC_AUTO_REMOTE_AI_CONSENT": "enabled",
+                "SRC_AUTO_DEEPSEEK_CONSENT": "enabled",
+            },
+            clear=False,
+        )
+        self._consent.start()
+        self.addCleanup(self._consent.stop)
         self.finding = {
             "title": "Possible token leak",
             "url": "https://user:password@example.test/path?token=secret#fragment",
@@ -34,6 +45,29 @@ class RemoteAITests(unittest.TestCase):
             "severity": "medium",
             "evidence": "Authorization: Bearer x-token; Authorization: Basic basic-secret; cookie=session=secret; token=secret",
         }
+
+    def test_deepseek_denied_without_startup_consent_before_network(self):
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append(request)
+            return FakeResponse({})
+
+        with patch.dict(
+            os.environ,
+            {"DEEPSEEK_API_KEY": "unit-test-secret", "SRC_AUTO_DEEPSEEK_CONSENT": "disabled"},
+            clear=False,
+        ):
+            with self.assertRaises(RemoteProviderError) as blocked:
+                DeepSeekProvider(
+                    endpoint="https://api.deepseek.com/chat/completions",
+                    model="deepseek-v4-flash",
+                    key_env="DEEPSEEK_API_KEY",
+                    allow_remote_llm=True,
+                    urlopen_fn=fake_urlopen,
+                ).review(self.finding)
+        self.assertEqual(str(blocked.exception), "remote_ai_disabled_for_session")
+        self.assertEqual(calls, [])
 
     def test_remote_request_redacts_credentials_queries_and_secrets(self):
         request = RemoteReviewRequest.from_finding(self.finding)
@@ -79,6 +113,7 @@ class RemoteAITests(unittest.TestCase):
                 timeout_seconds=7,
                 max_input_tokens=2000,
                 max_output_tokens=256,
+                allow_remote_llm=True,
                 urlopen_fn=fake_urlopen,
             ).review(self.finding)
         self.assertEqual(result["provider"], "deepseek")
@@ -122,6 +157,7 @@ class RemoteAITests(unittest.TestCase):
                 timeout_seconds=9,
                 max_input_tokens=2000,
                 max_output_tokens=256,
+                allow_remote_llm=True,
                 urlopen_fn=fake_urlopen,
             ).review(self.finding)
         self.assertEqual(result["provider"], "openai")
@@ -136,6 +172,102 @@ class RemoteAITests(unittest.TestCase):
         self.assertEqual(payload["max_output_tokens"], 256)
         self.assertEqual(payload["text"]["format"]["type"], "json_schema")
 
+    def test_openrouter_ox_alpha_uses_private_manual_json_contract(self):
+        calls = []
+
+        def fake_urlopen(request, timeout):
+            calls.append((request, timeout))
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "disposition": "manual_review",
+                                        "confidence": 0.6,
+                                        "reason": "Human verification is required.",
+                                        "suggested_checks": ["repeat one read-only request"],
+                                    }
+                                )
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 18, "completion_tokens": 9},
+                }
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENROUTER_API_KEY": "unit-test-openrouter-secret",
+                "SRC_AUTO_OPENROUTER_CONSENT": "enabled",
+            },
+            clear=False,
+        ):
+            result = OpenRouterProvider(
+                endpoint="https://openrouter.ai/api/v1/chat/completions",
+                model="stealth/ox-alpha",
+                key_env="OPENROUTER_API_KEY",
+                consent_env="SRC_AUTO_OPENROUTER_CONSENT",
+                timeout_seconds=11,
+                max_input_tokens=2000,
+                max_output_tokens=256,
+                allow_remote_llm=True,
+                urlopen_fn=fake_urlopen,
+            ).review(self.finding)
+        self.assertEqual(result["provider"], "openrouter")
+        self.assertEqual(result["model"], "stealth/ox-alpha")
+        request, timeout = calls[0]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(payload["model"], "stealth/ox-alpha")
+        self.assertEqual(payload["provider"]["data_collection"], "deny")
+        self.assertEqual(payload["reasoning"]["effort"], "low")
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertFalse(payload["stream"])
+        self.assertEqual(timeout, 11)
+
+    def test_openrouter_unknown_disposition_fails_safe_to_manual_review(self):
+        def fake_urlopen(request, timeout):
+            return FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "disposition": "not_applicable",
+                                        "confidence": 0.2,
+                                        "reason": "Synthetic connectivity input is not a finding.",
+                                        "suggested_checks": [],
+                                    }
+                                )
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 6},
+                }
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENROUTER_API_KEY": "unit-test-openrouter-secret",
+                "SRC_AUTO_OPENROUTER_CONSENT": "enabled",
+            },
+            clear=False,
+        ):
+            result = OpenRouterProvider(
+                endpoint="https://openrouter.ai/api/v1/chat/completions",
+                model="stealth/ox-alpha",
+                key_env="OPENROUTER_API_KEY",
+                consent_env="SRC_AUTO_OPENROUTER_CONSENT",
+                allow_remote_llm=True,
+                urlopen_fn=fake_urlopen,
+            ).review(self.finding)
+        self.assertEqual(result["disposition"], "manual_review")
+
     def test_missing_key_and_invalid_output_fail_closed(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(RemoteProviderError):
@@ -143,6 +275,7 @@ class RemoteAITests(unittest.TestCase):
                     endpoint="https://api.deepseek.com/chat/completions",
                     model="deepseek-v4-flash",
                     key_env="DEEPSEEK_API_KEY",
+                    allow_remote_llm=True,
                 ).review(self.finding)
 
         def invalid_urlopen(request, timeout):
@@ -154,6 +287,7 @@ class RemoteAITests(unittest.TestCase):
                     endpoint="https://api.deepseek.com/chat/completions",
                     model="deepseek-v4-flash",
                     key_env="DEEPSEEK_API_KEY",
+                    allow_remote_llm=True,
                     urlopen_fn=invalid_urlopen,
                 ).review(self.finding)
 
@@ -171,6 +305,7 @@ class RemoteAITests(unittest.TestCase):
                     model="deepseek-v4-flash",
                     key_env="DEEPSEEK_API_KEY",
                     enabled=False,
+                    allow_remote_llm=True,
                     urlopen_fn=fake_urlopen,
                 ).review(self.finding)
             with self.assertRaises(RemoteProviderError) as limited:
@@ -179,6 +314,7 @@ class RemoteAITests(unittest.TestCase):
                     model="deepseek-v4-flash",
                     key_env="DEEPSEEK_API_KEY",
                     max_input_tokens=1,
+                    allow_remote_llm=True,
                     urlopen_fn=fake_urlopen,
                 ).review(self.finding)
         self.assertEqual(str(disabled.exception), "provider_disabled")

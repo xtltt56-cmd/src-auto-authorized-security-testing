@@ -1,0 +1,9 @@
+{
+  "run_id": "6fb571f87b264e30bf7ce0c804d4fbe9",
+  "finding_fingerprint": "23bd70c545b88a1b4e7c6c147db51d1049fa76ec01dce9a870ee194a38434193",
+  "title": "Missing security response header",
+  "url": "http://localhost:8765/",
+  "severity": "low",
+  "observation": "Loopback fixture intentionally omits X-Content-Type-Options; no payload or state change was used.",
+  "safety_note": "仅保留最小非破坏性观察；未保存凭据、用户数据或攻击载荷。"
+}

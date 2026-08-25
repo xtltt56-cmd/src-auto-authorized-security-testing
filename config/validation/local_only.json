@@ -1,0 +1,9 @@
+{
+  "AI_PROVIDER": "local",
+  "LOCAL_LLM_ONLY": true,
+  "ALLOW_REMOTE_LLM": false,
+  "allowed_hosts": ["127.0.0.1", "localhost"],
+  "allowed_ports": [3000, 8081, 8082, 8083],
+  "max_concurrency": 5,
+  "profile": "owasp-local-only"
+}

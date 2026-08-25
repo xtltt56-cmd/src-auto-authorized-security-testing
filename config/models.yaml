@@ -18,6 +18,7 @@
       "endpoint": "https://api.deepseek.com/chat/completions",
       "model": "deepseek-v4-flash",
       "key_env": "DEEPSEEK_API_KEY",
+      "consent_env": "SRC_AUTO_DEEPSEEK_CONSENT",
       "thinking": false,
       "timeout_seconds": 60,
       "max_input_tokens": 2000,
@@ -32,11 +33,26 @@
       "endpoint": "https://api.openai.com/v1/responses",
       "model": "gpt-5.6-luna",
       "key_env": "OPENAI_API_KEY",
+      "consent_env": "SRC_AUTO_OPENAI_CONSENT",
       "timeout_seconds": 60,
       "max_input_tokens": 2000,
       "max_output_tokens": 256,
       "input_usd_per_million": 0.2,
       "output_usd_per_million": 1.2
+    },
+    "openrouter": {
+      "enabled": true,
+      "manual_only": true,
+      "protocol": "openai_chat_completions",
+      "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+      "model": "stealth/ox-alpha",
+      "key_env": "OPENROUTER_API_KEY",
+      "consent_env": "SRC_AUTO_OPENROUTER_CONSENT",
+      "timeout_seconds": 60,
+      "max_input_tokens": 2000,
+      "max_output_tokens": 256,
+      "input_usd_per_million": 0.0,
+      "output_usd_per_million": 0.0
     }
   }
 }

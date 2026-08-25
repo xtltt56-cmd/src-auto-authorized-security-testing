@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import src_auto.cli as cli
 from src_auto.cli import build_parser
+from src_auto.runtime_policy import RuntimePolicy
 from src_auto.scope import ScopeGuard, ScopePolicy
 from src_auto.store import Store
 
@@ -19,6 +20,25 @@ class RemoteCLITests(unittest.TestCase):
         self.db_path = Path(self.tmp.name) / "state.sqlite3"
         self.scope_path = cli.DEFAULT_LOCAL_SCOPE
         self.guard = ScopeGuard(ScopePolicy.from_file(self.scope_path))
+        self.remote_runtime = RuntimePolicy.from_mapping(
+            {
+                "AI_PROVIDER": "local",
+                "LOCAL_LLM_ONLY": False,
+                "ALLOW_REMOTE_LLM": True,
+                "allowed_hosts": ["localhost", "127.0.0.1"],
+                "allowed_ports": [3000],
+            }
+        )
+        self._consent = patch.dict(
+            os.environ,
+            {
+                "SRC_AUTO_REMOTE_AI_CONSENT": "enabled",
+                "SRC_AUTO_DEEPSEEK_CONSENT": "enabled",
+            },
+            clear=False,
+        )
+        self._consent.start()
+        self.addCleanup(self._consent.stop)
         store = Store(self.db_path)
         self.run_id = store.create_run("local-lab", self.guard.policy.digest(), "local")
         self.inserted = store.insert_finding(
@@ -38,7 +58,9 @@ class RemoteCLITests(unittest.TestCase):
 
     def _run(self, argv):
         output = io.StringIO()
-        with patch.object(cli, "DB_PATH", self.db_path), contextlib.redirect_stdout(output):
+        with patch.object(cli, "DB_PATH", self.db_path), patch.object(
+            cli, "_runtime_policy", return_value=self.remote_runtime
+        ), contextlib.redirect_stdout(output):
             code = cli.main(argv)
         return code, json.loads(output.getvalue())
 
@@ -65,10 +87,56 @@ class RemoteCLITests(unittest.TestCase):
         )
         self.assertTrue(triage.confirm_external)
         self.assertEqual(triage.confirm_digest, "a" * 64)
+        openrouter = parser.parse_args(
+            ["remote-preview", "--run-id", "run-1", "--finding-id", "1", "--provider", "openrouter"]
+        )
+        self.assertEqual(openrouter.provider, "openrouter")
 
     def test_remote_status_command_exists(self):
         args = build_parser().parse_args(["remote-status"])
         self.assertEqual(args.command, "remote-status")
+
+    def test_remote_status_json_mode_remains_machine_readable(self):
+        code, value = self._run(["remote-status", "--json"])
+        self.assertEqual(code, 0)
+        self.assertIn("providers", value)
+        self.assertFalse(value["providers"]["deepseek"]["network_contact"])
+        self.assertTrue(value["startup_consent_required"])
+        self.assertTrue(value["providers"]["deepseek"]["session_consent"])
+
+    def test_startup_consent_overlays_remote_runtime_only_for_current_session(self):
+        with patch.dict(
+            os.environ,
+            {"SRC_AUTO_REMOTE_AI_CONSENT": "disabled", "SRC_AUTO_DEEPSEEK_CONSENT": "disabled"},
+            clear=False,
+        ):
+            denied = cli._runtime_policy()
+        self.assertTrue(denied.local_llm_only)
+        self.assertFalse(denied.allow_remote_llm)
+
+        with patch.dict(
+            os.environ,
+            {"SRC_AUTO_REMOTE_AI_CONSENT": "enabled", "SRC_AUTO_DEEPSEEK_CONSENT": "enabled"},
+            clear=False,
+        ):
+            enabled = cli._runtime_policy()
+        self.assertFalse(enabled.local_llm_only)
+        self.assertTrue(enabled.allow_remote_llm)
+        self.assertEqual(enabled.ai_provider, "remote")
+
+        with patch.dict(
+            os.environ,
+            {
+                "SRC_AUTO_REMOTE_AI_CONSENT": "disabled",
+                "SRC_AUTO_DEEPSEEK_CONSENT": "disabled",
+                "SRC_AUTO_OPENAI_CONSENT": "disabled",
+                "SRC_AUTO_OPENROUTER_CONSENT": "enabled",
+            },
+            clear=False,
+        ):
+            openrouter_enabled = cli._runtime_policy()
+        self.assertFalse(openrouter_enabled.local_llm_only)
+        self.assertTrue(openrouter_enabled.allow_remote_llm)
 
     def test_preview_is_network_free_and_digest_bound(self):
         with patch("src_auto.cli._remote_provider", side_effect=AssertionError("preview must not build a sender")):
@@ -109,6 +177,32 @@ class RemoteCLITests(unittest.TestCase):
             )
         self.assertEqual(code, 3)
         self.assertEqual(value["reason"], "confirm_external_required")
+        self.assertFalse(value["network_contact"])
+
+    def test_triage_denied_by_startup_consent_before_provider_lookup(self):
+        with patch.dict(
+            os.environ,
+            {"SRC_AUTO_REMOTE_AI_CONSENT": "disabled", "SRC_AUTO_DEEPSEEK_CONSENT": "disabled"},
+            clear=False,
+        ), patch("src_auto.cli._remote_provider", side_effect=AssertionError("consent gate bypassed")):
+            code, value = self._run(
+                [
+                    "remote-triage",
+                    "--run-id",
+                    self.run_id,
+                    "--finding-id",
+                    str(self.inserted.row_id),
+                    "--provider",
+                    "deepseek",
+                    "--scope",
+                    str(self.scope_path),
+                    "--confirm-external",
+                    "--confirm-digest",
+                    "a" * 64,
+                ]
+            )
+        self.assertEqual(code, 3)
+        self.assertEqual(value["reason"], "remote_ai_disabled_for_session")
         self.assertFalse(value["network_contact"])
 
     def test_digest_mismatch_blocks_without_provider_lookup(self):

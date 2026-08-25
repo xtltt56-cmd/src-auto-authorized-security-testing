@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "profile": "owasp-local-regression",
+  "description": "仅回环、固定靶场、非破坏性的可重复回归用例。",
+  "cases": [
+    {
+      "case_id": "juice-shop-public-surface",
+      "lab_id": "juice-shop",
+      "kind": "public-surface",
+      "method": "GET",
+      "path": "/",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["OWASP Juice Shop"],
+        "body_size_min": 200
+      },
+      "description": "确认 Juice Shop 首页在回环端口可访问。"
+    },
+    {
+      "case_id": "dvwa-auth-boundary",
+      "lab_id": "dvwa",
+      "kind": "auth-boundary",
+      "method": "GET",
+      "path": "/vulnerabilities/sqli/",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [302],
+        "location_contains": ["login.php"]
+      },
+      "description": "确认未登录访问 DVWA 漏洞页面会停在登录边界。"
+    },
+    {
+      "case_id": "dvwa-authenticated-sqli-surface",
+      "lab_id": "dvwa",
+      "kind": "authenticated-surface",
+      "method": "GET",
+      "path": "/vulnerabilities/sqli/",
+      "auth": "dvwa-default",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["SQL Injection", "name=\"id\""],
+        "body_size_min": 500
+      },
+      "description": "使用靶场自带本地账号确认 SQLi 训练页面已初始化。"
+    },
+    {
+      "case_id": "dvwa-safe-reflection-marker",
+      "lab_id": "dvwa",
+      "kind": "safe-reflection",
+      "method": "GET",
+      "path": "/vulnerabilities/xss_r/",
+      "auth": "dvwa-default",
+      "query": {
+        "name": "SRC-Auto-Marker-2026"
+      },
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["SRC-Auto-Marker-2026", "Reflected Cross Site Scripting"]
+      },
+      "description": "只发送普通文本标记，观察训练靶场是否原样反射；不发送脚本。"
+    },
+    {
+      "case_id": "webgoat-auth-boundary",
+      "lab_id": "webgoat",
+      "kind": "auth-boundary",
+      "method": "GET",
+      "path": "/WebGoat/start.mvc",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [302],
+        "location_contains": ["/WebGoat/login"]
+      },
+      "description": "确认未登录 WebGoat 访问课程入口会回到登录页。"
+    },
+    {
+      "case_id": "webgoat-authenticated-surface",
+      "lab_id": "webgoat",
+      "kind": "authenticated-surface",
+      "method": "GET",
+      "path": "/WebGoat/start.mvc",
+      "auth": "webgoat-synthetic",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["WebGoat"],
+        "body_size_min": 100
+      },
+      "description": "注册一次随机本地合成账号并确认课程入口可用；账号不写入证据。"
+    },
+    {
+      "case_id": "vampi-openapi-public-surface",
+      "lab_id": "vampi",
+      "kind": "public-surface",
+      "method": "GET",
+      "path": "/openapi.json",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["openapi", "VAmPI"],
+        "body_size_min": 1000
+      },
+      "description": "确认本机 VAmPI 的 OpenAPI 文档可访问；不创建账号、不修改数据。"
+    }
+  ]
+}
