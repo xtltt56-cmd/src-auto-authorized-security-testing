@@ -29,6 +29,14 @@ validation/
 JUICE_SHOP_VALIDATION_REPORT.md
 *.dpapi
 
+# Local dashboard toolchain and browser test output
+runtime/
+dashboard/node_modules/
+dashboard/dist/
+dashboard/playwright-report/
+dashboard/test-results/
+dashboard/storybook-static/
+
 # Internal agent planning material is not part of the distributable project
 docs/superpowers/
 
