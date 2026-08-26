@@ -14,6 +14,7 @@ reports/*
 config/secrets/
 config/sessions/
 .venv/
+.worktrees/
 STOP
 
 # Tool downloads and generated binaries
