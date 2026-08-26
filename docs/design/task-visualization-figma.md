@@ -314,9 +314,11 @@ Frame：`Desktop / Startup States / 600x420`。
 Figma 文件完成后，在本文件底部追加：
 
 ```text
-Figma file URL: 待创建
-Pages: 待创建
-Node map: 待创建
+Figma file URL: https://www.figma.com/design/GddSEorHQZdVOBQUXFnDyS
+Figma file key: GddSEorHQZdVOBQUXFnDyS
+Figma file name: SRC-Auto｜授权安全测试编排与候选漏洞研判｜实时任务可视化 V1
+Pages: 待写入（Starter 方案 MCP 调用额度已达上限）
+Node map: 待写入
 Approved by: 待人工审核
 Approved at: 待人工审核
 Exported screenshots:
@@ -327,5 +329,14 @@ Exported screenshots:
   - docs/design/task-visualization/history.png
   - docs/design/task-visualization/startup.png
 ```
+
+### 2026-08-26 Figma 执行记录
+
+- 已通过 Figma MCP 身份检查，当前计划为 `TTL XXT's team / Starter`。
+- 已创建上述正式 Design 文件，未写入真实目标、密钥、Cookie、发现或报告数据。
+- 新文件创建后的首次只读结构检查被 Figma 返回的 `Starter plan MCP tool call limit` 阻断。
+- 按错误恢复规则未重复调用，当前文件仍为空白；不得把它描述为已完成视觉稿。
+- 2026-08-26 续作时仅执行一次轻量 `get_metadata` 复查，仍被相同额度墙阻断；未收到任何页面元数据，也未执行写入。
+- 额度恢复或计划升级后，从 `P0.b`（文件结构与字体检查）继续，再依次完成设计令牌、组件库、页面、DPI 评审、截图与人工批准。
 
 在用户明确批准前，`dashboard/src` 不得创建新的生产页面组件。Figma 只负责视觉和交互规格，任务安全边界仍以总体设计规格和后端测试为准。

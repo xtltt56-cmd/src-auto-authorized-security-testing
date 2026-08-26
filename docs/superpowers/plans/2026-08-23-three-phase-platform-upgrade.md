@@ -79,7 +79,7 @@
 - Test: `tests/test_business_api_lab.py`
 
 - [ ] Write failing tests for a loopback-only fourth lab, fixed image/build context, health check, documented test accounts, intentional horizontal-authorization fixture and safe reset behavior.
-- [ ] Implement a small deterministic local API fixture with account-owned objects and OpenAPI documentation; bind it only to `127.0.0.1:8083`.
+- [ ] Implement a small deterministic local API fixture with account-owned objects and OpenAPI documentation; bind it only to `127.0.0.1:8084` because the existing VAmPI lab occupies `127.0.0.1:8083`.
 - [ ] Add the lab to lifecycle/status code and add a Schemathesis smoke-plan that targets only its OpenAPI document.
 - [ ] Start Docker, validate health, and run only bounded local tests; do not run aggressive RESTler fuzzing.
 - [ ] Save ground truth and comparison evidence under `validation/business-api/`.
@@ -143,3 +143,9 @@
 - [ ] Run the full unittest suite, PowerShell parser checks, UTF-8/BOM checks, tool status, Docker Compose configuration, lab health, local validation and local regression.
 - [ ] Compare every approved design requirement with implementation evidence and list any environment-dependent capability honestly.
 - [ ] Save exact commands, exit codes, test counts, tool versions, lab scores and screenshot paths in the final report.
+
+## Current execution status (2026-08-26)
+
+The implementation follows the plan's control boundaries and has completed the code-level work for Tasks 1–8 plus the documentation and verification work in Task 9. The deterministic business API was added as a fifth fixed loopback lab on port `8084` (the plan's original `8083` was already occupied by VAmPI). The phase-three owned-asset registration and defensive JSONL analysis are recommendation-only and keep authorization pending until a human supplies evidence. The desktop console exposes the planned Chinese navigation, target/authorization, session/API review, local-lab, defensive-observation and audit-stop workflows; it never starts a real-target scan from the home screen.
+
+The current verification evidence is `238/238` Python tests, `12/12` PowerShell scripts parsed without errors, a successful Docker Compose configuration check, five healthy loopback labs, `AUTHORIZED_LOCAL_VALIDATION_READY`, and `30/30` independent local-regression checks across three rounds. The GUI suite now includes a real WinForms report-selection preview regression. A transient Docker engine outage was recorded and recovered; the history and recovery commands are retained in `validation/business-api/DOCKER_RUNTIME_BLOCKER.md`. The business API OpenAPI contract also received the stable `x-src-auto.lab_id=business-api` marker required by the regression assertion. No remote AI call, external target contact or automatic submission occurred in this round.

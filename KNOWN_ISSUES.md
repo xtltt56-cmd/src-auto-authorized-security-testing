@@ -1,5 +1,13 @@
 # 已知问题与诚实限制
 
+## 2026-08-26 三期升级当前状态
+
+- 当前代码/控制台/文档按三期计划接入，完整 Python 测试为 `238/238`；12 个项目 PowerShell 脚本解析无错误，关键中文脚本均保留 UTF-8 BOM。
+- 本地实验面已经从四个扩展为五个：新增确定性业务 API `127.0.0.1:8084`；原 VAmPI 继续使用 `127.0.0.1:8083`。五个入口都只允许回环地址。
+- 本轮早期曾出现 Docker Desktop Linux engine 命名管道不可用，导致短暂的 `0/5 READY`、`NOT_FOUND` 和业务 API `BLOCKED_DEPENDENCY`；随后已启动并恢复 Docker。当前五个靶场均为 `READY`，本轮独立回归 `30/30` 通过，本地验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`。精确错误、恢复命令和历史阻断证据见 `validation/business-api/DOCKER_RUNTIME_BLOCKER.md`；若 Docker 再次不可用，必须重新标记为阻断，不能沿用本轮成绩。
+- 业务 API 对象矩阵、蓝队日志分析和桌面控制台的离线/进程内验证已完成；矩阵输出为待人工复核候选，日志分析不保留原始查询串/IP，自动处置数量为 `0`。远程 AI、真实外部目标和自动提交本轮均为 `0`。
+- Figma V2 视觉稿的 manifest/README 保存在 `design/frontend-mockups/2026-08-26-figma-v2/`；生产界面使用本地 WinForms 实现，设计插件导出额度不足不会被伪报为生产代码。
+
 ## 2026-08-21 当前状态校正
 
 WSL2 2.7.12、Ubuntu 和 Docker Desktop 4.87.0 已按操作者授权安装；Ubuntu 位于

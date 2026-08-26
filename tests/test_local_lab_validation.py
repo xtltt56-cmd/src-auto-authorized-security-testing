@@ -2,6 +2,7 @@ import unittest
 
 from tools.run_local_lab_validation import (
     adjudicate_zap_finding,
+    business_api_control_record,
     build_lab_score,
     discovery_control_record,
     expected_control_cases,
@@ -131,6 +132,30 @@ class LocalLabValidationTests(unittest.TestCase):
         surface = schema_surface_control_record("vampi", {"status": "POSSIBLE_SCHEMA_CONTRACT_ISSUES", "schema_url": "http://127.0.0.1:8083/openapi.json"})
         self.assertEqual(surface["expected_case_id"], "vampi-openapi-surface")
 
+    def test_business_api_has_bounded_schema_and_idor_candidate_controls(self):
+        cases = expected_control_cases("business-api")
+        self.assertEqual(
+            [item["case_id"] for item in cases],
+            [
+                "business-api-openapi-surface",
+                "business-api-readonly-schema-smoke",
+                "business-api-intentional-idor-candidate",
+            ],
+        )
+        record = business_api_control_record(
+            "business-api",
+            {
+                "status": "COMPLETED",
+                "base_url": "http://127.0.0.1:8084",
+                "disposition": "candidate_broken_object_authorization",
+                "owner_peer_equivalent": True,
+                "response_statuses": {"owner": 200, "peer": 200, "anonymous": 403},
+            },
+        )
+        self.assertEqual(record["status"], "TRUE_POSITIVE")
+        self.assertEqual(record["expected_case_id"], "business-api-intentional-idor-candidate")
+        self.assertFalse(record["submission_ready"])
+
     def test_human_report_renderer_keeps_bounty_metric_separate(self):
         report = render_local_lab_report(
             {
@@ -152,7 +177,8 @@ class LocalLabValidationTests(unittest.TestCase):
                 "submission_status": "NO_AUTO_SUBMISSION",
             }
         )
-        self.assertIn("本地四靶场最终验收报告", report)
+        self.assertIn("本地五靶场最终验收报告", report)
+        self.assertIn("五个应用靶场的生命周期", report)
         self.assertIn("WebGoat", report)
         self.assertIn("bounty_ready_count=0", report)
         self.assertIn("不是补天赏金漏洞命中率", report)

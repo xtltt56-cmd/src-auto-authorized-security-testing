@@ -1,0 +1,114 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SRC-Auto 本地业务逻辑训练 API",
+    "version": "1.0.0",
+    "description": "仅用于本机回环靶场的合成订单接口。order-a/order-b 的横向授权候选是刻意保留的训练条件，必须由人工复核，不能据此判断真实目标存在漏洞。"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8084",
+      "description": "固定回环地址；禁止改为真实目标"
+    }
+  ],
+  "x-src-auto": {
+    "lab_id": "business-api",
+    "host": "127.0.0.1",
+    "port": 8084,
+    "reset": "process-local synthetic data only",
+    "scope": "local-only",
+    "intentional_candidate": "buyer-a and buyer-b can read each other's synthetic order for review training"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "健康检查",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "靶场已就绪"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "获取本地契约",
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 文档"
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{order_id}": {
+      "get": {
+        "summary": "读取合成订单",
+        "description": "使用 X-Test-User 模拟两个本地测试账号；响应中会标记刻意保留的候选，不产生任何写操作。",
+        "operationId": "getOrder",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["order-a", "order-b"]
+            }
+          },
+          {
+            "name": "X-Test-User",
+            "in": "header",
+            "required": false,
+            "description": "仅为本地夹具模拟身份，不是认证凭据。",
+            "schema": {
+              "type": "string",
+              "enum": ["buyer-a", "buyer-b"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "合成订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订单不存在"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Order": {
+        "type": "object",
+        "required": ["id", "owner", "status", "total", "currency", "items", "viewer", "x-src-auto"],
+        "properties": {
+          "id": {"type": "string"},
+          "owner": {"type": "string"},
+          "status": {"type": "string"},
+          "total": {"type": "integer", "minimum": 0},
+          "currency": {"type": "string"},
+          "items": {"type": "array", "items": {"type": "object"}},
+          "viewer": {"type": "string"},
+          "x-src-auto": {
+            "type": "object",
+            "properties": {
+              "intentional_candidate": {"type": "boolean"},
+              "manual_review_required": {"type": "boolean"},
+              "fixture_scope": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

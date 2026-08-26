@@ -1,8 +1,15 @@
 # SRC-Auto 平台完整使用手册
 
+> **2026-08-26 严格计划更新：** 当前实现以 `docs/THREE_PHASE_USER_MANUAL.md` 和
+> `docs/THREE_PHASE_UPGRADE_REPORT.md` 为准。本轮已加入第五个仅回环的 `business-api`
+> 靶场（`127.0.0.1:8084`）、业务 API 授权矩阵、蓝队被动日志分析和 Figma V2 控制台入口；
+> 完整测试为 `238/238` 通过。Docker Desktop 已恢复后，五个靶场均通过健康检查，三轮本地
+> 验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`，独立回归 `30/30` 通过；若 Docker 再次不可用，
+> 控制台必须显示依赖阻断，不能把历史成绩冒充当前容器运行成绩。
+
 > 当前三期升级后的简体中文主手册请优先阅读 [`docs/THREE_PHASE_USER_MANUAL.md`](docs/THREE_PHASE_USER_MANUAL.md)，最终验收摘要见 [`docs/THREE_PHASE_UPGRADE_REPORT.md`](docs/THREE_PHASE_UPGRADE_REPORT.md)。本文件保留历史命令与兼容入口，旧的“三靶场/159 项”数字不覆盖 2026-08-24 的最新验收结果；本机生成的验证报告位于被 Git 忽略的 `validation/` 目录。
 
-版本：V0.5.0（WSL2/Docker + 三回环靶场 + 非破坏性安全回归版）
+版本：V0.6.0（WSL2/Docker + 五回环靶场 + 非破坏性安全回归版）
 项目路径：D:\网络安全文件夹\SRC-Auto  
 适用系统：Windows 11 / PowerShell  
 当前 Git 基线：工作区保留既有未提交改动；设计快照已单独记录（以实际 `git status` 为准）
@@ -67,7 +74,7 @@ Juice Shop 状态/基线/ZAP 摘要、CLI 帮助和错误提示都使用中文�
 | 新建授权目标 | 打开补天目标录入表单，可保存未确认草稿，或在人工勾选两项确认后生成 Scope 并离线审阅 |
 | 选择已有目标 | 打开文件夹优先选择器，可从 `config\\targets` 根目录或任意下级分组查看已有 Scope |
 | 离线审阅目标范围 | 选择一个或多个完整目标，逐个调用 `target-review` 并生成本地汇总；不会发出网络请求 |
-| 查看 Findings 和报告 | 打开项目内 `reports` 文件夹，供人工阅读和整理补天报告草稿 |
+| 查看 Findings 和报告 | 列出项目内 `reports` 与 `validation` 摘要；单击文件名后在右侧只读预览详细内容，供人工阅读和整理报告草稿 |
 | AI 模型与密钥设置 | 仅打开既有 DeepSeek / OpenRouter 密钥保存工具；默认不启用远程 AI，也不会在界面显示明文密钥 |
 
 ### 离线审阅目标范围选择器

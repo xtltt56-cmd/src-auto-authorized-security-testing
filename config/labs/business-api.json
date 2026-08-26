@@ -1,0 +1,18 @@
+{
+  "lab_id": "business-api",
+  "display_name": "本地业务逻辑 API 靶场",
+  "description": "固定回环、合成订单、只读接口；用于会话/API 对象对比和 IDOR 候选复核。",
+  "host": "127.0.0.1",
+  "port": 8084,
+  "base_url": "http://127.0.0.1:8084",
+  "openapi_url": "http://127.0.0.1:8084/openapi.json",
+  "openapi_file": "lab/business-api/openapi.json",
+  "health_url": "http://127.0.0.1:8084/health",
+  "test_accounts": [
+    {"name": "buyer-a", "header": "X-Test-User: buyer-a", "owns": ["order-a"]},
+    {"name": "buyer-b", "header": "X-Test-User: buyer-b", "owns": ["order-b"]}
+  ],
+  "safe_reset": "restart the process; state is in-memory only",
+  "allowed_methods": ["GET", "HEAD"],
+  "local_only": true
+}

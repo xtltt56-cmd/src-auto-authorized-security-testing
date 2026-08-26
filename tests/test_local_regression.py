@@ -17,7 +17,15 @@ class LocalRegressionTests(unittest.TestCase):
     def test_inventory_contains_only_bounded_non_destructive_cases(self):
         root = Path(__file__).parents[1]
         cases = load_regression_cases(root / "config" / "validation" / "local_regression_cases.json")
-        self.assertGreaterEqual(len(cases), 6)
+        self.assertGreaterEqual(len(cases), 9)
+        self.assertEqual(
+            {item.case_id for item in cases if item.lab_id == "business-api"},
+            {
+                "business-api-health-surface",
+                "business-api-openapi-public-surface",
+                "business-api-readonly-order-surface",
+            },
+        )
         self.assertTrue(all(not item.destructive for item in cases))
         self.assertTrue(all(item.path.startswith("/") for item in cases))
         self.assertTrue(all("http://" not in item.path and "https://" not in item.path for item in cases))

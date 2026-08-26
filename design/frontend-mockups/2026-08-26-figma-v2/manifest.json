@@ -1,0 +1,32 @@
+{
+  "figmaFileKey": "hhtvhdSdfMM85CvSIkTpCy",
+  "figmaUrl": "https://www.figma.com/design/hhtvhdSdfMM85CvSIkTpCy",
+  "fileName": "SRC-Auto 授权安全测试工作台 V2.0 前端设计",
+  "page": {
+    "id": "0:1",
+    "name": "SRC-Auto V2 页面总览"
+  },
+  "font": "Noto Sans SC",
+  "canvas": "1440x900",
+  "frames": [
+    {"name": "00 设计规范与安全状态", "nodeId": "8:2"},
+    {"name": "01 工作台", "nodeId": "2:2"},
+    {"name": "02 本地靶场", "nodeId": "2:3"},
+    {"name": "03 目标与授权", "nodeId": "2:4"},
+    {"name": "04 授权目标启动确认", "nodeId": "2:5"},
+    {"name": "05 会话与任务", "nodeId": "2:6"},
+    {"name": "06 代理与 API 复核", "nodeId": "2:7"},
+    {"name": "07 发现与报告", "nodeId": "2:8"},
+    {"name": "08 蓝队被动分析", "nodeId": "2:9"},
+    {"name": "09 AI 与工具", "nodeId": "2:10"},
+    {"name": "10 审计与设置", "nodeId": "2:11"}
+  ],
+  "safetyDefaults": {
+    "remoteTargets": "manual-confirmation-only",
+    "automaticSubmission": false,
+    "remoteAi": "per-session-manual-enable",
+    "localLab": "loopback-only",
+    "blueTeamAnalysis": "authorized-passive-only",
+    "globalStop": true
+  }
+}

@@ -44,6 +44,26 @@ class DefenseAsset:
         )
 
 
+# Public names used by the phase-three plan.  Keep DefenseAsset as the stable
+# compatibility name used by the existing CLI while exposing a clearer asset
+# profile vocabulary for the desktop workflow.
+OwnedAssetProfile = DefenseAsset
+
+
+@dataclass(frozen=True)
+class AssetChange:
+    """Metadata-only description of an observed owned-asset change."""
+
+    path: str
+    change_type: str
+    before_fingerprint: str = ""
+    after_fingerprint: str = ""
+
+    def __post_init__(self):
+        if not str(self.path).strip() or self.change_type not in {"added", "removed", "changed"}:
+            raise DefenseError("asset_change_invalid")
+
+
 def build_defense_plan(asset: DefenseAsset) -> Dict[str, Any]:
     if not asset.confirmed_owned or not asset.authorization_source:
         raise DefenseError("ownership_confirmation_required")

@@ -26,6 +26,17 @@ class LauncherTests(unittest.TestCase):
             "Invoke-WebRequest progress redraws Chinese launcher output in Windows Terminal",
         )
 
+    def test_launcher_sets_python_utf8_before_gui_dispatch(self):
+        path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        gui_dispatch = content.index("if(-not $RunLocalLab)")
+        python_encoding = content.index("$env:PYTHONIOENCODING = 'utf-8'")
+        self.assertLess(
+            python_encoding,
+            gui_dispatch,
+            "the GUI branch must inherit UTF-8 before src_auto_gui.ps1 is invoked",
+        )
+
     def test_one_click_launcher_is_manual_and_local_only(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
         content = path.read_text(encoding="utf-8")
@@ -38,7 +49,7 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("Start-Process", content)
         self.assertIn("11434", content)
         self.assertIn("仅本机回环靶场", content)
-        self.assertIn("正在执行四靶场本地验收", content)
+        self.assertIn("正在执行五靶场本地验收", content)
         self.assertIn("run_local_regression.py", content)
         self.assertIn("PYTHONIOENCODING", content)
         self.assertIn("Read-Host", content)
@@ -80,6 +91,15 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("restart:", compose)
         self.assertIn("run_local_lab_validation.py", content)
         self.assertNotIn("-p 0.0.0.0", content + compose)
+
+    def test_one_click_launcher_includes_deterministic_business_api_lab(self):
+        path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
+        content = path.read_text(encoding="utf-8").lower()
+        compose = (path.parent / "docker-compose.local-labs.yml").read_text(encoding="utf-8").lower()
+        self.assertIn("business-api", content)
+        self.assertIn("127.0.0.1:8084:8084", compose)
+        self.assertIn("业务 api", content)
+        self.assertIn("五靶场", content)
 
 
 if __name__ == "__main__":

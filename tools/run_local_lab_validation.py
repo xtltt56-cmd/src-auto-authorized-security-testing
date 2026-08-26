@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src_auto.adjudication import adjudicate_finding, benchmark_metrics
 from src_auto.api_schema import run_local_schema_smoke
+from src_auto.business_api_lab import run_authorization_matrix
 from src_auto.juice_shop import parse_zap_report, run_zap_quick_scan
 from src_auto.local_discovery import discover_local_surface
 from src_auto.local_labs import LabSpec, LocalLabManager, load_lab_specs
@@ -60,6 +61,12 @@ def expected_control_cases(lab_id: str) -> List[Dict[str, Any]]:
         return [
             {"case_id": "vampi-openapi-surface", "positive": True, "kind": "surface-discovery"},
             {"case_id": "vampi-readonly-schema-smoke", "positive": True, "kind": "api-schema-control"},
+        ]
+    if lab_id == "business-api":
+        return [
+            {"case_id": "business-api-openapi-surface", "positive": True, "kind": "surface-discovery"},
+            {"case_id": "business-api-readonly-schema-smoke", "positive": True, "kind": "api-schema-control"},
+            {"case_id": "business-api-intentional-idor-candidate", "positive": True, "kind": "authorization-candidate"},
         ]
     return []
 
@@ -198,20 +205,23 @@ def discovery_control_record(lab_id: str, discovery: Mapping[str, Any]) -> Optio
 
 
 def schema_control_record(lab_id: str, schema_result: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-    if lab_id != "vampi" or str(schema_result.get("status", "")) not in (
+    if lab_id not in {"vampi", "business-api"} or str(schema_result.get("status", "")) not in (
         "COMPLETED",
         "POSSIBLE_SCHEMA_CONTRACT_ISSUES",
     ):
         return None
     candidate = str(schema_result.get("status")) == "POSSIBLE_SCHEMA_CONTRACT_ISSUES"
+    prefix = "VAmPI" if lab_id == "vampi" else "Business API"
+    case_id = "vampi-readonly-schema-smoke" if lab_id == "vampi" else "business-api-readonly-schema-smoke"
+    default_url = "http://127.0.0.1:8083/openapi.json" if lab_id == "vampi" else "http://127.0.0.1:8084/openapi.json"
     return adjudicate_finding(
         {
-            "title": "VAmPI read-only OpenAPI schema smoke completed",
-            "endpoint": str(schema_result.get("schema_url", "http://127.0.0.1:8083/openapi.json")),
+            "title": "{} read-only OpenAPI schema smoke completed".format(prefix),
+            "endpoint": str(schema_result.get("schema_url", default_url)),
             "status": "TRUE_POSITIVE",
-            "expected_case_id": "vampi-readonly-schema-smoke",
+            "expected_case_id": case_id,
             "evidence": "local GET/examples schema smoke report created" if candidate else "local GET/examples schema smoke completed without contract candidates",
-            "baseline": "fixed VAmPI OpenAPI schema",
+            "baseline": "fixed {} OpenAPI schema".format(prefix),
             "reproduction": "repeat bounded GET-only schema examples against the loopback API",
             "impact": "API contract coverage control; candidate mismatches require separate manual review",
             "submission_ready": False,
@@ -222,24 +232,52 @@ def schema_control_record(lab_id: str, schema_result: Mapping[str, Any]) -> Opti
 
 
 def schema_surface_control_record(lab_id: str, schema_result: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-    if lab_id != "vampi" or str(schema_result.get("status", "")) not in (
+    if lab_id not in {"vampi", "business-api"} or str(schema_result.get("status", "")) not in (
         "COMPLETED",
         "POSSIBLE_SCHEMA_CONTRACT_ISSUES",
     ):
         return None
+    prefix = "VAmPI" if lab_id == "vampi" else "Business API"
+    case_id = "vampi-openapi-surface" if lab_id == "vampi" else "business-api-openapi-surface"
+    default_url = "http://127.0.0.1:8083/openapi.json" if lab_id == "vampi" else "http://127.0.0.1:8084/openapi.json"
     return adjudicate_finding(
         {
-            "title": "VAmPI OpenAPI surface available",
-            "endpoint": str(schema_result.get("schema_url", "http://127.0.0.1:8083/openapi.json")),
+            "title": "{} OpenAPI surface available".format(prefix),
+            "endpoint": str(schema_result.get("schema_url", default_url)),
             "status": "TRUE_POSITIVE",
-            "expected_case_id": "vampi-openapi-surface",
+            "expected_case_id": case_id,
             "evidence": "loopback OpenAPI document was loaded by the bounded schema smoke",
-            "baseline": "fixed VAmPI OpenAPI schema",
+            "baseline": "fixed {} OpenAPI schema".format(prefix),
             "reproduction": "repeat local GET to /openapi.json",
             "impact": "API test-surface availability control; not a vulnerability",
             "submission_ready": False,
             "reviewer": "local-acceptance-rubric",
             "notes": "仅证明本地 OpenAPI 靶场可用，不代表漏洞或赏金候选。",
+        }
+    )
+
+
+def business_api_control_record(lab_id: str, matrix: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    if lab_id != "business-api" or str(matrix.get("status", "")) != "COMPLETED":
+        return None
+    candidate = str(matrix.get("disposition", "")) == "candidate_broken_object_authorization"
+    status = "TRUE_POSITIVE" if candidate else "NOT_VERIFIED"
+    statuses = matrix.get("response_statuses", {}) if isinstance(matrix.get("response_statuses"), Mapping) else {}
+    return adjudicate_finding(
+        {
+            "title": "Business API intentional horizontal-authorization candidate",
+            "endpoint": str(matrix.get("base_url", "http://127.0.0.1:8084")) + "/api/v1/orders/order-a",
+            "status": status,
+            "expected_case_id": "business-api-intentional-idor-candidate",
+            "evidence": "owner/peer GET response metadata matched after volatile fields were excluded; statuses={}".format(
+                {key: int(value) for key, value in statuses.items() if str(value).isdigit()}
+            ),
+            "baseline": "synthetic order-a owned by buyer-a; buyer-b is a separate local test account",
+            "reproduction": "repeat GET with X-Test-User buyer-a and buyer-b; compare fingerprints only",
+            "impact": "local training candidate for horizontal authorization review; no real data and no submission",
+            "submission_ready": False,
+            "reviewer": "local-acceptance-rubric",
+            "notes": "刻意保留的本地 IDOR 候选，仅验证平台工作流；必须人工复核，不能外推到真实目标。",
         }
     )
 
@@ -285,14 +323,14 @@ def render_local_lab_report(final: Mapping[str, Any]) -> str:
 
     labs = final.get("labs", {}) if isinstance(final.get("labs"), Mapping) else {}
     lines = [
-        "# 本地四靶场最终验收报告",
+        "# 本地五靶场最终验收报告",
         "",
         "运行模式：`{}`  ".format(final.get("mode", "local-only")),
         "靶场数量：`{}`；状态：`{}`  ".format(final.get("target_count", len(labs)), final.get("status", "")),
         "",
         "## 结论",
         "",
-        "- 四个应用靶场的生命周期、健康检查和回环范围已完成；数据库依赖不发布宿主端口。",
+        "- 五个应用靶场的生命周期、健康检查和回环范围已完成；数据库依赖不发布宿主端口。",
         "- 本报告的 Precision/Recall/F1 只表示本地控制项/表面发现基准，不是补天赏金漏洞命中率。",
         "- `bounty_ready_count={}`；提交状态：`{}`。".format(final.get("bounty_ready_count", 0), final.get("submission_status", "NO_AUTO_SUBMISSION")),
         "",
@@ -311,7 +349,13 @@ def render_local_lab_report(final: Mapping[str, Any]) -> str:
             return "null" if value is None else "{:.6f}".format(float(value))
         lines.append(
             "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
-                {"juice-shop": "Juice Shop", "dvwa": "DVWA", "webgoat": "WebGoat"}.get(lab_id, lab_id),
+                {
+                    "business-api": "业务 API",
+                    "dvwa": "DVWA",
+                    "juice-shop": "Juice Shop",
+                    "vampi": "VAmPI",
+                    "webgoat": "WebGoat",
+                }.get(lab_id, lab_id),
                 "、".join(str(item) for item in counts) or "null",
                 score.get("true_positive", 0),
                 score.get("false_positive", 0),
@@ -441,10 +485,12 @@ def run_one_round(manager: LocalLabManager, spec: LabSpec, runtime: RuntimePolic
         "network_contact": bool(discovery.get("network_contact", False)),
     }
     schema_smoke: Dict[str, Any] = {"status": "NOT_APPLICABLE", "network_contact": False}
-    if spec.lab_id == "vampi":
+    business_matrix: Dict[str, Any] = {"status": "NOT_APPLICABLE", "network_contact": False}
+    if spec.lab_id in {"vampi", "business-api"}:
+        schema_url = "http://127.0.0.1:8083/openapi.json" if spec.lab_id == "vampi" else "http://127.0.0.1:8084/openapi.json"
         schema_smoke = run_local_schema_smoke(
             PROJECT_ROOT,
-            "http://127.0.0.1:8083/openapi.json",
+            schema_url,
             round_dir / "SCHEMATHESIS",
         )
         _json_write(round_dir / "SCHEMA_SMOKE.json", schema_smoke)
@@ -452,6 +498,18 @@ def run_one_round(manager: LocalLabManager, spec: LabSpec, runtime: RuntimePolic
             "command": {"status": "NOT_RUN", "reason": "api_lab_uses_read_only_schema_smoke"},
             "report": {"status": "NOT_RUN", "reason": "api_lab_uses_read_only_schema_smoke", "findings": []},
         }
+        if spec.lab_id == "business-api":
+            try:
+                business_matrix = run_authorization_matrix("http://127.0.0.1:8084")
+            except Exception as exc:  # local dependency/fixture failure is recorded, never ignored
+                business_matrix = {
+                    "status": "FAILED_RUNTIME",
+                    "reason": "business_api_matrix_failed",
+                    "detail": str(exc)[:300],
+                    "network_contact": False,
+                    "manual_review_required": True,
+                }
+            _json_write(round_dir / "BUSINESS_API_MATRIX.json", business_matrix)
     else:
         zap_output = round_dir / "ZAP_REPORT.json"
         zap = _run_zap(spec, zap_output, runtime)
@@ -466,6 +524,9 @@ def run_one_round(manager: LocalLabManager, spec: LabSpec, runtime: RuntimePolic
     schema_surface_record = schema_surface_control_record(spec.lab_id, schema_smoke)
     if schema_surface_record:
         records.append(schema_surface_record)
+    business_record = business_api_control_record(spec.lab_id, business_matrix)
+    if business_record:
+        records.append(business_record)
     _json_write(round_dir / "ADJUDICATION.json", {"lab_id": spec.lab_id, "round": round_index, "records": records, "status": "COMPLETED" if records else "NO_CANDIDATES"})
     score = build_lab_score(spec.lab_id, records)
     _json_write(round_dir / "SCORE.json", score)
@@ -481,6 +542,7 @@ def run_one_round(manager: LocalLabManager, spec: LabSpec, runtime: RuntimePolic
         "artifact_dir": str(round_dir),
         "zap_status": zap["report"].get("status"),
         "schema_smoke": schema_smoke,
+        "business_api_matrix": business_matrix,
     }
     _json_write(round_dir / "ROUND.json", result)
     return result
@@ -558,7 +620,7 @@ def run_validation(repeat_rounds: int = 2, labs: Optional[Sequence[str]] = None)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="SRC-Auto 双靶场本地验收")
+    parser = argparse.ArgumentParser(description="SRC-Auto 五靶场本地验收")
     parser.add_argument("--local-only", action="store_true", default=True)
     parser.add_argument("--repeat-rounds", type=int, default=2, choices=range(0, MAX_ROUNDS + 1))
     parser.add_argument("--lab", action="append", dest="labs")

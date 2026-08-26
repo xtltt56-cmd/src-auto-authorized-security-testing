@@ -1,8 +1,51 @@
 # 测试报告
 
-日期：2026-08-24（Asia/Shanghai）
+日期：2026-08-26（Asia/Shanghai）
 
-## 当前最终验收（2026-08-24）
+## 当前严格计划验收（2026-08-26）
+
+本节是当前三期升级的有效状态；下方 2026-08-24 及更早内容均为历史记录。当前所有实际网络接触仍限定为固定的 `127.0.0.1` 本地靶场，未访问真实补天目标。
+
+| 项目 | 当前结果 |
+|---|---|
+| 完整 Python 单元/集成测试 | `238/238` 通过（含报告文件单击预览的真实 WinForms 交互回归） |
+| PowerShell 递归解析 | `12/12` 脚本无语法错误；关键中文脚本 UTF-8 BOM 检查通过 |
+| Docker Compose 配置 | 通过（`docker compose ... config --quiet` 退出码 0） |
+| Docker 引擎与五靶场 | Docker Desktop Linux engine 已恢复；当前 `5/5 READY`，五个健康检查均返回 200 |
+| 五靶场本地验收 | `AUTHORIZED_LOCAL_VALIDATION_READY`，`target_count=5`，P0 全部为 0 |
+| 五靶场独立回归 | `30/30` 通过（10 个用例 × 3 轮，`pass_rate=1.0`） |
+| 业务 API 对象授权矩阵 | 进程内确定性验证完成；仅输出 `candidate_broken_object_authorization`，`confirmed=false`，必须人工复核 |
+| 业务 API Docker 回归 | `9/9` 通过（修复 OpenAPI `x-src-auto.lab_id` 断言后） |
+| 蓝队被动分析 | 4 条项目内合成 JSONL 事件完成导入、脱敏和聚合；自动处置 `0` |
+| 桌面控制台 | 中文导航、目标/授权、会话/API、蓝队、靶场和审计入口的契约测试通过；停止按钮会实际写入项目 `STOP` 标记 |
+| 远程 AI / 外部目标 / 自动提交 | `0 / 0 / 0` |
+
+业务 API 使用 `127.0.0.1:8084`，因为原 VAmPI 已占用 `8083`；该端口偏差已同步到 Compose、清单、运行策略、回归用例、GUI 和手册。Figma V2 的信息架构与视觉稿清单保存在 `design/frontend-mockups/2026-08-26-figma-v2/`，界面视觉对照记录和本机截图保存在 `docs/design/src-auto-main-console-fidelity.md` 与 `validation/gui/`；生产界面采用本地 WinForms 实现，设计插件导出额度不足时不阻塞代码验收。
+
+Docker Desktop 恢复后，应在项目目录重新执行：
+
+```powershell
+docker compose -f docker-compose.local-labs.yml up -d
+python -m src_auto local-labs status --json
+python -m src_auto local-validation --local-only --repeat-rounds 2 --json
+python -m src_auto local-regression --local-only --repeat-rounds 2 --json
+```
+
+上述恢复命令已在 Docker Desktop 恢复后执行并生成当前五靶场工件。若 Docker 再次不可用，必须把状态重新标记为阻断，不得沿用旧成绩。
+
+### 当前五靶场控制项成绩
+
+| 靶场 | 候选记录 | TP | FP | FN | 未验证 | Precision | Recall | F1 | 赏金就绪 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 业务 API | 3 | 3 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+| DVWA | 9 | 6 | 1 | 1 | 2 | 0.857143 | 0.857143 | 0.857143 | 0 |
+| Juice Shop | 5 | 1 | 4 | 0 | 0 | 0.200000 | 1.000000 | 0.333333 | 0 |
+| VAmPI | 2 | 2 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+| WebGoat | 1 | 1 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+
+这些是本地控制项和表面发现指标，不是漏洞可利用率、补天受理率或赏金收入；所有 `bounty_ready_count` 均为 0。
+
+## 历史最终验收（2026-08-24）
 
 以下是三期升级后最新一次实机结果，所有网络接触均限制在四个 `127.0.0.1` 本地靶场：
 
