@@ -49,7 +49,7 @@ export function App({ repository = defaultRepository }: AppProps) {
 
   let content
   if (selectedTask) {
-    content = <TaskDetailPage task={selectedTask} events={selectedEvents} repository={repository} onBack={() => setSelectedTaskId(null)} onOpenReport={() => setActiveKey('findings')} />
+    content = <TaskDetailPage task={selectedTask} events={selectedEvents} repository={repository} onBack={() => setSelectedTaskId(null)} onOpenReport={() => { setSelectedTaskId(null); setActiveKey('findings') }} />
   } else if (activeKey === 'overview') {
     content = <OverviewPage snapshot={snapshot} onNavigate={navigate} onOpenTask={openTask} />
   } else if (activeKey === 'labs') {
