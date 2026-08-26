@@ -4,9 +4,11 @@ import { AppShell, type NavKey } from './components/AppShell'
 import { LabsPage } from './pages/LabsPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
+import { TargetDraftPage } from './pages/TargetDraftPage'
+import { FindingsPage } from './pages/FindingsPage'
 import { createFixtureRepository, type TaskRepository } from './lib/taskRepository'
 import { fixtureSnapshot } from './lib/fixtures'
-import type { DashboardSnapshot } from './lib/types'
+import type { DashboardSnapshot, TargetDraftResult } from './lib/types'
 
 type AppProps = { repository?: TaskRepository }
 
@@ -35,6 +37,7 @@ export function App({ repository = defaultRepository }: AppProps) {
   const [activeKey, setActiveKey] = useState<NavKey>('overview')
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(fixtureSnapshot)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
 
   const refresh = useCallback(async () => { setSnapshot(await repository.getDashboardSnapshot()) }, [repository])
   useEffect(() => { void refresh() }, [refresh])
@@ -52,9 +55,11 @@ export function App({ repository = defaultRepository }: AppProps) {
   } else if (activeKey === 'labs') {
     content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} />
   } else if (activeKey === 'findings') {
-    content = <PlaceholderPage kind="review" />
+    content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} />
+  } else if (activeKey === 'targets') {
+    content = <TargetDraftPage savedResult={savedTargetResult} onSaved={setSavedTargetResult} />
   } else {
-    content = <PlaceholderPage kind={activeKey === 'settings' ? 'settings' : activeKey === 'targets' ? 'targets' : 'review'} />
+    content = <PlaceholderPage kind={activeKey === 'settings' ? 'settings' : 'review'} />
   }
 
   const meta = pageMeta[activeKey]

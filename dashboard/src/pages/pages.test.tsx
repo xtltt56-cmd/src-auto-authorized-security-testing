@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from '../App'
 import { createFixtureRepository } from '../lib/taskRepository'
@@ -41,5 +41,40 @@ describe('dashboard pages', () => {
 
     expect(await screen.findByRole('heading', { name: '事件详情' })).toBeVisible()
     expect(screen.getAllByText('已处理授权夹具中的 42 个入口')[1]).toBeVisible()
+  })
+
+  it('validates and saves an authorization draft locally', async () => {
+    render(<App repository={createFixtureRepository()} />)
+    await userEvent.click(screen.getByRole('button', { name: '目标与授权' }))
+    expect(screen.getByRole('heading', { name: '新建授权目标' })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '保存授权草稿' }))
+    expect(screen.getByText('请填写目标 URL。')).toBeVisible()
+
+    await userEvent.type(screen.getByLabelText('项目名称'), '示例授权项目')
+    await userEvent.type(screen.getByLabelText('目标 URL'), 'https://example.com/app')
+    await userEvent.type(screen.getByLabelText('允许主机名'), 'example.com')
+    await userEvent.type(screen.getByLabelText('允许端口'), '443')
+    fireEvent.change(screen.getByLabelText('开始时间'), { target: { value: '2026-08-27T09:00' } })
+    fireEvent.change(screen.getByLabelText('结束时间'), { target: { value: '2026-08-27T18:00' } })
+    await userEvent.type(screen.getByLabelText('授权证明或规则说明'), '项目规则允许在时间窗内进行低频测试。')
+    await userEvent.click(screen.getByRole('button', { name: '保存授权草稿' }))
+
+    expect(await screen.findByText('授权草稿已保存')).toBeVisible()
+    expect(screen.getByText('未访问目标')).toBeVisible()
+  })
+
+  it('opens finding evidence and a report as safe read-only views', async () => {
+    render(<App repository={createFixtureRepository()} />)
+    await userEvent.click(screen.getByRole('button', { name: '候选与报告' }))
+    expect(screen.getByRole('heading', { name: '候选漏洞与报告' })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '反射型输入点需要人工确认' }))
+    expect(await screen.findByRole('heading', { name: '候选详情' })).toBeVisible()
+    expect(screen.getByText(/完整响应正文未写入事件日志/)).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '查看 juice-shop-summary.json' }))
+    expect(await screen.findByRole('heading', { name: '报告查看器' })).toBeVisible()
+    expect(screen.getByText('脚本不会执行')).toBeVisible()
   })
 })

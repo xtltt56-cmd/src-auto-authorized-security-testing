@@ -98,6 +98,7 @@ export type TargetDraftResult = {
   scopeDigestSuffix: string
   networkContact: 'none'
   message: string
+  errors?: Partial<Record<keyof TargetDraft, string>>
 }
 
 export type DashboardSnapshot = {
