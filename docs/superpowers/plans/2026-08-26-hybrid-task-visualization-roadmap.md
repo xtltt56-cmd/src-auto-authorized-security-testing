@@ -4,7 +4,7 @@
 
 **Goal:** Upgrade SRC-Auto into a dependable Chinese desktop platform where a user can enter and approve a target, observe every automated stage in real time, review evidence and reports locally, and retain human control over final vulnerability confirmation and 补天 submission.
 
-**Architecture:** Keep the security engine, scope controls, local labs, and report assets as the system of record. Add a durable typed task-event layer, expose it through a loopback-only FastAPI/SSE service, render it in a Figma-approved React dashboard, and host that dashboard in a locked-down WebView2 WPF shell. Local-lab workflows are migrated and accepted before the separately gated authorized-target workflow is enabled.
+**Architecture:** Keep the security engine, scope controls, local labs, and report assets as the system of record. Add a durable typed task-event layer, expose it through a loopback-only FastAPI/SSE service, render it in a code-first React dashboard governed by local visual tokens and browser acceptance, and host that dashboard in a locked-down WebView2 WPF shell. Local-lab workflows are migrated and accepted before the separately gated authorized-target workflow is enabled.
 
 **Tech Stack:** Project-local Python 3.12, FastAPI, SSE, SQLite + JSONL, React/TypeScript/Vite, Chart.js, Playwright, .NET 8 WPF, WebView2, pytest, xUnit, Pester, existing Docker local labs and scanner adapters.
 
@@ -46,9 +46,9 @@ Implementation must follow these documents in order:
 
 If a detailed plan conflicts with the design specification, stop implementation, update the specification through review, and then update every affected plan. Do not silently choose one interpretation.
 
-## 3. Required Figma design package before frontend implementation
+## 3. Code-first visual package before frontend implementation
 
-No new React page may be implemented until its Figma design is approved. The design package must contain these desktop screens and states:
+The user explicitly asked to abandon the Figma freeze and start the visual upgrade. No new React page may be implemented until the code-first specification and component inventory are recorded in `docs/superpowers/specs/2026-08-26-code-first-visual-upgrade.md`. Existing Figma/PNG files remain visual references only. The local package covers these desktop screens and states:
 
 1. **任务总览** — active/history tasks, type, state, stage, progress, elapsed time, counters.
 2. **本地五靶场启动** — lab health, selected validations, resource status, clear local-only badge.
@@ -63,7 +63,7 @@ No new React page may be implemented until its Figma design is approved. The des
 11. **桌面启动/错误/重试** — backend startup, WebView2 missing, browser fallback, legacy fallback.
 12. **DPI/minimum-window variants** — 100%, 125%, 150%, 200% and the minimum supported window.
 
-The approved file URL, page/node IDs, component-to-code map, tokens, and comparison screenshots must be recorded under `docs/design`. Figma assets are design inputs only; no key, target, finding, or real report data may be placed in Figma.
+The component-to-code map, tokens, fixture data, and comparison screenshots must be recorded under `docs/design` and `docs/validation`. No key, target, finding, or real report data may be placed in a visual artifact.
 
 ## 4. Phase 0 — Baseline, backups, and design approval
 
@@ -75,14 +75,14 @@ The approved file URL, page/node IDs, component-to-code map, tokens, and compari
 2. Run the existing unit suite and canonical local five-lab validation without changing target configuration.
 3. Export current launcher and GUI screenshots at 100%, 125%, 150%, and 200% scaling.
 4. Create a project-local recovery bundle containing source-controlled files, dependency manifests, fixture hashes, and restore instructions; exclude secrets, databases, reports, and generated evidence.
-5. Complete and approve the Figma package described above.
+5. Complete and record the code-first package described above. Figma synchronization is optional and does not block implementation.
 6. Create `codex/task-visualization` from a clean, reviewed checkpoint or use an isolated worktree under the D-drive project tree.
 
 **Gate G0:**
 
 - baseline results and known failures are recorded;
 - no secret or user report is staged;
-- Figma package is approved;
+- code-first visual package is recorded and its local interaction gate is approved;
 - rollback command and legacy launcher are documented;
 - implementation branch/worktree is explicit.
 
@@ -122,7 +122,7 @@ Execute [2026-08-26-realtime-dashboard.md](2026-08-26-realtime-dashboard.md) com
 - project-local Python 3.12 and Node runtime under `runtime`;
 - FastAPI REST and resumable SSE service bound only to a random loopback port;
 - session authentication and origin validation;
-- Figma-matched Chinese React dashboard;
+- code-first Chinese React dashboard matching the recorded visual tokens and reference mockups;
 - live task timeline, stages, counters, logs, five-lab matrix, history, recovery, and report viewer;
 - Playwright coverage for primary and failure journeys.
 
@@ -134,7 +134,7 @@ Execute [2026-08-26-realtime-dashboard.md](2026-08-26-realtime-dashboard.md) com
 - browser console has no unhandled errors;
 - frontend makes zero third-party requests;
 - local five-lab task is visible from creation to terminal state;
-- screenshots pass Figma structural comparison and minimum-window checks.
+- screenshots pass the local visual ledger and minimum-window checks.
 
 Do not make the browser dashboard the default launcher until G2 passes.
 
