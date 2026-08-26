@@ -1,5 +1,6 @@
 ﻿param(
-    [switch]$RunLocalLab
+    [switch]$RunLocalLab,
+    [switch]$Dashboard
 )
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -9,6 +10,15 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 $env:PYTHONIOENCODING = 'utf-8'
+if($Dashboard){
+    $dashboardLauncher = Join-Path $ScriptRoot 'tools\start_dashboard.ps1'
+    if(-not (Test-Path -LiteralPath $dashboardLauncher)){
+        Write-Host '未找到 Dashboard 启动脚本，无法启动可视化控制台。' -ForegroundColor Red
+        exit 2
+    }
+    & $dashboardLauncher
+    exit $LASTEXITCODE
+}
 if(-not $RunLocalLab){
     $guiPath = Join-Path $ScriptRoot 'tools\src_auto_gui.ps1'
     if(-not (Test-Path -LiteralPath $guiPath)){
