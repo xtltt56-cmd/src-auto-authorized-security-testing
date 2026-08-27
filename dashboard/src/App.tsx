@@ -45,13 +45,14 @@ export function App({ repository = defaultRepository }: AppProps) {
   useEffect(() => { void refresh() }, [refresh])
 
   const selectedTask = useMemo(() => snapshot.tasks.find((task) => task.id === selectedTaskId) ?? null, [selectedTaskId, snapshot.tasks])
+  const selectedLab = useMemo(() => snapshot.labs.find((lab) => lab.taskId === selectedTaskId) ?? null, [selectedTaskId, snapshot.labs])
   const selectedEvents = useMemo(() => snapshot.events.filter((event) => event.taskId === selectedTaskId), [selectedTaskId, snapshot.events])
   const navigate = (key: NavKey) => { setSelectedTaskId(null); setActiveKey(key) }
   const openTask = (taskId: string) => { setSelectedTaskId(taskId); setActiveKey('labs') }
 
   let content
   if (selectedTask) {
-    content = <TaskDetailPage task={selectedTask} events={selectedEvents} repository={repository} onBack={() => setSelectedTaskId(null)} onOpenReport={() => { setSelectedTaskId(null); setActiveKey('findings') }} />
+    content = <TaskDetailPage task={selectedTask} lab={selectedLab} events={selectedEvents} repository={repository} onBack={() => setSelectedTaskId(null)} onOpenReport={() => { setSelectedTaskId(null); setActiveKey('findings') }} />
   } else if (activeKey === 'overview') {
     content = <OverviewPage snapshot={snapshot} onNavigate={navigate} onOpenTask={openTask} />
   } else if (activeKey === 'labs') {

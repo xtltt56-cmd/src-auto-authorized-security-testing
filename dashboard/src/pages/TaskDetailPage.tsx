@@ -1,7 +1,7 @@
 import { ArrowLeft, Clock3, HeartPulse, ShieldCheck } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { TaskRepository } from '../lib/taskRepository'
-import type { TaskEvent, TaskSummary } from '../lib/types'
+import type { LabStatus, TaskEvent, TaskSummary } from '../lib/types'
 import { ActionBar } from '../components/ActionBar'
 import { EventTimeline } from '../components/EventTimeline'
 import { MetricStrip } from '../components/MetricStrip'
@@ -11,13 +11,21 @@ import { StatusBadge } from '../components/StatusBadge'
 
 type TaskDetailPageProps = {
   task: TaskSummary
+  lab?: LabStatus | null
   events: TaskEvent[]
   repository: TaskRepository
   onBack: () => void
   onOpenReport: () => void
 }
 
-const stageNames = ['策略检查', '依赖检查', '健康检查', '入口发现', '受控验证', '候选研判', '报告生成']
+const stageNames = ['策略检查', '依赖检查', '健康检查', '入口发现', '受控验证', 'API 对象对比', '候选研判', '报告生成']
+
+const healthLabels: Record<LabStatus['health'], string> = {
+  healthy: '就绪',
+  starting: '启动中',
+  stopped: '已停止',
+  blocked: '受阻',
+}
 
 const stagesFor = (task: TaskSummary): StageItem[] => {
   const namedIndex = stageNames.indexOf(task.stage)
@@ -30,7 +38,7 @@ const stagesFor = (task: TaskSummary): StageItem[] => {
   }))
 }
 
-export function TaskDetailPage({ task: initialTask, events: initialEvents, repository, onBack, onOpenReport }: TaskDetailPageProps) {
+export function TaskDetailPage({ task: initialTask, lab = null, events: initialEvents, repository, onBack, onOpenReport }: TaskDetailPageProps) {
   const [task, setTask] = useState(initialTask)
   const [events, setEvents] = useState(initialEvents)
   const [notice, setNotice] = useState('')
@@ -54,6 +62,14 @@ export function TaskDetailPage({ task: initialTask, events: initialEvents, repos
     setNotice('已导出脱敏事件文件')
   }
 
+  const openReport = () => {
+    if (lab && !lab.reportId) {
+      setNotice('当前靶场尚未生成报告')
+      return
+    }
+    onOpenReport()
+  }
+
   const counters = [
     { label: '入口', value: task.counters.endpoints },
     { label: 'API', value: task.counters.api },
@@ -74,9 +90,9 @@ export function TaskDetailPage({ task: initialTask, events: initialEvents, repos
       <div className="task-detail-grid">
         <aside className="surface-panel stage-panel"><div className="panel-header"><div><h4>阶段轨道</h4><p>当前阶段：{task.stage}</p></div></div><div className="panel-body"><StageRail stages={stagesFor(task)} /></div></aside>
         <EventTimeline events={events} />
-        <aside className="surface-panel detail-aside"><div className="panel-header"><div><h4>安全摘要</h4><p>运行策略和目标边界</p></div></div><div className="panel-body summary-list"><div><span>执行模式</span><strong>本地靶场</strong></div><div><span>目标地址</span><strong>127.0.0.1</strong></div><div><span>远程 AI</span><strong>已禁用</strong></div><div><span>人工提交</span><strong>必须人工完成</strong></div></div></aside>
+        <aside className="surface-panel detail-aside"><div className="panel-header"><div><h4>安全摘要</h4><p>运行策略和目标边界</p></div></div><div className="panel-body summary-list"><div><span>执行模式</span><strong>本地靶场</strong></div><div><span>{lab ? '靶场地址' : '目标地址'}</span><strong>{lab ? `127.0.0.1:${lab.port}` : '127.0.0.1'}</strong></div>{lab ? <><div><span>健康状态</span><strong>{healthLabels[lab.health]}</strong></div><div><span>数据来源</span><strong>本地夹具</strong></div></> : null}<div><span>远程 AI</span><strong>已禁用</strong></div><div><span>人工提交</span><strong>必须人工完成</strong></div></div></aside>
       </div>
-      <ActionBar state={task.state} onPause={() => void repository.pauseTask(task.id).then(() => refresh('任务已在安全检查点暂停'))} onResume={() => void repository.resumeTask(task.id).then(() => refresh('任务已恢复运行'))} onCancel={() => void repository.cancelTask(task.id).then(() => refresh('任务已取消，不再追加新的检测动作'))} onOpenReport={onOpenReport} onExport={exportEvents} />
+      <ActionBar state={task.state} onPause={() => void repository.pauseTask(task.id).then(() => refresh('任务已在安全检查点暂停'))} onResume={() => void repository.resumeTask(task.id).then(() => refresh('任务已恢复运行'))} onCancel={() => void repository.cancelTask(task.id).then(() => refresh('任务已取消，不再追加新的检测动作'))} onOpenReport={openReport} onExport={exportEvents} />
     </>
   )
 }

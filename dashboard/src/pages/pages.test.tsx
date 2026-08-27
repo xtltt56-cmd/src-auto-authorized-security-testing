@@ -16,7 +16,7 @@ describe('dashboard pages', () => {
     render(<App repository={createFixtureRepository()} />)
 
     await userEvent.click(screen.getByRole('button', { name: '本地靶场' }))
-    await userEvent.click(screen.getByRole('button', { name: '打开任务详情' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开当前任务' }))
     await userEvent.click(screen.getByRole('button', { name: '暂停任务' }))
     expect(await screen.findByText('已暂停')).toBeVisible()
 
@@ -50,14 +50,36 @@ describe('dashboard pages', () => {
     expect(await screen.findByRole('heading', { name: taskName })).toBeVisible()
     expect(screen.getByText(port, { exact: true })).toBeVisible()
     await user.click(screen.getByRole('button', { name: '返回靶场列表' }))
-    expect(screen.getByRole('heading', { name: '本地靶场' })).toBeVisible()
+    expect((await screen.findAllByRole('heading', { name: '本地靶场' })).at(0)).toBeVisible()
+  })
+
+  it('keeps a lab without a report on its own detail page', async () => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: '查看 VAmPI 任务' }))
+    await user.click(screen.getByRole('button', { name: '查看报告' }))
+
+    expect(await screen.findByText('当前靶场尚未生成报告')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'VAmPI · 本地任务' })).toBeVisible()
+  })
+
+  it('opens the matching task when a lab name is selected', async () => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: /Business API.*127\.0\.0\.1:8084/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Business API · 本地任务' })).toBeVisible()
   })
 
   it('opens a safe detail view when a timeline event is selected', async () => {
     render(<App repository={createFixtureRepository()} />)
 
     await userEvent.click(screen.getByRole('button', { name: '本地靶场' }))
-    await userEvent.click(screen.getByRole('button', { name: '打开任务详情' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开当前任务' }))
     await userEvent.click(screen.getByRole('button', { name: /已处理授权夹具中的 42 个入口/ }))
 
     expect(await screen.findByRole('heading', { name: '事件详情' })).toBeVisible()

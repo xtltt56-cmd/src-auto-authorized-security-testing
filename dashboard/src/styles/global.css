@@ -483,6 +483,9 @@ textarea:focus-visible {
 .data-table tbody tr:hover th, .data-table tbody tr:hover td { background: #f8fbfd; }
 .data-table th[scope='row'] { min-width: 190px; font-weight: 700; }
 .table-primary { display: block; color: var(--color-ink-800); font-weight: 700; }
+.lab-name-button { display: grid; gap: 3px; width: 100%; padding: 0; border: 0; border-radius: 4px; color: inherit; background: transparent; text-align: left; }
+.lab-name-button:hover .table-primary { color: var(--color-primary-dark); text-decoration: underline; }
+.lab-name-button:focus-visible { outline: 3px solid rgba(11, 132, 243, 0.28); outline-offset: 3px; }
 .table-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; color: var(--color-primary-dark); background: transparent; font-size: 13px; font-weight: 700; }
 .table-link:hover { color: var(--color-primary); text-decoration: underline; }
 .matrix-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 14px; }
@@ -675,6 +678,28 @@ textarea:focus-visible {
   .page-heading-aside { margin-top: 12px; }
   .report-row { grid-template-columns: 30px minmax(0, 1fr); }
   .report-row .action-button { grid-column: 2; justify-self: start; }
+  .lab-matrix-panel .panel-header { align-items: flex-start; flex-direction: column; }
+  .matrix-actions { justify-content: flex-start; }
+  .lab-matrix-panel .table-scroll { overflow: visible; }
+  .lab-matrix-panel .data-table,
+  .lab-matrix-panel .data-table tbody,
+  .lab-matrix-panel .data-table tr,
+  .lab-matrix-panel .data-table th,
+  .lab-matrix-panel .data-table td { display: block; width: 100%; }
+  .lab-matrix-panel .data-table thead { display: none; }
+  .lab-matrix-panel .data-table tbody { display: grid; gap: 12px; padding: 12px; }
+  .lab-matrix-panel .data-table tbody tr { overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: #fff; }
+  .lab-matrix-panel .data-table tbody tr:hover th,
+  .lab-matrix-panel .data-table tbody tr:hover td { background: transparent; }
+  .lab-matrix-panel .data-table th[scope='row'] { min-width: 0; padding: 14px 16px; border-bottom: 1px solid #e5edf2; background: #f8fbfd; }
+  .lab-matrix-panel .data-table tbody tr:last-child th,
+  .lab-matrix-panel .data-table tbody tr:last-child td { border-bottom: 1px solid #e5edf2; }
+  .lab-matrix-panel .data-table td { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 10px 16px; }
+  .lab-matrix-panel .data-table td::before { flex: 0 0 auto; color: var(--color-ink-500); font-size: 12px; font-weight: 700; content: attr(data-label); }
+  .lab-matrix-panel .data-table td:last-child { padding: 12px 16px; border-bottom: 0 !important; }
+  .lab-matrix-panel .data-table td:last-child::before { content: none; }
+  .lab-matrix-panel .table-link { justify-content: center; width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid #b9d9f0; border-radius: var(--radius-control); background: var(--color-primary-soft); text-decoration: none; }
+  .lab-matrix-panel .table-link:hover { color: var(--color-primary-dark); background: #dfefff; text-decoration: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
