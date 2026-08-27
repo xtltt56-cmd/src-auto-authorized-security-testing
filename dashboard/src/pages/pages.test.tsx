@@ -3,6 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { App } from '../App'
 import { createFixtureRepository } from '../lib/taskRepository'
 
+const localLabExpectations = [
+  { name: 'Juice Shop', port: '127.0.0.1:3000', taskName: 'Juice Shop · 本地任务' },
+  { name: 'DVWA', port: '127.0.0.1:8081', taskName: 'DVWA · 本地任务' },
+  { name: 'WebGoat', port: '127.0.0.1:8082', taskName: 'WebGoat · 本地任务' },
+  { name: 'VAmPI', port: '127.0.0.1:8083', taskName: 'VAmPI · 本地任务' },
+  { name: 'Business API', port: '127.0.0.1:8084', taskName: 'Business API · 本地任务' },
+] as const
+
 describe('dashboard pages', () => {
   it('updates task detail through pause, resume and stop actions', async () => {
     render(<App repository={createFixtureRepository()} />)
@@ -30,6 +38,19 @@ describe('dashboard pages', () => {
     expect(screen.getByText('WebGoat')).toBeVisible()
     expect(screen.getByText('VAmPI')).toBeVisible()
     expect(screen.getByText('Business API')).toBeVisible()
+  })
+
+  it.each(localLabExpectations)('opens $name as an independent local task', async ({ name, port, taskName }) => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: `查看 ${name} 任务` }))
+
+    expect(await screen.findByRole('heading', { name: taskName })).toBeVisible()
+    expect(screen.getByText(port, { exact: true })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '返回靶场列表' }))
+    expect(screen.getByRole('heading', { name: '本地靶场' })).toBeVisible()
   })
 
   it('opens a safe detail view when a timeline event is selected', async () => {
