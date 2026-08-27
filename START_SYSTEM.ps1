@@ -1,6 +1,7 @@
 ﻿param(
     [switch]$RunLocalLab,
-    [switch]$Dashboard
+    [switch]$Dashboard,
+    [switch]$LegacyGui
 )
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -18,6 +19,9 @@ if($Dashboard){
     }
     & $dashboardLauncher
     exit $LASTEXITCODE
+}
+if($LegacyGui){
+    $RunLocalLab = $false
 }
 if(-not $RunLocalLab){
     $guiPath = Join-Path $ScriptRoot 'tools\src_auto_gui.ps1'

@@ -68,6 +68,25 @@ Ollama 只有在人工启动或桌面启动器发现它可用时才参与本地�
 单击文件名后在右侧显示详细内容；预览不会执行 HTML、链接或脚本，超过 1 MB 的文件会提示改看摘要，
 避免大型扫描工件阻塞界面。
 
+## 代码优先可视化控制台
+
+本次可视化升级新增 `dashboard/` React + Vite 控制台。它使用脱敏的本地夹具展示
+概览、五靶场状态、任务进度、事件详情、授权目标草稿、候选 Finding 和只读报告；页面上的
+暂停/继续/停止、事件选择、草稿保存和报告预览均为真实可点击交互。当前版本仍不访问真实目标、
+不启动靶场、不调用远程 AI，也不把输入域名当成授权。
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\start_dashboard.ps1
+# 或从统一入口显式启动：
+.\START_SYSTEM.ps1 -Dashboard
+```
+
+启动器只监听 `127.0.0.1`，服务就绪后打开浏览器；`-NoBrowser` 可关闭自动打开。旧 WinForms
+主菜单仍是无参数默认入口，`-LegacyGui` 可显式选择旧界面，`-RunLocalLab` 仍只启动五个回环靶场流程。
+Dashboard 的 Storybook、单元测试、Playwright 浏览器验收和截图记录见
+`docs/validation/visual-upgrade-2026-08-26.md`，部署/恢复方式见 `docs/部署与恢复手册.md`。
+
 ## 简体中文界面与输出模式
 
 交互式 PowerShell 中默认显示简体中文摘要，例如“可访问”“依赖不可用”“需要人工复核”。

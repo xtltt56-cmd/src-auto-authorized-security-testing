@@ -31,6 +31,28 @@
 > 见 `validation\autotest\local_regression\LOCAL_REGRESSION_REPORT.md`。这些结果均为本地控制项/表面
 > 回归基准，不是赏金漏洞命中率；`bounty_ready_count=0`、外部目标接触为 0、远程 AI 调用为 0。
 
+## 代码优先可视化控制台（新增）
+
+如果希望使用更清晰的浏览器界面，可在项目根目录执行：
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\start_dashboard.ps1
+```
+
+启动器会检查本地构建产物，必要时使用项目专用 Node.js 构建一次，然后只在
+`http://127.0.0.1:4173/` 启动 Vite 预览并打开默认浏览器。它不会启动 Docker、访问域名、
+调用远程 AI 或提交任何报告。若只想启动服务而不打开浏览器，使用
+`.\tools\start_dashboard.ps1 -NoBrowser`；统一入口使用 `.\START_SYSTEM.ps1 -Dashboard`。
+
+可视化首页的“本地靶场”“目标与授权”“离线审阅”“结果与报告”和“AI 设置”均是可点击导航。
+任务详情支持暂停、继续、停止和事件脱敏详情；授权目标页面只保存本地草稿并进行 URL、主机、
+端口、时间窗和授权说明校验；候选与报告页面只读展示，报告路径受白名单限制，脚本不会执行。
+真实目标仍必须经过人工授权、范围确认和最终人工提交。
+
+旧 WinForms 控制台保持兼容：不带参数运行 `START_SYSTEM.ps1`，或显式使用
+`.\START_SYSTEM.ps1 -LegacyGui`。升级前回退点和安全恢复步骤见 `docs/部署与恢复手册.md`。
+
 ## 界面语言和输出兼容性
 
 当前版本以简体中文作为操作者界面的默认语言。桌面快捷方式、PowerShell 启动器、

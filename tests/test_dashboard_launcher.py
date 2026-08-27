@@ -30,6 +30,7 @@ class DashboardLauncherTests(unittest.TestCase):
         path = PROJECT_ROOT / "START_SYSTEM.ps1"
         content = path.read_text(encoding="utf-8-sig")
         self.assertIn("[switch]$Dashboard", content)
+        self.assertIn("[switch]$LegacyGui", content)
         dashboard_branch = content.index("$Dashboard")
         legacy_branch = content.index("src_auto_gui.ps1")
         self.assertLess(dashboard_branch, legacy_branch)
