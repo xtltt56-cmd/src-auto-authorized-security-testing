@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test'
 
+const localLabTasks = [
+  ['Juice Shop', 'Juice Shop · 本地任务', '127.0.0.1:3000'],
+  ['DVWA', 'DVWA · 本地任务', '127.0.0.1:8081'],
+  ['WebGoat', 'WebGoat · 本地任务', '127.0.0.1:8082'],
+  ['VAmPI', 'VAmPI · 本地任务', '127.0.0.1:8083'],
+  ['Business API', 'Business API · 本地任务', '127.0.0.1:8084'],
+] as const
+
 test('completes local task controls and opens a safe report view', async ({ page }) => {
   const consoleErrors: string[] = []
   const externalRequests: string[] = []
@@ -15,7 +23,7 @@ test('completes local task controls and opens a safe report view', async ({ page
   await page.getByRole('button', { name: '本地靶场' }).click()
   for (const lab of ['Juice Shop', 'DVWA', 'WebGoat', 'VAmPI', 'Business API']) await expect(page.getByText(lab, { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: '打开任务详情' }).click()
+  await page.getByRole('button', { name: '打开当前任务' }).click()
   await expect(page.getByRole('heading', { name: '实时事件' })).toBeVisible()
   await page.getByRole('button', { name: '暂停任务' }).click()
   await expect(page.getByText('已暂停', { exact: true })).toBeVisible()
@@ -30,6 +38,29 @@ test('completes local task controls and opens a safe report view', async ({ page
   await page.getByRole('button', { name: '查看 juice-shop-summary.json' }).click()
   await expect(page.getByRole('heading', { name: '报告查看器' })).toBeVisible()
   await expect(page.getByText('脚本不会执行', { exact: true })).toBeVisible()
+
+  expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
+  expect(externalRequests, externalRequests.join('\n')).toEqual([])
+})
+
+test('opens every local lab as its own task without external network contact', async ({ page }) => {
+  const consoleErrors: string[] = []
+  const externalRequests: string[] = []
+  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
+  page.on('request', (request) => {
+    if (new URL(request.url()).hostname !== '127.0.0.1') externalRequests.push(request.url())
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: '本地靶场' }).click()
+  for (const [lab, title, port] of localLabTasks) {
+    const taskButton = page.getByRole('button', { name: `查看 ${lab} 任务` })
+    await expect(taskButton).toBeVisible()
+    await taskButton.click()
+    await expect(page.getByRole('heading', { name: title })).toBeVisible()
+    await expect(page.getByText(port, { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '返回靶场列表' }).click()
+  }
 
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([])
   expect(externalRequests, externalRequests.join('\n')).toEqual([])
