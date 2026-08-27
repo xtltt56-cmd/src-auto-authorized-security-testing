@@ -46,6 +46,7 @@ export type TaskEvent = {
 
 export type LabStatus = {
   id: string
+  taskId: string
   name: string
   port: number
   health: 'healthy' | 'starting' | 'stopped' | 'blocked'

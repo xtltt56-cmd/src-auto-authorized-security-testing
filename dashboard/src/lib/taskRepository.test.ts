@@ -11,6 +11,17 @@ describe('fixture task repository', () => {
     expect(snapshot.findings.length).toBeGreaterThan(0)
   })
 
+  it('maps every local lab to an independent local-only task with events', async () => {
+    const snapshot = await createFixtureRepository().getDashboardSnapshot()
+    expect(snapshot.labs).toHaveLength(5)
+
+    for (const lab of snapshot.labs) {
+      expect(lab.taskId).toMatch(/^run-lab-/)
+      expect(snapshot.tasks.some((task) => task.id === lab.taskId && task.kind === 'local-lab' && task.networkContact === 'loopback')).toBe(true)
+      expect(snapshot.events.some((event) => event.taskId === lab.taskId && event.redacted)).toBe(true)
+    }
+  })
+
   it('pauses and cancels a task without adding post-cancel events', async () => {
     const repository = createFixtureRepository()
     await repository.pauseTask('run-local-001')
