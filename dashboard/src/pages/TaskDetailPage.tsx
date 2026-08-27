@@ -1,5 +1,5 @@
 import { ArrowLeft, Clock3, HeartPulse, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { TaskRepository } from '../lib/taskRepository'
 import type { TaskEvent, TaskSummary } from '../lib/types'
 import { ActionBar } from '../components/ActionBar'
@@ -34,8 +34,6 @@ export function TaskDetailPage({ task: initialTask, events: initialEvents, repos
   const [task, setTask] = useState(initialTask)
   const [events, setEvents] = useState(initialEvents)
   const [notice, setNotice] = useState('')
-
-  useEffect(() => { setTask(initialTask); setEvents(initialEvents) }, [initialEvents, initialTask])
 
   const refresh = useCallback(async (message: string) => {
     const [nextTask, nextEvents] = await Promise.all([repository.getTask(initialTask.id), repository.getEvents(initialTask.id)])

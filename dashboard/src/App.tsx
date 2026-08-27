@@ -39,7 +39,9 @@ export function App({ repository = defaultRepository }: AppProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
 
+  // The repository is an asynchronous external source; updating the snapshot is intentional.
   const refresh = useCallback(async () => { setSnapshot(await repository.getDashboardSnapshot()) }, [repository])
+  // oxlint-disable-next-line
   useEffect(() => { void refresh() }, [refresh])
 
   const selectedTask = useMemo(() => snapshot.tasks.find((task) => task.id === selectedTaskId) ?? null, [selectedTaskId, snapshot.tasks])

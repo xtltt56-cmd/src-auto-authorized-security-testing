@@ -1,21 +1,8 @@
 import { useId, useState, type FormEvent } from 'react'
 import { ClipboardCheck, RotateCcw, Save } from 'lucide-react'
 import type { TargetDraft, TargetDraftResult } from '../lib/types'
+import { blankTargetDraft } from '../lib/targetDefaults'
 import { validateTargetDraft } from '../lib/validation'
-
-export const blankTargetDraft: TargetDraft = {
-  projectName: '',
-  targetUrl: '',
-  allowedHosts: '',
-  allowedPorts: '',
-  excludedPaths: '',
-  windowStart: '',
-  windowEnd: '',
-  allowedMethods: 'GET, HEAD',
-  concurrency: '1',
-  requestLimit: '100',
-  authorizationNote: '',
-}
 
 type TargetFormProps = {
   initialDraft?: TargetDraft
