@@ -4,9 +4,23 @@
 
 完整中文使用手册：`USER_MANUAL.md`
 
-> **完整备份说明：** 本仓库保留当前项目的工具下载目录和本地验证工件。`vendor/` 与 `validation/` 使用 Git LFS 存储；克隆完整备份前，请先安装 Git LFS 并执行 `git lfs pull`。DPAPI 密文、API 密钥、会话资料和 Git 元数据不会上传。
+> **当前发布基线（2026-08-28）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.8.28-loopback-lab-control`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
 
-## 最新本地四靶场验收（2026-08-24）
+## 三期严格计划状态（2026-08-26，历史实施记录）
+
+本轮按已批准的三期计划完成了代码、控制台和本地证据链的升级：
+
+- 完整 Python 测试：`238/238` 通过；12 个项目 PowerShell 脚本解析通过，关键中文脚本均为 UTF-8 BOM。
+- 本地靶场从四个扩展为五个：新增确定性的 `business-api`（`127.0.0.1:8084`），仅 GET/HEAD、合成订单、对象授权矩阵和 OpenAPI 契约均受回环门控。
+- 业务 API 进程内矩阵已实际完成：`candidate_broken_object_authorization` 仅作为候选，`confirmed=false`、`manual_review_required=true`、`raw_bodies_retained=false`；证据见 `validation/business-api/matrix_unit.json`。
+- 三期蓝队入口已加入资产登记、授权待确认、防护计划、JSONL 日志脱敏统计和建议型报告；示例证据见 `validation/defense/`，不联网、不自动处置。
+- 桌面控制台已接入 Figma V2 信息架构：工作台、本地靶场、目标与授权、会话与任务、代理与 API 复核、发现与报告、蓝队被动分析、AI 与工具、审计与设置；审计页的“请求停止”按钮会在项目根写入 `STOP` 标记并关闭窗口。视觉对照与本机截图见 `docs/design/src-auto-main-console-fidelity.md` 和 `validation/gui/`。
+- Docker Desktop 已恢复，五个靶场本轮均为 `READY`；三轮本地验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`，独立回归为 `30/30` 通过。此前 Docker 不可用的阻断过程和修复后的证据保存在 `validation/business-api/DOCKER_RUNTIME_BLOCKER.md` 与 `validation/autotest/`。
+- 远程 AI、真实目标接触和自动提交均为 `0`。选择启动提示中的“否”时，本次会话不会调用远程 AI；补天报告仍由人工复现、编辑和提交。
+
+> **发布内容说明：** 当前仓库只提交源码、配置、文档、测试和两张静态 Dashboard 验收截图。`vendor/bin` 下的五个 `.cmd` 包装脚本作为源码保留，但工具二进制、扫描缓存、ZAP 会话、`validation/` 下的运行工件、DPAPI 密文、API 密钥和会话资料均不上传；它们不属于可复现的发布基线。详见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)。
+
+## 历史本地四靶场验收（2026-08-24）
 
 本机已经建立并固定了四个只供授权测试使用的回环靶场：OWASP Juice Shop（`127.0.0.1:3000`）、DVWA（`127.0.0.1:8081`）、OWASP WebGoat（`127.0.0.1:8082`）和 VAmPI（`127.0.0.1:8083`）。四个应用镜像均为 pinned digest、仅绑定回环地址，并完成最新 local-only 验收；DVWA 额外使用同一 Compose 内的无宿主端口 MariaDB 初始化数据库。逐轮验证工件会在本机运行时生成，出于隐私、体积和可复现性考虑不提交到仓库；指标摘要保留在本说明和 `TEST_REPORT.md` 中。
 
@@ -25,14 +39,14 @@
 
 靶场采用成熟的 OWASP/官方项目，而不是重新编写脆弱应用： [Juice Shop 官方仓库](https://github.com/juice-shop/juice-shop)、[DVWA 官方仓库](https://github.com/digininja/DVWA) 和 [WebGoat 官方仓库](https://github.com/WebGoat/WebGoat)。项目只引用固定镜像 digest，并把端口发布限制在本机回环；这些上游项目的“故意脆弱”属性只用于本地训练，不构成任何真实目标授权。
 
-## 当前可运行状态（2026-08-24）
+## 可运行状态记录（2026-08-26，历史基线）
 
-本机回环靶场已经完成真实启动和四靶场验证：WSL2 2.7.12、Ubuntu 和 Docker Desktop
+本机回环靶场已经完成真实启动和五靶场验证：WSL2 2.7.12、Ubuntu 和 Docker Desktop
 4.87.0 已安装，Docker 镜像/容器数据位于 `D:\网络安全文件夹\DockerData`，项目和
 验证工件仍全部位于 `D:\网络安全文件夹\SRC-Auto`。Docker Desktop 程序本身按官方
 per-user 安装方式保留在用户目录，这是系统组件例外；不代表项目数据写回 C 盘。
 
-四个应用容器只映射到 `127.0.0.1`，数据库不发布宿主端口，不监听公网或局域网地址。远程 AI 仍为 0 调用；本地
+五个应用容器只映射到 `127.0.0.1`，数据库不发布宿主端口，不监听公网或局域网地址。远程 AI 仍为 0 调用；本地
 Ollama 只有在人工启动或桌面启动器发现它可用时才参与本地分诊。ZAP 结果必须人工复核，
 `POSSIBLE` 不等于已确认漏洞，也不会自动提交补天。
 
@@ -44,13 +58,36 @@ Ollama 只有在人工启动或桌面启动器发现它可用时才参与本地�
 “新建授权目标”、“选择已有目标”、“离线审阅目标范围”、“查看 Findings 和报告”和“AI 模型与密钥设置”。
 其中目标录入表单会校验 HTTPS、允许主机、排除主机和端口，并把配置限制写入
 `config\targets\<target_id>\`；“保存并离线审阅”只调用本地 `target-review`，不会发出网络请求。
-只有点击“本地靶场检测”才会显式传入 `-RunLocalLab` 执行本机四靶场流程。
+只有点击“本地靶场检测”才会显式传入 `-RunLocalLab` 执行本机五靶场流程。
 
 “选择已有目标”和“离线审阅目标范围”现在打开文件夹优先选择器。路径框允许直接粘贴
 `config\targets` 内的上级分组目录，也可使用“项目目标根”“上一级”“选择文件夹”和“刷新”。
 程序会递归列出该目录下的 Scope：同时存在 `scope_confirmed.yaml` 和 `live_plan.yaml` 的项目可勾选审阅；
 候选 Scope 或缺少计划的项目会标灰并说明原因。多个目标始终逐个运行现有离线审阅逻辑，不合并授权范围，
 结果汇总保存在 `reports\offline-review\`，其中固定记录 `network_contact=false`。
+
+“查看 Findings 和报告”使用双栏只读浏览器：左侧列出项目内 `reports` 与 `validation` 摘要，
+单击文件名后在右侧显示详细内容；预览不会执行 HTML、链接或脚本，超过 1 MB 的文件会提示改看摘要，
+避免大型扫描工件阻塞界面。
+
+## 代码优先可视化控制台
+
+本次可视化升级新增 `dashboard/` React + Vite 控制台。它使用脱敏的本地夹具展示
+概览、五靶场状态、任务进度、事件详情、授权目标草稿、候选 Finding 和只读报告；页面上的
+暂停/继续/停止、事件选择、草稿保存和报告预览均为真实可点击交互。当前版本仍不访问真实目标、
+不启动靶场、不调用远程 AI，也不把输入域名当成授权。
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\start_dashboard.ps1
+# 或从统一入口显式启动：
+.\START_SYSTEM.ps1 -Dashboard
+```
+
+启动器只监听 `127.0.0.1`，服务就绪后打开浏览器；`-NoBrowser` 可关闭自动打开。旧 WinForms
+主菜单仍是无参数默认入口，`-LegacyGui` 可显式选择旧界面，`-RunLocalLab` 仍只启动五个回环靶场流程。
+Dashboard 的 Storybook、单元测试、Playwright 浏览器验收和截图记录见
+`docs/validation/visual-upgrade-2026-08-26.md`，部署/恢复方式见 `docs/部署与恢复手册.md`。
 
 ## 简体中文界面与输出模式
 
@@ -133,7 +170,7 @@ python -m src_auto local-regression --local-only --lab dvwa --case dvwa-auth-bou
 
 ## 本地 OWASP Juice Shop 验证（仅 loopback）
 
-下面的单靶场命令用于兼容 Juice Shop 历史工件；四靶场最终验收请使用上一节的
+下面的单靶场命令用于兼容 Juice Shop 历史工件；五靶场最终验收请使用上一节的
 `local-validation` 入口。此分支只允许 `127.0.0.1`/`localhost:3000`，并强制使用本地 Ollama；
 它不会访问公网、不会扩展外链，也不会启用远程 AI。当前 Docker Desktop 已由启动器管理，若
 当前 PowerShell 没有 Docker 路径，先执行下面的 PATH 设置：
@@ -147,7 +184,7 @@ python -m src_auto juice-shop-zap --confirm-local --human
 ```
 
 `START_SYSTEM.ps1`（桌面快捷方式指向它）会在需要时启动 Docker Desktop，通过固定 Compose
-启动四靶场并等待四个回环端口健康；以下命令只对 Juice Shop 历史单靶场工件运行基线。
+启动五靶场并等待五个回环端口健康；以下命令只对 Juice Shop 历史单靶场工件运行基线。
 `juice-shop-zap --confirm-local` 是单独的人工确认步骤，只允许这个 loopback 目标，输出
 `POSSIBLE` 候选并等待人工复核。结果位于本机 `validation/juice-shop/`；如果依赖再次不可用，命令会输出
 `BLOCKED_DEPENDENCY`，不会把未执行扫描算作通过。
@@ -216,7 +253,7 @@ python -m src_auto target-review `
 
 ### 执行本机自动化验收计划
 
-旧版单靶场编排器仍保留用于兼容历史工件；当前四靶场验收以 `run_local_lab_validation.py` 的本机输出为准。重复轮次会在重置后等待回环 HTTP 200，不会把旧 ZAP 工件当成新结果：
+旧版单靶场编排器仍保留用于兼容历史工件；当前五靶场验收以 `run_local_lab_validation.py` 的本机输出为准。重复轮次会在重置后等待回环 HTTP 200，不会把旧 ZAP 工件当成新结果：
 
 ```powershell
 python tools/run_autonomous_validation.py --local-only --repeat-rounds 2

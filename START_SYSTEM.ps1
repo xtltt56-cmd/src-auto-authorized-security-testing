@@ -1,8 +1,28 @@
 ﻿param(
-    [switch]$RunLocalLab
+    [switch]$RunLocalLab,
+    [switch]$Dashboard,
+    [switch]$LegacyGui
 )
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+$env:PYTHONIOENCODING = 'utf-8'
+if($Dashboard){
+    $dashboardLauncher = Join-Path $ScriptRoot 'tools\start_dashboard.ps1'
+    if(-not (Test-Path -LiteralPath $dashboardLauncher)){
+        Write-Host '未找到 Dashboard 启动脚本，无法启动可视化控制台。' -ForegroundColor Red
+        exit 2
+    }
+    & $dashboardLauncher
+    exit $LASTEXITCODE
+}
+if($LegacyGui){
+    $RunLocalLab = $false
+}
 if(-not $RunLocalLab){
     $guiPath = Join-Path $ScriptRoot 'tools\src_auto_gui.ps1'
     if(-not (Test-Path -LiteralPath $guiPath)){
@@ -13,12 +33,6 @@ if(-not $RunLocalLab){
     exit $LASTEXITCODE
 }
 
-$ErrorActionPreference = 'Continue'
-$ProgressPreference = 'SilentlyContinue'
-$utf8 = New-Object System.Text.UTF8Encoding($false)
-[Console]::OutputEncoding = $utf8
-$OutputEncoding = $utf8
-$env:PYTHONIOENCODING = 'utf-8'
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DeepSeekSecretHelper = Join-Path $ProjectRoot 'tools\deepseek_secret.ps1'
 $DeepSeekSecretPath = Join-Path $ProjectRoot 'config\secrets\deepseek_api_key.dpapi'
@@ -121,7 +135,7 @@ if(-not (Test-DockerReady)){
         Write-Host '正在启动 Docker Desktop（本地靶场）……' -ForegroundColor Yellow
         Start-Process -FilePath $dockerApp | Out-Null
     } else {
-        Write-Host '未找到 Docker Desktop；将无法启动本地四靶场。' -ForegroundColor Yellow
+        Write-Host '未找到 Docker Desktop；将无法启动本地五靶场。' -ForegroundColor Yellow
     }
     $dockerReady = $false
     1..60 | ForEach-Object {
@@ -138,13 +152,14 @@ if(-not (Test-DockerReady)){
 function Ensure-LocalLabs {
     $composeFile = Join-Path $ProjectRoot 'docker-compose.local-labs.yml'
     if(-not (Test-Path -LiteralPath $composeFile)){ return $false }
-    Write-Host '正在启动固定版本的 Juice Shop、DVWA、WebGoat 和 VAmPI（仅回环端口）……' -ForegroundColor Cyan
+    Write-Host '正在启动固定版本的 Juice Shop、DVWA、WebGoat、VAmPI 和业务 API（business-api）（仅回环端口）……' -ForegroundColor Cyan
     & $dockerExe compose -f $composeFile up -d
     if($LASTEXITCODE -ne 0){ return $false }
     $juiceReady = $false
     $dvwaReady = $false
     $webgoatReady = $false
     $vampiReady = $false
+    $businessApiReady = $false
     for($i = 0; $i -lt 120; $i++){
         Start-Sleep -Seconds 1
         try {
@@ -163,18 +178,22 @@ function Ensure-LocalLabs {
             $vampi = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8083/ui/' -TimeoutSec 2
             if($vampi.StatusCode -eq 200){ $vampiReady = $true }
         } catch {}
-        if($juiceReady -and $dvwaReady -and $webgoatReady -and $vampiReady){ return $true }
+        try {
+            $businessApi = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:8084/health' -TimeoutSec 2
+            if($businessApi.StatusCode -eq 200){ $businessApiReady = $true }
+        } catch {}
+        if($juiceReady -and $dvwaReady -and $webgoatReady -and $vampiReady -and $businessApiReady){ return $true }
     }
     return $false
 }
 
-Write-Host '正在确保四靶场仅绑定到 127.0.0.1:3000、127.0.0.1:8081、127.0.0.1:8082 和 127.0.0.1:8083……' -ForegroundColor Cyan
+Write-Host '正在确保五靶场仅绑定到 127.0.0.1:3000、127.0.0.1:8081、127.0.0.1:8082、127.0.0.1:8083 和 127.0.0.1:8084……' -ForegroundColor Cyan
 if(-not (Ensure-LocalLabs)){
-    Write-Host '本地四靶场未能在回环端口就绪。' -ForegroundColor Red
+    Write-Host '本地五靶场未能在回环端口就绪。' -ForegroundColor Red
     Read-Host '按 Enter 键关闭窗口'
     exit 5
 }
-Write-Host 'Juice Shop、DVWA、WebGoat 和 VAmPI 已在回环端口就绪。' -ForegroundColor Green
+Write-Host 'Juice Shop、DVWA、WebGoat、VAmPI 和业务 API（business-api）已在回环端口就绪。' -ForegroundColor Green
 
 function Test-OllamaReady {
     try {
@@ -215,22 +234,22 @@ if(Test-OllamaReady){
     Write-Host '未找到 Ollama，将使用本地启发式回退。' -ForegroundColor Yellow
 }
 
-Write-Host '正在执行四靶场本地验收（发现、受控候选、独立裁决和评分）……' -ForegroundColor Cyan
+Write-Host '正在执行五靶场本地验收（发现、受控候选、独立裁决和评分）……' -ForegroundColor Cyan
 python tools/run_local_lab_validation.py --local-only --repeat-rounds 2
 $validationExit = $LASTEXITCODE
 if($validationExit -ne 0){
-    Write-Host "四靶场验收结束，退出码：$validationExit；请查看 validation\autotest\LOCAL_LAB_SCORE.json。" -ForegroundColor Yellow
+    Write-Host "五靶场验收结束，退出码：$validationExit；请查看 validation\autotest\LOCAL_LAB_SCORE.json。" -ForegroundColor Yellow
 } else {
-    Write-Host '四靶场本地验收完成，结果已写入 validation\autotest\LOCAL_LAB_SCORE.json。' -ForegroundColor Green
+    Write-Host '五靶场本地验收完成，结果已写入 validation\autotest\LOCAL_LAB_SCORE.json。' -ForegroundColor Green
 }
 
-Write-Host '正在执行四靶场非破坏性安全回归（不发送漏洞利用 payload）……' -ForegroundColor Cyan
+Write-Host '正在执行五靶场非破坏性安全回归（不发送漏洞利用 payload）……' -ForegroundColor Cyan
 python tools/run_local_regression.py --local-only --repeat-rounds 2 --json
 $regressionExit = $LASTEXITCODE
 if($regressionExit -ne 0){
     Write-Host "安全回归结束，退出码：$regressionExit；请查看 validation\autotest\local_regression\LOCAL_REGRESSION_SCORE.json。" -ForegroundColor Yellow
 } else {
-    Write-Host '四靶场安全回归全部通过。' -ForegroundColor Green
+    Write-Host '五靶场安全回归全部通过。' -ForegroundColor Green
 }
 
 Write-Host '正在创建本地运行记录……' -ForegroundColor Cyan
@@ -255,7 +274,7 @@ python -m src_auto reports --human
 if($runExit -eq 0 -and $validationExit -eq 0 -and $regressionExit -eq 0){
     Write-Host "本地运行已完成：$runId" -ForegroundColor Green
 } else {
-    Write-Host "本地运行结束，控制层退出码：$runExit，四靶场验收退出码：$validationExit，安全回归退出码：$regressionExit；请检查状态和报告。" -ForegroundColor Yellow
+    Write-Host "本地运行结束，控制层退出码：$runExit，五靶场验收退出码：$validationExit，安全回归退出码：$regressionExit；请检查状态和报告。" -ForegroundColor Yellow
 }
 Read-Host '按 Enter 键关闭窗口'
 if($validationExit -ne 0){ exit $validationExit }

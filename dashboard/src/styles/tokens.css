@@ -1,0 +1,35 @@
+:root {
+  --color-ink-950: #0b2239;
+  --color-ink-900: #0e2e4c;
+  --color-ink-800: #123b5d;
+  --color-ink-700: #214e72;
+  --color-ink-600: #47647b;
+  --color-ink-500: #718497;
+  --color-surface: #f7fafc;
+  --color-panel: #ffffff;
+  --color-panel-muted: #f0f5f8;
+  --color-border: #d6e0e8;
+  --color-primary: #0b84f3;
+  --color-primary-dark: #075eae;
+  --color-primary-soft: #e8f3ff;
+  --color-success: #168a55;
+  --color-success-soft: #e8f7ef;
+  --color-warning: #b26a00;
+  --color-warning-soft: #fff5df;
+  --color-danger: #c43d4b;
+  --color-danger-soft: #fff0f1;
+  --color-info: #4d6ea8;
+  --shadow-panel: 0 10px 28px rgba(18, 59, 93, 0.08);
+  --shadow-float: 0 18px 48px rgba(11, 34, 57, 0.18);
+  --radius-panel: 12px;
+  --radius-control: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --font-ui: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}

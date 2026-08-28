@@ -1,8 +1,15 @@
 # SRC-Auto 平台完整使用手册
 
+> **2026-08-26 严格计划更新：** 当前实现以 `docs/THREE_PHASE_USER_MANUAL.md` 和
+> `docs/THREE_PHASE_UPGRADE_REPORT.md` 为准。本轮已加入第五个仅回环的 `business-api`
+> 靶场（`127.0.0.1:8084`）、业务 API 授权矩阵、蓝队被动日志分析和 Figma V2 控制台入口；
+> 完整测试为 `238/238` 通过。Docker Desktop 已恢复后，五个靶场均通过健康检查，三轮本地
+> 验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`，独立回归 `30/30` 通过；若 Docker 再次不可用，
+> 控制台必须显示依赖阻断，不能把历史成绩冒充当前容器运行成绩。
+
 > 当前三期升级后的简体中文主手册请优先阅读 [`docs/THREE_PHASE_USER_MANUAL.md`](docs/THREE_PHASE_USER_MANUAL.md)，最终验收摘要见 [`docs/THREE_PHASE_UPGRADE_REPORT.md`](docs/THREE_PHASE_UPGRADE_REPORT.md)。本文件保留历史命令与兼容入口，旧的“三靶场/159 项”数字不覆盖 2026-08-24 的最新验收结果；本机生成的验证报告位于被 Git 忽略的 `validation/` 目录。
 
-版本：V0.5.0（WSL2/Docker + 三回环靶场 + 非破坏性安全回归版）
+版本：V0.6.0（WSL2/Docker + 五回环靶场 + 非破坏性安全回归版）
 项目路径：D:\网络安全文件夹\SRC-Auto  
 适用系统：Windows 11 / PowerShell  
 当前 Git 基线：工作区保留既有未提交改动；设计快照已单独记录（以实际 `git status` 为准）
@@ -23,6 +30,37 @@
 > `validation\autotest\LOCAL_LAB_SCORE.json`。另有 6 个安全回归用例共 18 次执行，18/18 通过，
 > 见 `validation\autotest\local_regression\LOCAL_REGRESSION_REPORT.md`。这些结果均为本地控制项/表面
 > 回归基准，不是赏金漏洞命中率；`bounty_ready_count=0`、外部目标接触为 0、远程 AI 调用为 0。
+
+## 代码优先可视化控制台（新增）
+
+如果希望使用更清晰的浏览器界面，可在项目根目录执行：
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\start_dashboard.ps1
+```
+
+启动器会检查本地构建产物，必要时使用项目专用 Node.js 构建一次，然后只在
+`http://127.0.0.1:4173/` 启动 Vite 预览并打开默认浏览器。它不会启动 Docker、访问域名、
+调用远程 AI 或提交任何报告。若只想启动服务而不打开浏览器，使用
+`.\tools\start_dashboard.ps1 -NoBrowser`；统一入口使用 `.\START_SYSTEM.ps1 -Dashboard`。
+
+可视化首页的“本地靶场”“目标与授权”“离线审阅”“结果与报告”和“AI 设置”均是可点击导航。
+任务详情支持暂停、继续、停止和事件脱敏详情；授权目标页面只保存本地草稿并进行 URL、主机、
+端口、时间窗和授权说明校验；候选与报告页面只读展示，报告路径受白名单限制，脚本不会执行。
+真实目标仍必须经过人工授权、范围确认和最终人工提交。
+
+### 查看单个本地靶场任务
+
+1. 在浏览器 Dashboard 左侧点击 **本地靶场**。
+2. 在“本地靶场矩阵”中点击靶场名称，或点击同一行的 **查看任务**。
+3. 详情页会显示该靶场对应的 `127.0.0.1:<端口>`、健康状态、任务阶段、脱敏事件和报告入口；点击 **返回靶场列表** 可继续查看其他靶场。
+4. 页面顶部的 **打开当前任务** 是五靶场聚合任务，和单个靶场详情相互独立。
+
+窄屏设备会把每个靶场重排为一张可点击卡片，避免横向挤压。Dashboard 中的靶场状态和事件是本地演示夹具，不代表 Docker 容器在此刻已运行，也不代表真实漏洞扫描结果。查看页面不会启动容器、访问真实网站、调用远程 AI 或自动提交补天报告；需要确认运行状态时，应以本机回环端口检查和 `validation\` 下的本地验收结果为准。
+
+旧 WinForms 控制台保持兼容：不带参数运行 `START_SYSTEM.ps1`，或显式使用
+`.\START_SYSTEM.ps1 -LegacyGui`。升级前回退点和安全恢复步骤见 `docs/部署与恢复手册.md`。
 
 ## 界面语言和输出兼容性
 
@@ -67,7 +105,7 @@ Juice Shop 状态/基线/ZAP 摘要、CLI 帮助和错误提示都使用中文�
 | 新建授权目标 | 打开补天目标录入表单，可保存未确认草稿，或在人工勾选两项确认后生成 Scope 并离线审阅 |
 | 选择已有目标 | 打开文件夹优先选择器，可从 `config\\targets` 根目录或任意下级分组查看已有 Scope |
 | 离线审阅目标范围 | 选择一个或多个完整目标，逐个调用 `target-review` 并生成本地汇总；不会发出网络请求 |
-| 查看 Findings 和报告 | 打开项目内 `reports` 文件夹，供人工阅读和整理补天报告草稿 |
+| 查看 Findings 和报告 | 列出项目内 `reports` 与 `validation` 摘要；单击文件名后在右侧只读预览详细内容，供人工阅读和整理报告草稿 |
 | AI 模型与密钥设置 | 仅打开既有 DeepSeek / OpenRouter 密钥保存工具；默认不启用远程 AI，也不会在界面显示明文密钥 |
 
 ### 离线审阅目标范围选择器

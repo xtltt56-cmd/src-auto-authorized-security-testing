@@ -1,0 +1,48 @@
+{
+  "fileKey": "GddSEorHQZdVOBQUXFnDyS",
+  "fileUrl": "https://www.figma.com/design/GddSEorHQZdVOBQUXFnDyS",
+  "fileName": "SRC-Auto｜授权安全测试编排与候选漏洞研判｜实时任务可视化 V1",
+  "runDate": "2026-08-26",
+  "phase": "P0-discovery-blocked-by-starter-mcp-rate-limit",
+  "lastCheckedDate": "2026-08-26",
+  "plan": {
+    "name": "TTL XXT's team",
+    "tier": "starter",
+    "seat": "View"
+  },
+  "completedSteps": [
+    "P0.a-source-design-spec-and-code-inventory",
+    "P0.a-code-connect-search-none-found",
+    "P0.b-figma-file-created"
+  ],
+  "pendingSteps": [
+    "P0.b-file-structure-font-and-asset-inspection",
+    "P0.c-library-and-design-system-search",
+    "P0.d-v1-token-component-screen-freeze",
+    "P0.e-code-to-figma-map",
+    "P0.f-gap-analysis-and-approval",
+    "P1-token-creation",
+    "P2-documentation",
+    "P3-component-library",
+    "P4-screen-composition",
+    "P5-dpi-validation-and-export"
+  ],
+  "pages": {},
+  "components": {},
+  "screens": {},
+  "pendingValidations": [
+    "starter-plan-mcp-call-limit-must-clear-before-any-use-figma-call"
+  ],
+  "safety": {
+    "realTargetsIncluded": false,
+    "secretsIncluded": false,
+    "remoteAiCalled": false,
+    "externalTargetsContacted": false
+  },
+  "lastError": {
+    "source": "figma_get_metadata",
+    "message": "You've reached the Figma MCP tool call limit on the Starter plan.",
+    "retryAttempted": true,
+    "retryResult": "same-rate-limit-before-file-metadata-was-returned"
+  }
+}

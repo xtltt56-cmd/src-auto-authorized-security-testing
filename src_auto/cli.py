@@ -13,6 +13,7 @@ from .adapters import SafeToolAdapter, ToolRegistry, ToolSuite
 from .attack_surface import AttackSurfaceTarget, build_attack_surface_plan
 from .ai import AITriage, ModelRouter
 from .business_logic import ResponseSnapshot, compare_api_objects, compare_authorization_responses
+from .business_api_lab import run_authorization_matrix
 from .config import load_mapping
 from .controls import BudgetGovernor
 from .defense import DefenseAsset, build_defense_plan, compare_defense_snapshots
@@ -30,7 +31,7 @@ from .remote_ai import (
 from .runtime_policy import RuntimePolicy
 from .target_review import review_target_selection
 from .local_labs import LocalLabManager, load_lab_specs
-from .log_analysis import analyse_jsonl_security_log
+from .log_analysis import analyse_jsonl_security_log, parse_defensive_log, summarize_defensive_events
 from .juice_shop import (
     DEFAULT_JUICE_SHOP_URL,
     LocalTargetError,
@@ -378,13 +379,27 @@ def build_parser() -> argparse.ArgumentParser:
     api_diff.add_argument("--before", required=True)
     api_diff.add_argument("--after", required=True)
     api_diff.add_argument("--output", required=True)
+    business_matrix = sub.add_parser("business-api-matrix", help="对本地业务 API 做 GET-only 对象授权对比（仅回环）")
+    business_matrix.add_argument("--url", default="http://127.0.0.1:8084", help="仅允许 127.0.0.1/localhost 的业务 API 地址")
+    business_matrix.add_argument("--output", required=True, help="项目内输出 JSON 文件")
     defense_plan = sub.add_parser("defense-plan", help="生成已授权自有域名的防护观察计划（不执行）")
     defense_plan.add_argument("--asset", required=True, help="项目内资产登记 JSON")
     defense_plan.add_argument("--output", required=True, help="项目内输出 JSON 文件")
+    defense_register = sub.add_parser("defense-register", help="登记自有域名与授权状态（不联网、不执行）")
+    defense_register.add_argument("--asset", required=True, help="项目内资产登记 JSON")
+    defense_register.add_argument("--output", required=True, help="项目内登记结果 JSON")
     defense_diff = sub.add_parser("defense-diff", help="离线比较两份防护快照")
     defense_diff.add_argument("--before", required=True)
     defense_diff.add_argument("--after", required=True)
     defense_diff.add_argument("--output", required=True)
+    defense_import = sub.add_parser("defense-import-log", help="导入项目内 JSONL 防护日志并生成脱敏摘要")
+    defense_import.add_argument("--input", required=True, help="项目内 JSONL 日志")
+    defense_import.add_argument("--output", required=True, help="项目内日志摘要 JSON")
+    defense_import.add_argument("--max-events", type=int, default=10000)
+    defense_report = sub.add_parser("defense-report", help="汇总自有资产授权状态与本地日志建议（不联网）")
+    defense_report.add_argument("--asset", required=True, help="项目内资产登记 JSON")
+    defense_report.add_argument("--log-report", required=True, help="项目内脱敏日志摘要 JSON")
+    defense_report.add_argument("--output", required=True, help="项目内防护报告 JSON")
     log_review = sub.add_parser("log-review", help="在本地分析 JSONL 安全日志（不上传）")
     log_review.add_argument("--input", required=True, help="项目内 JSONL 日志")
     log_review.add_argument("--output", required=True, help="项目内输出 JSON 文件")
@@ -534,6 +549,36 @@ def main(argv=None) -> int:
                 return 3
             _json({"status": "COMPLETED", "output": str(output), "result": result, "network_contact": False})
             return 0
+        if args.command == "business-api-matrix":
+            try:
+                result = run_authorization_matrix(args.url)
+                output = _write_project_json(args.output, result, "output")
+            except (OSError, ValueError, TypeError) as exc:
+                _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
+                return 3
+            _json({"status": result.get("status", "COMPLETED"), "output": str(output), "result": result, "network_contact": result.get("network_contact", False)})
+            return 0
+        if args.command == "defense-register":
+            try:
+                asset = DefenseAsset.from_mapping(_read_object(_project_file(args.asset, "asset"), "asset"))
+                authorized = bool(asset.confirmed_owned and asset.authorization_source and asset.allow_automated_observation)
+                registration = {
+                    "status": "READY_FOR_DEFENSE_PLAN" if authorized else "PENDING_AUTHORIZATION",
+                    "asset_id": asset.asset_id,
+                    "domain": asset.domain,
+                    "authorization_source": asset.authorization_source,
+                    "confirmed_owned": asset.confirmed_owned,
+                    "allow_automated_observation": asset.allow_automated_observation,
+                    "manual_review_required": True,
+                    "network_contact": False,
+                    "next_action": "defense-plan" if authorized else "补充所有权、授权来源和自动化观察许可",
+                }
+                output = _write_project_json(args.output, registration, "output")
+            except (OSError, ValueError, TypeError) as exc:
+                _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
+                return 3
+            _json({"status": registration["status"], "output": str(output), "registration": registration, "network_contact": False})
+            return 0
         if args.command == "defense-plan":
             try:
                 asset = DefenseAsset.from_mapping(_read_object(_project_file(args.asset, "asset"), "asset"))
@@ -554,6 +599,56 @@ def main(argv=None) -> int:
                 _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
                 return 3
             _json({"status": "COMPLETED", "output": str(output), "result": result, "network_contact": False})
+            return 0
+        if args.command == "defense-import-log":
+            try:
+                input_path = _project_file(args.input, "input")
+                events = parse_defensive_log(input_path, max_events=args.max_events, project_root=PROJECT_ROOT)
+                result = summarize_defensive_events(events)
+                result.update(
+                    {
+                        "source_name": input_path.name,
+                        "truncated": len(events) >= int(args.max_events),
+                    }
+                )
+                output = _write_project_json(args.output, result, "output")
+            except (OSError, ValueError, TypeError) as exc:
+                _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
+                return 3
+            _json({"status": "COMPLETED", "output": str(output), "result": result, "network_contact": False})
+            return 0
+        if args.command == "defense-report":
+            try:
+                asset = DefenseAsset.from_mapping(_read_object(_project_file(args.asset, "asset"), "asset"))
+                log_report = _read_object(_project_file(args.log_report, "log_report"), "log_report")
+                authorized = bool(asset.confirmed_owned and asset.authorization_source and asset.allow_automated_observation)
+                signals = log_report.get("signals", {}) if isinstance(log_report.get("signals"), dict) else {}
+                recommendations = []
+                if bool(log_report.get("manual_review_required")):
+                    recommendations.append("人工复核异常状态码、路径和脱敏客户端指纹")
+                if int(signals.get("error_responses", 0) or 0) > 0:
+                    recommendations.append("核对 4xx/5xx 峰值对应的业务变更与防护日志")
+                report = {
+                    "status": "READY_FOR_HUMAN_REVIEW",
+                    "asset": {
+                        "asset_id": asset.asset_id,
+                        "domain": asset.domain,
+                        "confirmed_owned": asset.confirmed_owned,
+                        "allow_automated_observation": asset.allow_automated_observation,
+                    },
+                    "authorization_state": "AUTHORIZED" if authorized else "PENDING_AUTHORIZATION",
+                    "log_summary": log_report,
+                    "recommendations": recommendations,
+                    "automated_actions": [],
+                    "manual_review_required": True,
+                    "network_contact": False,
+                    "submission_ready": False,
+                }
+                output = _write_project_json(args.output, report, "output")
+            except (OSError, ValueError, TypeError) as exc:
+                _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
+                return 3
+            _json({"status": "READY_FOR_HUMAN_REVIEW", "output": str(output), "report": report, "network_contact": False})
             return 0
         if args.command == "log-review":
             try:

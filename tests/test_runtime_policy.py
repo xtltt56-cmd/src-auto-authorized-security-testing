@@ -22,6 +22,12 @@ class RuntimePolicyTests(unittest.TestCase):
         self.assertTrue(policy.decide_url("http://127.0.0.1:3000")[0])
         self.assertTrue(policy.decide_url("http://localhost:3000/api/Users")[0])
 
+    def test_project_local_policy_allows_deterministic_business_api_port(self):
+        from pathlib import Path
+
+        policy = RuntimePolicy.from_file(Path(__file__).parents[1] / "config" / "validation" / "local_only.json")
+        self.assertTrue(policy.decide_url("http://127.0.0.1:8084/health")[0])
+
     def test_allowlist_rejects_external_subdomain_and_port(self):
         policy = RuntimePolicy.from_mapping(
             {

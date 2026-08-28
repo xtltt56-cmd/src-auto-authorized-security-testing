@@ -113,6 +113,54 @@
         "body_size_min": 1000
       },
       "description": "确认本机 VAmPI 的 OpenAPI 文档可访问；不创建账号、不修改数据。"
+    },
+    {
+      "case_id": "business-api-health-surface",
+      "lab_id": "business-api",
+      "kind": "public-surface",
+      "method": "GET",
+      "path": "/health",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["src-auto-business-api", "local_only", "synthetic_data"],
+        "body_size_min": 60
+      },
+      "description": "确认本地业务 API 健康端点可访问且明确标记为合成回环数据。"
+    },
+    {
+      "case_id": "business-api-openapi-public-surface",
+      "lab_id": "business-api",
+      "kind": "public-surface",
+      "method": "GET",
+      "path": "/openapi.json",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["OpenAPI", "business-api", "127.0.0.1:8084"],
+        "body_size_min": 1000
+      },
+      "description": "确认本地业务 API 的固定 OpenAPI 面可读；不连接外部服务。"
+    },
+    {
+      "case_id": "business-api-readonly-order-surface",
+      "lab_id": "business-api",
+      "kind": "public-surface",
+      "method": "GET",
+      "path": "/api/v1/orders/order-a",
+      "auth": "none",
+      "query": {},
+      "destructive": false,
+      "expected": {
+        "status_in": [200],
+        "body_contains": ["order-a", "manual_review_required", "fixture_scope"],
+        "body_size_min": 180
+      },
+      "description": "只读读取合成订单，验证对象响应可以进入后续授权对比；不修改数据、不提交报告。"
     }
   ]
 }

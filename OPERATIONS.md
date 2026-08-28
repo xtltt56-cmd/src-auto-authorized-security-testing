@@ -2,6 +2,12 @@
 
 > 当前三期验收与图形界面说明以 [`docs/THREE_PHASE_USER_MANUAL.md`](docs/THREE_PHASE_USER_MANUAL.md) 和 [`docs/THREE_PHASE_UPGRADE_REPORT.md`](docs/THREE_PHASE_UPGRADE_REPORT.md) 为准；本页中的历史“三靶场”段落仅用于兼容旧命令。
 
+## 当前严格计划状态（2026-08-26）
+
+代码级三期升级已经接入：一期工具状态/攻击面计划，二期 DPAPI 测试会话、API 对象比较和确定性业务 API 授权矩阵，三期自有资产登记与脱敏防护日志分析，以及中文桌面控制台和五靶场状态面板。业务 API 固定在 `http://127.0.0.1:8084`，只允许 GET/HEAD，矩阵结论始终是人工复核候选。
+
+本轮完整 Python 测试为 `238/238`，PowerShell 项目脚本 `12/12` 解析通过，Compose 配置通过。Docker Desktop Linux engine 已恢复，五个容器当前均为 `READY`，业务 API 三轮回归 `9/9`、五靶场独立回归 `30/30` 通过；历史阻断和恢复命令见 [`validation/business-api/DOCKER_RUNTIME_BLOCKER.md`](validation/business-api/DOCKER_RUNTIME_BLOCKER.md) 和 [`TEST_REPORT.md`](TEST_REPORT.md)。
+
 ## 第一次本地运行
 
 ```powershell

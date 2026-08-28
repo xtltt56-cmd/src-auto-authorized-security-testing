@@ -187,11 +187,58 @@ function New-LabGuideCard {
 }
 
 function Show-LocalLabDashboard {
+    $composeFile = Join-Path $ProjectRoot 'docker-compose.local-labs.yml'
+    $statusLabel = $null
+    function Update-LocalLabDashboardStatus {
+        param([string]$Prefix = '状态：')
+        if(-not $statusLabel){ return }
+        try {
+            $raw = @(& python -m src_auto local-labs status --json 2>$null)
+            $json = ($raw -join "`n") | ConvertFrom-Json
+            $ready = @($json.labs | Where-Object { $_.status -eq 'READY' }).Count
+            $total = @($json.labs).Count
+            $statusLabel.Text = '{0} {1}/{2} 个靶场已就绪；网络接触：{3}' -f $Prefix, $ready, $total, $(if($json.network_contact){'本地回环'}else{'无'})
+        } catch {
+            $statusLabel.Text = "$Prefix 无法读取 Docker 状态；请先启动 Docker Desktop。"
+        }
+    }
+    function Stop-LocalLabServices {
+        if(-not (Test-Path -LiteralPath $composeFile)){
+            $statusLabel.Text = '状态：找不到本地靶场编排文件。'
+            return
+        }
+        try {
+            & docker compose -f $composeFile down 2>$null | Out-Null
+            $statusLabel.Text = '状态：已请求停止本地靶场；未访问真实目标。'
+        } catch {
+            $statusLabel.Text = '状态：停止失败，Docker Desktop 可能未运行。'
+        }
+    }
+    function Start-LocalValidation {
+        $validation = Join-Path $ProjectRoot 'tools\run_local_lab_validation.py'
+        if(-not (Test-Path -LiteralPath $validation)){
+            $statusLabel.Text = '状态：找不到本地验收脚本。'
+            return
+        }
+        Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-Command',"Set-Location -LiteralPath '$ProjectRoot'; python tools\run_local_lab_validation.py --local-only --repeat-rounds 0 --json") -WorkingDirectory $ProjectRoot | Out-Null
+        $statusLabel.Text = '验证进度：已在独立终端启动本地验收（仅回环，结果写入 validation/autotest）。'
+    }
+    function Open-SelectedLoopbackLab {
+        $selected = [string]$selector.SelectedItem
+        if($selected -notmatch '^(Juice Shop|DVWA|WebGoat|VAmPI|业务 API)\|http://127\.0\.0\.1:[0-9]+'){
+            $statusLabel.Text = '状态：请选择固定回环靶场。'
+            return
+        }
+        $url = ($selected -split '\|', 2)[1].Trim()
+        if($url -notmatch '^http://127\.0\.0\.1:[0-9]+'){ throw 'loopback_url_required' }
+        Start-Process $url | Out-Null
+        $statusLabel.Text = '状态：已打开固定回环页面：' + $url
+    }
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'SRC-Auto - 本地靶场与回归验证'
     $form.StartPosition = 'CenterScreen'
-    $form.ClientSize = New-Object System.Drawing.Size(1010, 650)
-    $form.MinimumSize = New-Object System.Drawing.Size(1010, 650)
+    $form.ClientSize = New-Object System.Drawing.Size(1010, 760)
+    $form.MinimumSize = New-Object System.Drawing.Size(1010, 760)
     $form.BackColor = $canvasColor
 
     $header = New-Object System.Windows.Forms.Panel
@@ -207,38 +254,54 @@ function Show-LocalLabDashboard {
     $form.Controls.Add((New-GuiLabel -Text '建议按以下顺序完成首次验证' -Left 34 -Top 145 -Width 450 -Height 30 -Size 13 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
     $form.Controls.Add((New-GuiLabel -Text '1. 启动本地靶场  2. 在浏览器打开对应回环地址  3. 仅在靶场内练习并查看本地结果。' -Left 34 -Top 177 -Width 900 -Height 26 -Size 9 -Color $mutedColor))
 
-    $form.Controls.Add((New-LabGuideCard -Title 'Juice Shop' -Address '127.0.0.1:3000' -Description '面向 Web 应用安全练习的本地靶场。' -Left 34 -Top 220 -Width 216))
-    $form.Controls.Add((New-LabGuideCard -Title 'DVWA' -Address '127.0.0.1:8081' -Description '用于常见 Web 输入与会话安全验证。' -Left 266 -Top 220 -Width 216))
-    $form.Controls.Add((New-LabGuideCard -Title 'WebGoat' -Address '127.0.0.1:8082' -Description '带有课程式说明的本地安全学习环境。' -Left 498 -Top 220 -Width 216))
-    $form.Controls.Add((New-LabGuideCard -Title 'VAmPI' -Address '127.0.0.1:8083' -Description '本地业务 API 靶场，用于对象授权与接口契约练习。' -Left 730 -Top 220 -Width 246))
+    $form.Controls.Add((New-LabGuideCard -Title 'Juice Shop' -Address '127.0.0.1:3000' -Description '面向 Web 应用安全练习的本地靶场。' -Left 34 -Top 220 -Width 292))
+    $form.Controls.Add((New-LabGuideCard -Title 'DVWA' -Address '127.0.0.1:8081' -Description '用于常见 Web 输入与会话安全验证。' -Left 358 -Top 220 -Width 292))
+    $form.Controls.Add((New-LabGuideCard -Title 'WebGoat' -Address '127.0.0.1:8082' -Description '带有课程式说明的本地安全学习环境。' -Left 682 -Top 220 -Width 292))
+    $form.Controls.Add((New-LabGuideCard -Title 'VAmPI' -Address '127.0.0.1:8083' -Description '本地 API 练习环境，用于接口契约和对象授权复核。' -Left 34 -Top 380 -Width 292))
+    $form.Controls.Add((New-LabGuideCard -Title '业务 API（business-api）' -Address '127.0.0.1:8084' -Description '确定性合成订单夹具，专门验证账号会话、API 对比和 IDOR 候选。' -Left 358 -Top 380 -Width 292))
 
     $guide = New-Object System.Windows.Forms.Panel
-    $guide.Location = New-Object System.Drawing.Point(34, 395)
-    $guide.Size = New-Object System.Drawing.Size(942, 102)
+    $guide.Location = New-Object System.Drawing.Point(34, 545)
+    $guide.Size = New-Object System.Drawing.Size(942, 74)
     $guide.BackColor = [System.Drawing.Color]::FromArgb(233, 246, 238)
     $guide.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $guide.Controls.Add((New-GuiLabel -Text '操作提示' -Left 18 -Top 13 -Width 120 -Height 24 -Size 10 -Color $safeColor -Style ([System.Drawing.FontStyle]::Bold)))
-    $guide.Controls.Add((New-GuiLabel -Text '靶场未启动时，先点击“启动本地靶场”。启动终端会保留在前台，便于查看启动状态；本窗口不执行任何真实目标操作。' -Left 18 -Top 41 -Width 900 -Height 24 -Size 9 -Color $safeColor))
-    $guide.Controls.Add((New-GuiLabel -Text '完成练习后，可从“查看 Findings 和报告”打开项目内的本地结果文件。' -Left 18 -Top 68 -Width 900 -Height 22 -Size 9 -Color $safeColor))
+    $guide.Controls.Add((New-GuiLabel -Text '操作提示' -Left 18 -Top 10 -Width 120 -Height 24 -Size 10 -Color $safeColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $guide.Controls.Add((New-GuiLabel -Text '启动、停止、打开和验证都只针对固定 127.0.0.1 靶场；真实目标不会出现在此页面。' -Left 18 -Top 36 -Width 900 -Height 24 -Size 9 -Color $safeColor))
     $form.Controls.Add($guide)
 
-    $startButton = New-GuiButton -Text '启动本地靶场' -Left 34 -Top 540 -Width 190 -Height 46 -Action { Start-LocalLabWindow } -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White)
-    $reportButton = New-GuiButton -Text '查看本地报告' -Left 236 -Top 540 -Width 170 -Height 46 -Action { Open-ReportsFolder }
-    $closeButton = New-GuiButton -Text '返回主页' -Left 806 -Top 540 -Width 170 -Height 46 -Action { $form.Close() } -BackColor $titleColor -ForeColor ([System.Drawing.Color]::White)
+    $selector = New-Object System.Windows.Forms.ComboBox
+    $selector.Name = 'labSelector'
+    $selector.Location = New-Object System.Drawing.Point(34, 642)
+    $selector.Size = New-Object System.Drawing.Size(250, 38)
+    $selector.Font = New-Object System.Drawing.Font($fontName, 10)
+    foreach($item in @('Juice Shop|http://127.0.0.1:3000/','DVWA|http://127.0.0.1:8081/login.php','WebGoat|http://127.0.0.1:8082/WebGoat/','VAmPI|http://127.0.0.1:8083/ui/','业务 API|http://127.0.0.1:8084/health')){ [void]$selector.Items.Add($item) }
+    $selector.SelectedIndex = 0
+    $form.Controls.Add($selector)
+    $statusLabel = New-GuiLabel -Text '状态：正在读取本地靶场状态…' -Left 300 -Top 648 -Width 660 -Height 26 -Size 9 -Color $mutedColor
+    $form.Controls.Add($statusLabel)
+    $startButton = New-GuiButton -Text '启动本地靶场' -Left 34 -Top 694 -Width 150 -Height 42 -Action { Start-LocalLabWindow } -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White)
+    $stopButton = New-GuiButton -Text '停止本地靶场' -Left 194 -Top 694 -Width 150 -Height 42 -Action { Stop-LocalLabServices }
+    $openButton = New-GuiButton -Text '打开回环页面' -Left 354 -Top 694 -Width 150 -Height 42 -Action { Open-SelectedLoopbackLab }
+    $validateButton = New-GuiButton -Text '运行本地验证' -Left 514 -Top 694 -Width 150 -Height 42 -Action { Start-LocalValidation } -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White)
+    $reportButton = New-GuiButton -Text '查看本地报告' -Left 674 -Top 694 -Width 140 -Height 42 -Action { Open-ReportsFolder }
+    $closeButton = New-GuiButton -Text '返回主页' -Left 826 -Top 694 -Width 150 -Height 42 -Action { $form.Close() } -BackColor $titleColor -ForeColor ([System.Drawing.Color]::White)
     $form.Controls.Add($startButton)
+    $form.Controls.Add($stopButton)
+    $form.Controls.Add($openButton)
+    $form.Controls.Add($validateButton)
     $form.Controls.Add($reportButton)
     $form.Controls.Add($closeButton)
     $form.CancelButton = $closeButton
+    Update-LocalLabDashboardStatus
     Enable-SrcAutoDpiLayout -Form $form
     [void]$form.ShowDialog()
     $form.Dispose()
 }
 
 function Open-ReportsFolder {
-    $reports = Join-Path $ProjectRoot 'reports'
-    $reports = Assert-TargetProjectPath -Path $reports -ProjectRoot $ProjectRoot
-    if(-not (Test-Path -LiteralPath $reports)){ [System.IO.Directory]::CreateDirectory($reports) | Out-Null }
-    Start-Process -FilePath 'explorer.exe' -ArgumentList @($reports) | Out-Null
+    # Keep one in-app, closable results surface so a navigation click cannot
+    # silently launch Explorer or appear to do nothing.
+    Show-FindingsWindow
 }
 
 function Save-TargetFromForm {
@@ -750,7 +813,7 @@ function Open-AISettings {
     $form.StartPosition = 'CenterParent'
     $form.ClientSize = New-Object System.Drawing.Size(650, 300)
     $form.BackColor = [System.Drawing.Color]::White
-    $form.Controls.Add((New-GuiLabel -Text 'AI 模型与密钥设置' -Left 28 -Top 20 -Width 500 -Height 34 -Size 16 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $form.Controls.Add((New-GuiLabel -Text 'AI 模型与密钥设置（AI 设置）' -Left 28 -Top 20 -Width 560 -Height 34 -Size 16 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
     $form.Controls.Add((New-GuiLabel -Text '远程 AI 默认关闭；保存密钥不会联网，也不会在窗口中显示明文。' -Left 30 -Top 60 -Width 575 -Height 30 -Size 9 -Color $safeColor))
     $deepseek = New-GuiButton -Text '保存 DeepSeek 密钥' -Left 40 -Top 115 -Width 250 -Height 50 -Action {
         $script = Join-Path $ProjectRoot 'tools\save_deepseek_key.ps1'
@@ -777,6 +840,280 @@ function Open-SessionProfileManager {
         return
     }
     Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-Sta','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
+}
+
+function Show-Workbench {
+    # The workbench is the already-open main window.  Keep this handler real so
+    # the sidebar never points at a missing command; the caller focuses the
+    # first local action when the main form is available.
+    if($script:SrcAutoMainForm -and -not $script:SrcAutoMainForm.IsDisposed){
+        [void]$script:SrcAutoMainForm.Activate()
+    }
+}
+
+function New-SrcAutoInfoWindow {
+    param(
+        [Parameter(Mandatory = $true)][string]$Title,
+        [Parameter(Mandatory = $true)][string]$Summary,
+        [string[]]$Lines = @(),
+        [string]$PrimaryText = '关闭',
+        [scriptblock]$PrimaryAction
+    )
+    $window = New-Object System.Windows.Forms.Form
+    $window.Text = 'SRC-Auto - ' + $Title
+    $window.StartPosition = 'CenterParent'
+    $window.ClientSize = New-Object System.Drawing.Size(760, 480)
+    $window.MinimumSize = New-Object System.Drawing.Size(760, 480)
+    $window.BackColor = [System.Drawing.Color]::White
+    $window.Controls.Add((New-GuiLabel -Text $Title -Left 32 -Top 24 -Width 660 -Height 36 -Size 17 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $window.Controls.Add((New-GuiLabel -Text $Summary -Left 34 -Top 68 -Width 680 -Height 46 -Size 10 -Color $mutedColor))
+    $list = New-Object System.Windows.Forms.ListBox
+    $list.Name = 'statusList'
+    $list.Location = New-Object System.Drawing.Point(34, 128)
+    $list.Size = New-Object System.Drawing.Size(692, 245)
+    $list.Font = New-Object System.Drawing.Font($fontName, 10)
+    $list.HorizontalScrollbar = $true
+    foreach($line in $Lines){ [void]$list.Items.Add([string]$line) }
+    $window.Controls.Add($list)
+    if($PrimaryAction){
+        # Pass the dialog explicitly so a caller's action never relies on
+        # PowerShell dynamic-scope lookup after the WinForms event fires.
+        $closeAction = {
+            & $PrimaryAction $window
+        }.GetNewClosure()
+    } else {
+        $closeAction = { $window.Close() }.GetNewClosure()
+    }
+    $primary = New-GuiButton -Text $PrimaryText -Left 510 -Top 398 -Width 216 -Height 42 -Action $closeAction -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White)
+    $window.Controls.Add($primary)
+    $window.CancelButton = $primary
+    Enable-SrcAutoDpiLayout -Form $window
+    [void]$window.ShowDialog()
+    $window.Dispose()
+}
+
+function Show-SessionTaskWindow {
+    $lines = @(
+        '会话与任务：仅展示本地授权审阅、会话元数据和可恢复状态。',
+        '当前策略：远程目标不会从此页面自动启动。',
+        '账号值保存在 Windows 当前用户 DPAPI 密文中，列表不显示明文。',
+        '下一步：使用“测试会话管理”录入会话，再由人工确认 API 对比任务。'
+    )
+    New-SrcAutoInfoWindow -Title '会话与任务' -Summary '查看本地任务状态、授权审阅和可恢复会话；所有动作都停留在项目目录。' -Lines $lines
+}
+
+function Show-ProxyApiReviewWindow {
+    $lines = @(
+        '代理与 API 复核：Burp 手动代理和 OWASP 代理仅作为人工确认后的观察工具。',
+        '默认请求方法：GET / HEAD；写操作必须由人工确认且仅限合成本地对象。',
+        'API 对象差异只保留路径和指纹，不在报告中保存 Cookie、Token 或响应正文。',
+        '当前页面不会连接 Burp 或任何真实目标。'
+    )
+    New-SrcAutoInfoWindow -Title '代理与 API 复核' -Summary '先准备会话和范围，再从本地报告入口复核对象差异；没有授权就不会启动代理流量。' -Lines $lines
+}
+
+function Show-FindingsWindow {
+    $window = New-Object System.Windows.Forms.Form
+    $window.Text = 'SRC-Auto - 发现与报告'
+    $window.StartPosition = 'CenterParent'
+    $window.ClientSize = New-Object System.Drawing.Size(1060, 650)
+    $window.MinimumSize = New-Object System.Drawing.Size(1060, 650)
+    $window.BackColor = [System.Drawing.Color]::White
+    $window.Controls.Add((New-GuiLabel -Text '发现与报告' -Left 32 -Top 24 -Width 900 -Height 36 -Size 17 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $window.Controls.Add((New-GuiLabel -Text '单击左侧文件即可在右侧查看详细内容；这里只读取项目内报告，不会执行其中的链接或脚本。' -Left 34 -Top 68 -Width 970 -Height 36 -Size 10 -Color $mutedColor))
+    $window.Controls.Add((New-GuiLabel -Text '本地报告文件' -Left 34 -Top 108 -Width 300 -Height 26 -Size 10 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $window.Controls.Add((New-GuiLabel -Text '详细内容预览' -Left 390 -Top 108 -Width 500 -Height 26 -Size 10 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $list = New-Object System.Windows.Forms.ListBox
+    $list.Name = 'findingsList'
+    $list.Location = New-Object System.Drawing.Point(34, 140)
+    $list.Size = New-Object System.Drawing.Size(328, 410)
+    $list.Font = New-Object System.Drawing.Font($fontName, 9)
+    $list.HorizontalScrollbar = $true
+    $window.Controls.Add($list)
+
+    $preview = New-Object System.Windows.Forms.RichTextBox
+    $preview.Name = 'reportPreview'
+    $preview.Location = New-Object System.Drawing.Point(390, 140)
+    $preview.Size = New-Object System.Drawing.Size(638, 410)
+    $preview.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $preview.ReadOnly = $true
+    $preview.WordWrap = $false
+    $preview.DetectUrls = $false
+    $preview.ScrollBars = [System.Windows.Forms.RichTextBoxScrollBars]::Both
+    $preview.BackColor = [System.Drawing.Color]::FromArgb(250, 252, 254)
+    $preview.Text = '请从左侧选择一个报告文件。'
+    $window.Controls.Add($preview)
+
+    $status = New-GuiLabel -Text '尚未选择文件。' -Left 390 -Top 556 -Width 638 -Height 42 -Size 9 -Color $mutedColor
+    $status.Name = 'reportStatus'
+    $window.Controls.Add($status)
+    $reportPaths = @{}
+    $reportProjectRoot = [string]$ProjectRoot
+
+    $showSelected = {
+        if($list.SelectedIndex -lt 0){ return }
+        $relative = [string]$list.SelectedItem
+        if(-not $reportPaths.ContainsKey($relative)){
+            $preview.Text = '该项目不是可查看的报告文件。'
+            $status.Text = '请选择有效的本地报告。'
+            return
+        }
+        try {
+            $path = [System.IO.Path]::GetFullPath([string]$reportPaths[$relative])
+            $safeRoot = [System.IO.Path]::GetFullPath($reportProjectRoot).TrimEnd('\') + '\'
+            if(-not $path.StartsWith($safeRoot, [System.StringComparison]::OrdinalIgnoreCase)){ throw 'report_path_outside_project' }
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw 'report_file_not_found' }
+            $extension = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+            if($extension -notin @('.json','.md','.html','.txt','.log','.xml')){ throw 'report_file_type_not_supported' }
+            $file = Get-Item -LiteralPath $path -ErrorAction Stop
+            if($file.Length -gt 1048576){
+                $preview.Text = '该报告超过 1 MB。为避免界面卡顿，内置预览未加载全文；请查看较小的摘要报告。'
+                $status.Text = ('文件：{0}　大小：{1:N0} KB　状态：超过内置预览上限' -f $relative, ($file.Length / 1KB))
+                return
+            }
+            $preview.Text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+            $preview.SelectionStart = 0
+            $preview.SelectionLength = 0
+            $preview.ScrollToCaret()
+            $status.Text = ('文件：{0}　大小：{1:N1} KB　修改：{2:yyyy-MM-dd HH:mm:ss}' -f $relative, ($file.Length / 1KB), $file.LastWriteTime)
+        } catch {
+            $preview.Text = '无法读取所选报告：' + $_.Exception.Message
+            $status.Text = '读取失败；文件必须位于项目目录内且格式受支持。'
+        }
+    }.GetNewClosure()
+
+    $refresh = {
+        $list.Items.Clear()
+        $reportPaths.Clear()
+        $preview.Text = '请从左侧选择一个报告文件。'
+        $status.Text = '尚未选择文件。'
+        $roots = @((Join-Path $reportProjectRoot 'reports'), (Join-Path $reportProjectRoot 'validation'))
+        $files = @()
+        foreach($root in $roots){
+            # Do not recursively walk scanner/vendor work directories from the UI;
+            # top-level summaries are enough for a responsive, readable view.
+            if(Test-Path -LiteralPath $root){
+                $files += @(Get-ChildItem -LiteralPath $root -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.json','.md','.html') })
+                $files += @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+                    Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.json','.md','.html') } | Select-Object -First 20
+                })
+            }
+        }
+        $files = @($files | Sort-Object FullName -Unique | Select-Object -First 120)
+        if($files.Count -eq 0){ [void]$list.Items.Add('暂无本地报告；先运行本地靶场或离线审阅。') }
+        else {
+            foreach($file in $files){
+                $relative = $file.FullName.Substring($reportProjectRoot.Length).TrimStart('\')
+                $reportPaths[$relative] = $file.FullName
+                [void]$list.Items.Add($relative)
+            }
+        }
+    }.GetNewClosure()
+    $list.Add_SelectedIndexChanged($showSelected)
+    $refreshButton = New-GuiButton -Text '刷新本地结果' -Left 34 -Top 588 -Width 180 -Height 40 -Action $refresh
+    $closeButton = New-GuiButton -Text '关闭' -Left 912 -Top 588 -Width 116 -Height 40 -Action { $window.Close() } -BackColor $titleColor -ForeColor ([System.Drawing.Color]::White)
+    $window.Controls.Add($refreshButton)
+    $window.Controls.Add($closeButton)
+    $window.CancelButton = $closeButton
+    & $refresh
+    Enable-SrcAutoDpiLayout -Form $window
+    [void]$window.ShowDialog()
+    $window.Dispose()
+}
+
+function Show-DefenseObservationWindow {
+    $window = New-Object System.Windows.Forms.Form
+    $window.Text = 'SRC-Auto - 蓝队被动分析'
+    $window.StartPosition = 'CenterParent'
+    $window.ClientSize = New-Object System.Drawing.Size(780, 520)
+    $window.MinimumSize = New-Object System.Drawing.Size(780, 520)
+    $window.BackColor = [System.Drawing.Color]::White
+    $window.Controls.Add((New-GuiLabel -Text '蓝队被动分析' -Left 32 -Top 24 -Width 650 -Height 36 -Size 17 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $window.Controls.Add((New-GuiLabel -Text '输入自有或受托保护域名，仅登记授权状态；没有所有权和自动化观察许可时保持待授权。' -Left 34 -Top 68 -Width 700 -Height 42 -Size 10 -Color $mutedColor))
+    $window.Controls.Add((New-GuiLabel -Text '域名' -Left 34 -Top 132 -Width 120 -Height 26 -Size 10 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $domain = New-Object System.Windows.Forms.TextBox
+    $domain.Name = 'defenseDomain'
+    $domain.Location = New-Object System.Drawing.Point(160, 128)
+    $domain.Size = New-Object System.Drawing.Size(560, 32)
+    $domain.Font = New-Object System.Drawing.Font($fontName, 10)
+    $window.Controls.Add($domain)
+    $window.Controls.Add((New-GuiLabel -Text '授权/所有权证据（例如资产清单编号）' -Left 34 -Top 184 -Width 300 -Height 26 -Size 10 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
+    $evidence = New-Object System.Windows.Forms.TextBox
+    $evidence.Name = 'defenseEvidence'
+    $evidence.Location = New-Object System.Drawing.Point(34, 218)
+    $evidence.Size = New-Object System.Drawing.Size(686, 54)
+    $evidence.Multiline = $true
+    $evidence.Font = New-Object System.Drawing.Font($fontName, 10)
+    $window.Controls.Add($evidence)
+    $owned = New-Object System.Windows.Forms.CheckBox
+    $owned.Name = 'defenseOwned'
+    $owned.Text = '我已确认所有权/受托保护关系'
+    $owned.Location = New-Object System.Drawing.Point(34, 296)
+    $owned.Size = New-Object System.Drawing.Size(310, 28)
+    $owned.Font = New-Object System.Drawing.Font($fontName, 10)
+    $window.Controls.Add($owned)
+    $automated = New-Object System.Windows.Forms.CheckBox
+    $automated.Name = 'defenseAutomation'
+    $automated.Text = '授权允许低速自动化观察'
+    $automated.Location = New-Object System.Drawing.Point(360, 296)
+    $automated.Size = New-Object System.Drawing.Size(300, 28)
+    $automated.Font = New-Object System.Drawing.Font($fontName, 10)
+    $window.Controls.Add($automated)
+    $status = New-GuiLabel -Text '状态：尚未登记' -Left 34 -Top 348 -Width 680 -Height 32 -Size 10 -Color $warningColor
+    $window.Controls.Add($status)
+    $register = New-GuiButton -Text '登记并生成防护草稿' -Left 430 -Top 410 -Width 210 -Height 42 -Action {
+        $rawDomain = $domain.Text.Trim().ToLowerInvariant()
+        if([string]::IsNullOrWhiteSpace($rawDomain) -or [string]::IsNullOrWhiteSpace($evidence.Text.Trim())){
+            $status.Text = '状态：请先填写域名和授权/所有权证据'
+            return
+        }
+        $slug = ($rawDomain -replace '[^a-z0-9.-]', '-')
+        if([string]::IsNullOrWhiteSpace($slug)){ $slug = 'asset' }
+        $folder = Join-Path $ProjectRoot 'config\defense'
+        [IO.Directory]::CreateDirectory($folder) | Out-Null
+        $assetPath = Join-Path $folder ($slug + '.json')
+        $asset = [pscustomobject]@{
+            asset_id = $slug
+            domain = $rawDomain
+            authorization_source = $evidence.Text.Trim()
+            confirmed_owned = [bool]$owned.Checked
+            allow_automated_observation = [bool]$automated.Checked
+        }
+        [IO.File]::WriteAllText($assetPath, ($asset | ConvertTo-Json -Depth 4), [Text.Encoding]::UTF8)
+        if($owned.Checked -and $automated.Checked){
+            $status.Text = '状态：已登记授权，可由人工继续生成观察计划（未联网）'
+        } else {
+            $status.Text = '状态：已保存为待授权草稿，补齐勾选后才能生成计划（未联网）'
+        }
+    } -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White)
+    $close = New-GuiButton -Text '关闭' -Left 654 -Top 410 -Width 100 -Height 42 -Action { $window.Close() } -BackColor $titleColor -ForeColor ([System.Drawing.Color]::White)
+    $window.Controls.Add($register)
+    $window.Controls.Add($close)
+    $window.CancelButton = $close
+    Enable-SrcAutoDpiLayout -Form $window
+    [void]$window.ShowDialog()
+    $window.Dispose()
+}
+
+function Show-AuditSettingsWindow {
+    $lines = @(
+        '默认模式：仅本机回环靶场；真实目标不会自动执行。',
+        '目标状态：录入 → 授权待确认 → 人工启动确认 → 可恢复任务。',
+        '远程 AI：每次会话单独启用；选择“否”时本次不会调用远程模型。',
+        '自动提交：永久关闭；平台只保存可人工修改的报告草稿。',
+        '立即停止：停止当前本地任务并保留审计工件，之后可从会话管理恢复。'
+    )
+    New-SrcAutoInfoWindow -Title '审计与设置' -Summary '这里集中显示安全策略、审计保留和恢复规则；不会修改授权，也不会启动网络动作。' -Lines $lines -PrimaryText '请求停止 / 关闭' -PrimaryAction {
+        param($DialogWindow)
+        try {
+            $stopMarker = Join-Path $ProjectRoot 'STOP'
+            [IO.File]::WriteAllText($stopMarker, "stop requested by desktop console`n", [Text.Encoding]::UTF8)
+            $DialogWindow.Tag = 'STOP_REQUESTED'
+        } catch {
+            $DialogWindow.Tag = 'STOP_MARKER_WRITE_FAILED'
+        }
+        $DialogWindow.Close()
+    }
 }
 
 function New-HomeActionCard {
@@ -808,6 +1145,7 @@ function Show-SrcAutoMainWindow {
     $form.ClientSize = New-Object System.Drawing.Size(1180, 730)
     $form.MinimumSize = New-Object System.Drawing.Size(1080, 690)
     $form.BackColor = $canvasColor
+    $script:SrcAutoMainForm = $form
 
     $sidebar = New-Object System.Windows.Forms.Panel
     $sidebar.Location = New-Object System.Drawing.Point(0, 0)
@@ -816,21 +1154,27 @@ function Show-SrcAutoMainWindow {
     $form.Controls.Add($sidebar)
     $sidebar.Controls.Add((New-GuiLabel -Text 'SRC-Auto' -Left 26 -Top 28 -Width 160 -Height 34 -Size 18 -Color ([System.Drawing.Color]::White) -Style ([System.Drawing.FontStyle]::Bold)))
     $sidebar.Controls.Add((New-GuiLabel -Text '安全测试控制台' -Left 28 -Top 64 -Width 150 -Height 23 -Size 9 -Color ([System.Drawing.Color]::FromArgb(200, 221, 239))))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navQuickStart' -Text '快速开始' -Top 112 -Active:$true -Action {
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navQuickStart' -Text '工作台' -Top 112 -Active:$true -Action {
         if($localLabButton){
             $form.ActiveControl = $localLabButton
             [void]$localLabButton.Focus()
         }
     }))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navLocalLab' -Text '本地靶场' -Top 164 -Action { Show-LocalLabDashboard }))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navTarget' -Text '目标与授权' -Top 202 -Action { Show-TargetWizard }))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navOffline' -Text '离线审阅' -Top 240 -Action { Show-OfflineReviewPicker }))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navReports' -Text '结果与报告' -Top 278 -Action { Open-ReportsFolder }))
-    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navAI' -Text 'AI 设置' -Top 316 -Action { Open-AISettings }))
-    $sidebar.Controls.Add((New-GuiLabel -Text '安全状态' -Left 28 -Top 563 -Width 150 -Height 24 -Size 9 -Color ([System.Drawing.Color]::FromArgb(155, 202, 176)) -Style ([System.Drawing.FontStyle]::Bold)))
-    $sidebar.Controls.Add((New-GuiLabel -Text '默认安全模式' -Left 28 -Top 590 -Width 150 -Height 23 -Size 9 -Color ([System.Drawing.Color]::White)))
-    $sidebar.Controls.Add((New-GuiLabel -Text '默认仅本机回环靶场' -Left 28 -Top 616 -Width 170 -Height 23 -Size 9 -Color ([System.Drawing.Color]::FromArgb(220, 235, 250))))
-    $sidebar.Controls.Add((New-GuiLabel -Text '真实目标不会自动执行' -Left 28 -Top 642 -Width 165 -Height 38 -Size 9 -Color ([System.Drawing.Color]::FromArgb(255, 231, 170))))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navLocalLab' -Text '本地靶场' -Top 150 -Action { Show-LocalLabDashboard }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navTarget' -Text '目标与授权' -Top 188 -Action { Show-TargetWizard }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navSession' -Text '会话与任务' -Top 226 -Action { Show-SessionTaskWindow }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navProxy' -Text '代理与 API 复核' -Top 264 -Action { Show-ProxyApiReviewWindow }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navReports' -Text '发现与报告' -Top 302 -Action { Open-ReportsFolder }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navDefense' -Text '蓝队被动分析' -Top 340 -Action { Show-DefenseObservationWindow }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navAI' -Text 'AI 与工具' -Top 378 -Action { Open-AISettings }))
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navAudit' -Text '审计与设置' -Top 416 -Action { Show-AuditSettingsWindow }))
+    # Offline scope review remains available as a clearly marked sub-entry;
+    # it is deliberately separate from the Figma V2 execution-confirmation lane.
+    $sidebar.Controls.Add((New-SidebarNavButton -Name 'navOffline' -Text '离线审阅范围' -Top 454 -Action { Show-OfflineReviewPicker }))
+    $sidebar.Controls.Add((New-GuiLabel -Text '安全状态' -Left 28 -Top 570 -Width 150 -Height 24 -Size 9 -Color ([System.Drawing.Color]::FromArgb(155, 202, 176)) -Style ([System.Drawing.FontStyle]::Bold)))
+    $sidebar.Controls.Add((New-GuiLabel -Text '默认安全模式' -Left 28 -Top 596 -Width 150 -Height 23 -Size 9 -Color ([System.Drawing.Color]::White)))
+    $sidebar.Controls.Add((New-GuiLabel -Text '默认仅本机回环靶场' -Left 28 -Top 622 -Width 170 -Height 23 -Size 9 -Color ([System.Drawing.Color]::FromArgb(220, 235, 250))))
+    $sidebar.Controls.Add((New-GuiLabel -Text '真实目标不会自动执行' -Left 28 -Top 648 -Width 165 -Height 38 -Size 9 -Color ([System.Drawing.Color]::FromArgb(255, 231, 170))))
 
     $header = New-Object System.Windows.Forms.Panel
     $header.Location = New-Object System.Drawing.Point(208, 0)
@@ -863,7 +1207,7 @@ function Show-SrcAutoMainWindow {
     }
 
     $form.Controls.Add((New-GuiLabel -Text '其他操作' -Left 242 -Top 440 -Width 300 -Height 28 -Size 12 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
-    $form.Controls.Add((New-GuiLabel -Text '常用入口集中在这里，不会直接启动真实目标测试。' -Left 242 -Top 470 -Width 650 -Height 24 -Size 9 -Color $mutedColor))
+    $form.Controls.Add((New-GuiLabel -Text '常用入口集中在这里：结果与报告、AI 设置和测试会话管理；不会直接启动真实目标测试。' -Left 242 -Top 470 -Width 720 -Height 24 -Size 9 -Color $mutedColor))
     $form.Controls.Add((New-GuiButton -Text '选择已有目标' -Left 242 -Top 505 -Width 208 -Height 42 -Action { Select-ExistingTarget }))
     $form.Controls.Add((New-GuiButton -Text '查看 Findings 和报告' -Left 462 -Top 505 -Width 208 -Height 42 -Action { Open-ReportsFolder }))
     $form.Controls.Add((New-GuiButton -Text 'AI 模型与密钥设置' -Left 682 -Top 505 -Width 208 -Height 42 -Action { Open-AISettings }))

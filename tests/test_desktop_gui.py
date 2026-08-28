@@ -393,6 +393,31 @@ class DesktopGuiContractTests(unittest.TestCase):
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    def test_audit_stop_button_is_real_and_sets_project_stop_marker(self):
+        marker = PROJECT_ROOT / "STOP"
+        probe = (
+            "$marker = {marker}\n"
+            "if(Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker -Force }}\n"
+            "$script:AuditStopSeen = $false\n"
+            "$timer = New-Object System.Windows.Forms.Timer\n"
+            "$timer.Interval = 100\n"
+            "$timer.Add_Tick({{\n"
+            "    $window = [System.Windows.Forms.Application]::OpenForms | Select-Object -First 1\n"
+            "    if(-not $window) {{ return }}\n"
+            "    $stop = $window.Controls | Where-Object {{ $_ -is [System.Windows.Forms.Button] }} | Select-Object -First 1\n"
+            "    if(-not $stop) {{ throw 'audit_stop_button_missing' }}\n"
+            "    $script:AuditStopSeen = $true\n"
+            "    $stop.PerformClick(); $timer.Stop()\n"
+            "}})\n"
+            "$timer.Start(); Show-AuditSettingsWindow\n"
+            "if(-not $script:AuditStopSeen) {{ throw 'audit_stop_button_not_clicked' }}\n"
+            "if(-not (Test-Path -LiteralPath $marker)) {{ throw 'audit_stop_marker_missing' }}\n"
+            "Remove-Item -LiteralPath $marker -Force\n"
+            "$timer.Dispose()"
+        ).format(marker=_quote(marker))
+        result = self._run_gui_probe(probe)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
     def test_main_window_new_target_button_opens_its_guided_form(self):
         probe = (
             "$script:MainClickSeen = $false\n"
@@ -496,6 +521,46 @@ class DesktopGuiContractTests(unittest.TestCase):
         )
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_findings_window_selects_report_and_previews_file_content(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project_root = Path(temp)
+            reports = project_root / "reports"
+            validation = project_root / "validation"
+            reports.mkdir()
+            validation.mkdir()
+            (reports / "sample-report.md").write_text(
+                "# 本地报告\n\nDETAIL_MARKER_2026\n",
+                encoding="utf-8",
+            )
+            probe = (
+                "$ProjectRoot = " + _quote(project_root) + "\n"
+                "$script:ReportPreviewCheck = $false\n"
+                "$timer = New-Object System.Windows.Forms.Timer\n"
+                "$timer.Interval = 100\n"
+                "$timer.Add_Tick({\n"
+                "    $window = [System.Windows.Forms.Application]::OpenForms | "
+                "Where-Object { $_.Text -eq 'SRC-Auto - 发现与报告' } | Select-Object -First 1\n"
+                "    if(-not $window) { return }\n"
+                "    $list = $window.Controls | Where-Object { $_.Name -eq 'findingsList' } | Select-Object -First 1\n"
+                "    $preview = $window.Controls | Where-Object { $_.Name -eq 'reportPreview' } | Select-Object -First 1\n"
+                "    if(-not $list) { $script:ReportPreviewError = 'findings_list_missing' }\n"
+                "    elseif(-not $preview) { $script:ReportPreviewError = 'report_preview_missing' }\n"
+                "    elseif($list.Items.Count -ne 1) { $script:ReportPreviewError = ('unexpected_report_count_' + $list.Items.Count) }\n"
+                "    if($script:ReportPreviewError) { $window.Close(); $timer.Stop(); return }\n"
+                "    $list.SelectedIndex = 0\n"
+                "    [System.Windows.Forms.Application]::DoEvents()\n"
+                "    if($preview.Text -notmatch 'DETAIL_MARKER_2026') { $script:ReportPreviewError = ('report_content_not_previewed:' + $preview.Text) }\n"
+                "    $script:ReportPreviewCheck = $true\n"
+                "    $window.Close(); $timer.Stop()\n"
+                "})\n"
+                "$timer.Start(); Show-FindingsWindow\n"
+                "if($script:ReportPreviewError) { throw $script:ReportPreviewError }\n"
+                "if(-not $script:ReportPreviewCheck) { throw 'report_preview_probe_never_completed' }\n"
+                "$timer.Dispose()"
+            )
+            result = self._run_gui_probe(probe)
+            self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_main_action_card_text_does_not_run_under_its_button(self):
         """The home cards keep a readable gap above their overlaid actions."""

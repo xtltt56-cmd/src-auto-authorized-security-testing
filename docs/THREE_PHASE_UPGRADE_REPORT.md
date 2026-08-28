@@ -1,6 +1,6 @@
 # SRC-Auto 三期升级交付报告
 
-**版本：** 2026-08-24 验收更新
+**版本：** 2026-08-26 严格计划验收更新
 
 **项目目录：** `D:\网络安全文件夹\SRC-Auto`
 
@@ -122,6 +122,7 @@ python -m src_auto tool-status --human
 | DVWA | `http://127.0.0.1:8081/` | 常见 Web 漏洞练习 | 仅本机回环 |
 | WebGoat | `http://127.0.0.1:8082/WebGoat/` | 安全课程与业务安全练习 | 仅本机回环 |
 | VAmPI | `http://127.0.0.1:8083/ui/` | API、对象访问与规范驱动测试练习 | 仅本机回环；应用自身故意处于脆弱训练模式 |
+| 确定性业务 API | `http://127.0.0.1:8084/health` | OpenAPI、只读订单对象和三角色授权矩阵练习 | 仅本机回环；只读、候选结论，不自动确认 |
 
 VAmPI 的脆弱行为是靶场设计的一部分，只能用于验证控制台的会话、响应比较、权限矩阵和 Schemathesis 本地冒烟流程。不得把靶场中的路径、账号或行为模式直接套用到真实目标。
 
@@ -176,7 +177,7 @@ python -m compileall -q src_auto tools tests
 # 3) 工具状态（不会开始真实目标扫描）
 python -m src_auto tool-status --human
 
-# 4) 四个本地靶场状态
+# 4) 五个本地靶场状态
 python -m src_auto local-labs status --human
 
 # 5) 仅回环的固定验收与回归
@@ -184,14 +185,65 @@ python -m src_auto local-validation --local-only --repeat-rounds 2 --human
 python -m src_auto local-regression --local-only --repeat-rounds 2 --human
 ```
 
-### 7.1 分期验收矩阵
+### 7.1 2026-08-26 严格计划执行快照
+
+本轮严格按三期计划完成代码和控制台升级，并以当前环境实际状态为准：
+
+| 检查项 | 本轮结果 | 说明 |
+| --- | --- | --- |
+| Python 单元/集成测试 | `238/238` 通过 | `python -m unittest discover -s tests -p 'test_*.py'`；包含报告单击预览交互回归 |
+| PowerShell 解析 | `12/12` 脚本无语法错误 | 排除 `vendor` 第三方运行目录；关键脚本 UTF-8 BOM 均存在 |
+| Docker Compose 配置 | 通过 | `docker compose -f docker-compose.local-labs.yml config --quiet` |
+| Docker 引擎 | 已恢复 | Docker Desktop 4.87.0 / Linux engine 可用，`docker info` 退出码 0 |
+| 五靶场容器状态 | `5/5 READY` | 五个固定回环入口均 HTTP 健康检查 200 |
+| 五靶场本地验收 | `AUTHORIZED_LOCAL_VALIDATION_READY` | `target_count=5`，三轮控制项验收，P0 全部为 0 |
+| 五靶场独立回归 | `30/30` 通过 | 10 个用例 × 3 轮，`pass_rate=1.0` |
+| 业务 API 进程内矩阵 | 已完成 | `candidate_broken_object_authorization`；`confirmed=false`、`manual_review_required=true` |
+| 业务 API Docker 回归 | `9/9` 通过 | 修复 OpenAPI 的 `x-src-auto.lab_id` 断言后，三轮 GET-only 回归通过 |
+| 蓝队防护样例 | 已完成 | 4 条合成 JSONL 事件，IP 哈希、查询串省略、建议人工复核、自动处置为 0 |
+| 桌面控制台 | GUI 契约与关键运行探针通过 | Figma V2 导航、目标/本地靶场/审计入口；停止按钮真实写入 `STOP` 标记 |
+| 远程 AI / 外部目标 / 自动提交 | `0 / 0 / 0` | 本轮没有调用远程模型，也没有访问真实目标或自动提交 |
+
+业务 API 的端口采用 `8084`，原因是原 VAmPI 已占用 `8083`；该偏差已经同步到 Compose、靶场清单、
+RuntimePolicy、回归用例、GUI 和手册，并仍然只绑定 `127.0.0.1`。Figma V2 视觉稿和信息架构清单保存在
+`design/frontend-mockups/2026-08-26-figma-v2/`；由于设计插件导出额度限制，仓库保留了设计 manifest/README 和参考 PNG，
+生产界面以本地 WinForms 实现、[视觉对照记录](design/src-auto-main-console-fidelity.md)和运行探针为准。
+
+### 7.2 运行时阻断后的恢复命令（已执行）
+
+Docker Desktop 启动后，在项目目录执行：
+
+```powershell
+docker compose -f docker-compose.local-labs.yml up -d
+python -m src_auto local-labs status --json
+python -m src_auto local-validation --local-only --repeat-rounds 2 --json
+python -m src_auto local-regression --local-only --repeat-rounds 2 --json
+```
+
+上述恢复命令已在 Docker Desktop 恢复后执行并生成新工件。本节保留恢复步骤，后续若 Docker 再次不可用，必须重新标记为阻断，不能继续沿用本轮成绩。
+
+本轮五靶场控制项分数（不是漏洞可利用率，也不是补天赏金命中率）：
+
+| 靶场 | 候选记录 | TP | FP | FN | 未验证 | Precision | Recall | F1 | 赏金就绪 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 业务 API | 3 | 3 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+| DVWA | 9 | 6 | 1 | 1 | 2 | 0.857143 | 0.857143 | 0.857143 | 0 |
+| Juice Shop | 5 | 1 | 4 | 0 | 0 | 0.200000 | 1.000000 | 0.333333 | 0 |
+| VAmPI | 2 | 2 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+| WebGoat | 1 | 1 | 0 | 0 | 0 | 1.000000 | 1.000000 | 1.000000 | 0 |
+
+机器原始结果见 `validation/autotest/LOCAL_LAB_SCORE.json`，独立回归结果见
+`validation/autotest/local_regression/LOCAL_REGRESSION_SCORE.json`。VAmPI 的 Schemathesis
+结果和业务 API 的横向授权结果都只表示本地训练候选/契约控制，必须人工复现，不能直接提交。
+
+### 7.3 分期验收矩阵
 
 | 阶段 | 重点单元测试 | 本机/界面验证 | 通过的含义 |
 | --- | --- | --- | --- |
 | 一期 | `tests.test_tool_profiles`、`tests.test_curated_tool_installer`、`tests.test_attack_surface` | `tool-status`、范围内 `surface-plan`、本地靶场探测 | 配置、计划和输出边界符合约束；不代表真实目标已扫描 |
 | 二期 | `tests.test_session_vault`、`tests.test_business_logic`、`tests.test_upgrade_cli` | VAmPI 回环靶场、三份本地响应快照比较 | 会话不会明文列出，比较器只给候选，不代表越权已在真实资产确认 |
 | 三期 | `tests.test_defense`、`tests.test_upgrade_cli` | 项目内合成 JSONL 日志、资产/快照差异比较 | 归属门和隐私处理正确；不代表已执行生产防护改动 |
-| 控制台与回归 | `tests.test_desktop_gui`、`tests.test_launcher`、`tests.test_local_labs`、完整 `unittest` | PowerShell 解析、UTF-8 检查、四靶场状态、重复回归 | 按当前环境验证启动、交互和固定本地流程的稳定性 |
+| 控制台与回归 | `tests.test_desktop_gui`、`tests.test_launcher`、`tests.test_local_labs`、完整 `unittest` | PowerShell 解析、UTF-8 检查、五靶场状态、重复回归 | 按当前环境验证启动、交互和固定本地流程的稳定性 |
 
 建议在每轮完整验收结束后，将命令、退出码、测试总数、Docker/靶场状态、工具版本和实际截图路径追加到根目录 `TEST_REPORT.md`。若某项因环境被阻止，记录“阻止原因 + 未执行”，不要用旧工件替代新轮证据，也不要将未执行项标为通过。
 
@@ -207,7 +259,7 @@ python -m src_auto local-regression --local-only --repeat-rounds 2 --human
 
 升级前的三靶场测试分数只能作为历史基线，不能代表新增 VAmPI、真实补天目标或赏金成功率。每次升级后，应以新的 `validation/` 工件更新最终验收结论。
 
-### 7.2 2026-08-24 实机验收快照
+### 7.4 2026-08-24 历史实机验收快照
 
 本次验收先启动 Docker Desktop，再启动四个固定摘要、仅绑定 `127.0.0.1` 的靶场。结果来自项目内最新工件，而不是历史缓存：
 
@@ -237,7 +289,7 @@ python -m src_auto local-regression --local-only --repeat-rounds 2 --human
 
 1. Windows 安全软件可能阻止 Nuclei 等安全工具的原生二进制。平台不绕过防护；应保持阻止状态，并使用已核验的回退运行方式或在合规测试环境中由管理员处理。
 2. BBOT、testssl.sh 等项目在 Windows 上可能受到 Python/POSIX/系统工具依赖限制。工具状态页会显示实际状态，不能把“配置了包装器”视为“已成功运行”。
-3. Docker Desktop 必须运行，四个靶场才会显示为 `READY`。容器镜像固定摘要并只发布到 `127.0.0.1`；Docker 不可用时，平台应提示依赖阻止。
+3. Docker Desktop 必须运行，五个靶场才会显示为 `READY`。容器镜像固定摘要并只发布到 `127.0.0.1`；Docker 不可用时，平台应提示依赖阻止。
 4. 业务逻辑比较需要两个真实的、已授权的测试账号和明确测试对象。缺少这些条件时，系统不应猜测账号、枚举对象或生成漏洞结论。
 5. 防护日志分析目前是项目内 JSONL 导入与统计分析；其他日志格式需要先在项目内转换为受控 JSONL，或经后续适配器支持。
 6. 远程 AI 可用性、成本、模型名称和服务条款由提供商决定，必须在实际调用前以当前控制台状态和提供商页面为准。

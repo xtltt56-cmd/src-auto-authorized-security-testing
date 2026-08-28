@@ -1,5 +1,7 @@
 # 实现报告
 
+> **历史归档说明：** 本文主要记录 2026-08-22 及更早的实施快照，不是当前发布的验收依据。当前版本请以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)、[README.md](README.md) 和 [TEST_REPORT.md](TEST_REPORT.md) 顶部内容为准；本文中的旧测试数量、靶场数量和运行快照不覆盖 `v0.8.28-loopback-lab-control`。
+
 ## 2026-08-22 三靶场最终验收摘要
 
 已在 `D:\网络安全文件夹\SRC-Auto` 内完成固定镜像的三回环应用靶场建设、生命周期管理、有限静态发现、ZAP quick scan、规则裁决和三轮重复验证。Juice Shop 绑定 `127.0.0.1:3000`，DVWA 绑定 `127.0.0.1:8081`，WebGoat 绑定 `127.0.0.1:8082`；三个应用均为 `healthy`，镜像使用 SHA-256 digest 固定。DVWA 的 MariaDB 只在 Compose 网络内提供依赖，不发布宿主端口。
@@ -48,8 +50,8 @@ Docker 的 WSL 数据、Juice Shop 镜像和容器存储位于
 - `D:\网络安全文件夹\qa_zut_report`
 - `D:\网络安全文件夹\build_zut_report.py`
 
-当前 SHA-256 保护快照记录在 `preservation_manifest.sha256`；它是审计辅助文件，不是修改上述
-兄弟路径的许可。
+历史 SHA-256 保护快照曾记录在 `preservation_manifest.sha256`；该本机生成文件不属于当前 Git
+发布内容，也不是修改上述兄弟路径的许可。
 
 ## 环境快照
 
