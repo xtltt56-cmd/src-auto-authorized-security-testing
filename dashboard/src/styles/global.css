@@ -254,7 +254,8 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-.status-badge[data-state='running'] { color: var(--color-primary-dark); background: var(--color-primary-soft); border-color: #c6e2ff; }
+.status-badge[data-state='running'],
+.status-badge[data-state='starting'] { color: var(--color-primary-dark); background: var(--color-primary-soft); border-color: #c6e2ff; }
 .status-badge[data-state='queued'],
 .status-badge[data-state='idle'] { color: var(--color-muted); background: #f1f4f6; border-color: #d9e1e6; }
 .status-badge[data-state='paused'],
@@ -489,6 +490,12 @@ textarea:focus-visible {
 .table-link { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0; border: 0; color: var(--color-primary-dark); background: transparent; font-size: 13px; font-weight: 700; }
 .table-link:hover { color: var(--color-primary); text-decoration: underline; }
 .matrix-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 14px; }
+.lab-action-cell { min-width: 330px; }
+.lab-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 12px; }
+.lab-row-actions .table-link { white-space: nowrap; }
+.lab-row-actions .table-link:disabled { cursor: wait; opacity: .55; }
+.table-link-danger { color: var(--color-danger); }
+.table-link-danger:hover { color: #a42c38; }
 
 .filter-control { display: inline-flex; align-items: center; gap: 8px; color: var(--color-ink-500); font-size: 12px; }
 .filter-control select { min-height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-ink-800); background: #fff; font-size: 12px; }
@@ -527,6 +534,8 @@ textarea:focus-visible {
 .task-meta { display: flex; align-items: center; gap: 14px; color: var(--color-ink-600); font-size: 13px; }
 .task-meta > span { display: inline-flex; align-items: center; gap: 6px; }
 .inline-notice { display: inline-flex; align-items: center; gap: 7px; margin: -8px 0 16px; padding: 9px 12px; border: 1px solid #bfe5d0; border-radius: 8px; color: var(--color-success); background: var(--color-success-soft); font-size: 13px; font-weight: 700; }
+.data-source-notice { display: flex; margin: 0 0 18px; border-color: #bfd7ea; color: var(--color-primary-dark); background: #eef7ff; font-weight: 500; }
+.data-source-notice strong { font-weight: 800; }
 .detail-overview { margin-bottom: 18px; }
 .detail-overview-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 20px; margin-bottom: 20px; }
 .task-detail-grid { display: grid; grid-template-columns: 238px minmax(0, 1fr) 238px; align-items: start; gap: 16px; }
@@ -694,11 +703,17 @@ textarea:focus-visible {
   .lab-matrix-panel .data-table th[scope='row'] { min-width: 0; padding: 14px 16px; border-bottom: 1px solid #e5edf2; background: #f8fbfd; }
   .lab-matrix-panel .data-table tbody tr:last-child th,
   .lab-matrix-panel .data-table tbody tr:last-child td { border-bottom: 1px solid #e5edf2; }
+  .lab-matrix-panel .data-table th[scope='row'],
+  .lab-matrix-panel .data-table td.lab-action-cell { min-width: 0; }
+  .lab-matrix-panel .lab-name-button { width: 100%; min-width: 240px; }
   .lab-matrix-panel .data-table td { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 10px 16px; }
   .lab-matrix-panel .data-table td::before { flex: 0 0 auto; color: var(--color-ink-500); font-size: 12px; font-weight: 700; content: attr(data-label); }
   .lab-matrix-panel .data-table td:last-child { padding: 12px 16px; border-bottom: 0 !important; }
   .lab-matrix-panel .data-table td:last-child::before { content: none; }
-  .lab-matrix-panel .table-link { justify-content: center; width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid #b9d9f0; border-radius: var(--radius-control); background: var(--color-primary-soft); text-decoration: none; }
+  .lab-matrix-panel .table-link { justify-content: center; min-height: 42px; padding: 0 12px; border: 1px solid #b9d9f0; border-radius: var(--radius-control); background: var(--color-primary-soft); text-decoration: none; }
+  .lab-matrix-panel .lab-row-actions { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; gap: 8px; }
+  .lab-matrix-panel .lab-row-actions .table-link { display: flex; width: 100% !important; box-sizing: border-box; }
+  .lab-matrix-panel .lab-row-actions .table-link:first-child { grid-column: 1 / -1; }
   .lab-matrix-panel .table-link:hover { color: var(--color-primary-dark); background: #dfefff; text-decoration: none; }
 }
 

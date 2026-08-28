@@ -2,6 +2,12 @@ import { expect, test } from '@playwright/test'
 
 const localLabNames = ['Juice Shop', 'DVWA', 'WebGoat', 'VAmPI', 'Business API'] as const
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/session', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) })
+  })
+})
+
 test('keeps the Chinese console usable at mobile width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')

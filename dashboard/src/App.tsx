@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FileSearch, LockKeyhole, Settings2 } from 'lucide-react'
+import { FileSearch, Info, LockKeyhole, Settings2 } from 'lucide-react'
 import { AppShell, type NavKey } from './components/AppShell'
 import { LabsPage } from './pages/LabsPage'
 import { OverviewPage } from './pages/OverviewPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TargetDraftPage } from './pages/TargetDraftPage'
 import { FindingsPage } from './pages/FindingsPage'
-import { createFixtureRepository, type TaskRepository } from './lib/taskRepository'
-import { fixtureSnapshot } from './lib/fixtures'
+import { createLoopbackRepository, type TaskRepository } from './lib/taskRepository'
+import { safeDefaultSnapshot } from './lib/fixtures'
 import type { DashboardSnapshot, TargetDraftResult } from './lib/types'
 
 type AppProps = { repository?: TaskRepository }
 
-const defaultRepository = createFixtureRepository()
+const defaultRepository = createLoopbackRepository('/api')
 
 const pageMeta: Record<NavKey, { title: string; description: string }> = {
   overview: { title: '安全测试控制台', description: '本地优先 · 授权可控 · 人工最终确认' },
@@ -35,20 +35,51 @@ function PlaceholderPage({ kind }: { kind: 'targets' | 'review' | 'settings' }) 
 
 export function App({ repository = defaultRepository }: AppProps) {
   const [activeKey, setActiveKey] = useState<NavKey>('overview')
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot>(fixtureSnapshot)
+  const [snapshot, setSnapshot] = useState<DashboardSnapshot>(safeDefaultSnapshot)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
+  const [connectionMessage, setConnectionMessage] = useState('')
 
   // The repository is an asynchronous external source; updating the snapshot is intentional.
-  const refresh = useCallback(async () => { setSnapshot(await repository.getDashboardSnapshot()) }, [repository])
-  // oxlint-disable-next-line
-  useEffect(() => { void refresh() }, [refresh])
+  const refresh = useCallback(async () => {
+    try {
+      const next = await repository.getDashboardSnapshot()
+      setSnapshot(next)
+      setConnectionMessage(next.dependency?.message ?? '')
+    } catch {
+      setSnapshot(safeDefaultSnapshot)
+      setConnectionMessage('本地执行服务暂不可用，已切换为安全空闲状态')
+    }
+  }, [repository])
+  useEffect(() => {
+    let active = true
+    let refreshing = false
+    const tick = async () => {
+      if (!active || refreshing) return
+      refreshing = true
+      try { await refresh() } finally { refreshing = false }
+    }
+    void tick()
+    const timer = window.setInterval(() => { void tick() }, 2000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [refresh])
 
   const selectedTask = useMemo(() => snapshot.tasks.find((task) => task.id === selectedTaskId) ?? null, [selectedTaskId, snapshot.tasks])
   const selectedLab = useMemo(() => snapshot.labs.find((lab) => lab.taskId === selectedTaskId) ?? null, [selectedTaskId, snapshot.labs])
   const selectedEvents = useMemo(() => snapshot.events.filter((event) => event.taskId === selectedTaskId), [selectedTaskId, snapshot.events])
   const navigate = (key: NavKey) => { setSelectedTaskId(null); setActiveKey(key) }
   const openTask = (taskId: string) => { setSelectedTaskId(taskId); setActiveKey('labs') }
+  const runLabAction = useCallback(async (labId: string, action: 'start' | 'stop' | 'reset') => {
+    if (action === 'start') await repository.startLab(labId)
+    else if (action === 'stop') await repository.stopLab(labId)
+    else await repository.resetLab(labId)
+    await refresh()
+  }, [refresh, repository])
+  const runBatchAction = useCallback(async (action: 'start' | 'stop') => {
+    if (action === 'start') await repository.startAllLabs()
+    else await repository.stopAllLabs()
+    await refresh()
+  }, [refresh, repository])
 
   let content
   if (selectedTask) {
@@ -56,7 +87,7 @@ export function App({ repository = defaultRepository }: AppProps) {
   } else if (activeKey === 'overview') {
     content = <OverviewPage snapshot={snapshot} onNavigate={navigate} onOpenTask={openTask} />
   } else if (activeKey === 'labs') {
-    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} />
+    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} onAction={runLabAction} onBatchAction={runBatchAction} />
   } else if (activeKey === 'findings') {
     content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} />
   } else if (activeKey === 'targets') {
@@ -66,7 +97,22 @@ export function App({ repository = defaultRepository }: AppProps) {
   }
 
   const meta = pageMeta[activeKey]
-  return <AppShell activeKey={activeKey} onNavigate={navigate} pageTitle={meta.title} pageDescription={meta.description}>{content}</AppShell>
+  return (
+    <AppShell activeKey={activeKey} onNavigate={navigate} pageTitle={meta.title} pageDescription={meta.description}>
+      {snapshot.source === 'safe-placeholder' ? (
+        <div className="inline-notice data-source-notice" role="status" aria-label="数据来源状态">
+          <Info size={16} aria-hidden="true" />
+          <span><strong>未连接本地执行服务</strong> · {connectionMessage || '当前没有真实任务在运行，页面显示安全空闲状态。'}</span>
+        </div>
+      ) : snapshot.source === 'loopback' && snapshot.dependency && !snapshot.dependency.dockerReady ? (
+        <div className="inline-notice data-source-notice" role="status" aria-label="依赖状态">
+          <Info size={16} aria-hidden="true" />
+          <span><strong>Docker 尚未就绪</strong> · {snapshot.dependency.message}</span>
+        </div>
+      ) : null}
+      {content}
+    </AppShell>
+  )
 }
 
 export default App

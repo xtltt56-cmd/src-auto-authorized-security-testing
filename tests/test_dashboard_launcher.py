@@ -26,6 +26,22 @@ class DashboardLauncherTests(unittest.TestCase):
         self.assertNotIn("git reset", content.lower())
         self.assertNotIn("config\\secrets", content.lower())
 
+    def test_dashboard_launcher_starts_loopback_control_api(self):
+        path = PROJECT_ROOT / "tools" / "start_dashboard.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        self.assertIn("[int]$ApiPort = 4174", content)
+        self.assertIn("src_auto.dashboard_server", content)
+        self.assertIn("dashboard-api.stdout.log", content)
+        self.assertIn("/health", content)
+        self.assertIn("127.0.0.1:$ApiPort", content)
+        self.assertNotIn("--host 0.0.0.0", content)
+
+    def test_vite_proxies_only_api_to_fixed_loopback_port(self):
+        content = (PROJECT_ROOT / "dashboard" / "vite.config.ts").read_text(encoding="utf-8")
+        self.assertIn("'/api'", content)
+        self.assertIn("http://127.0.0.1:4174", content)
+        self.assertNotIn("0.0.0.0", content)
+
     def test_start_system_has_explicit_dashboard_switch_before_legacy_gui(self):
         path = PROJECT_ROOT / "START_SYSTEM.ps1"
         content = path.read_text(encoding="utf-8-sig")

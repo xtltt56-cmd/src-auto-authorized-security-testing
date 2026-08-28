@@ -12,6 +12,21 @@ const localLabExpectations = [
 ] as const
 
 describe('dashboard pages', () => {
+  it('starts in a truthful idle state when no execution service is connected', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('status', { name: '数据来源状态' })).toHaveTextContent('未连接本地执行服务')
+    expect(screen.queryByText('运行中')).not.toBeInTheDocument()
+    expect(screen.getAllByText('未启动').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: '打开任务详情' }))
+    expect(await screen.findByRole('heading', { name: '本地五靶场回归 · 第 1 轮' })).toBeVisible()
+    expect(screen.getByText('0s', { exact: false })).toBeVisible()
+    expect(screen.getByRole('button', { name: '继续任务' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '停止任务' })).toBeDisabled()
+  })
+
   it('updates task detail through pause, resume and stop actions', async () => {
     render(<App repository={createFixtureRepository()} />)
 
@@ -38,6 +53,29 @@ describe('dashboard pages', () => {
     expect(screen.getByText('WebGoat')).toBeVisible()
     expect(screen.getByText('VAmPI')).toBeVisible()
     expect(screen.getByText('Business API')).toBeVisible()
+  })
+
+  it('can start, stop and reset a local lab from the visible controls', async () => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+
+    await user.click(screen.getByRole('button', { name: '停止 DVWA' }))
+    expect(await screen.findByRole('button', { name: '启动 DVWA' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '启动 DVWA' }))
+    expect(await screen.findByRole('button', { name: '停止 DVWA' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '重置 DVWA' }))
+    expect(await screen.findByText(/dvwa 操作已提交/)).toBeVisible()
+  })
+
+  it('submits a batch start and stop action from the lab banner', async () => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: '启动全部靶场' }))
+    expect(await screen.findByText('启动全部操作已提交，页面会显示逐个就绪状态。')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '停止全部靶场' }))
+    expect(await screen.findByText('停止全部操作已提交。')).toBeVisible()
   })
 
   it.each(localLabExpectations)('opens $name as an independent local task', async ({ name, port, taskName }) => {

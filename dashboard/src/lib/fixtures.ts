@@ -169,3 +169,28 @@ export const fixtureSnapshot: DashboardSnapshot = {
     },
   ],
 }
+
+export const safeDefaultSnapshot: DashboardSnapshot = {
+  source: 'safe-placeholder',
+  tasks: fixtureSnapshot.tasks.map((task) => ({
+    ...task,
+    state: 'idle',
+    stage: '未启动',
+    progress: 0,
+    elapsedSeconds: 0,
+    counters: { endpoints: 0, api: 0, candidates: 0, blocked: 0, errors: 0 },
+    networkContact: 'none',
+    updatedAt: '',
+  })),
+  labs: fixtureSnapshot.labs.map((lab) => ({
+    ...lab,
+    health: 'stopped',
+    stage: '未启动',
+    durationSeconds: 0,
+    candidates: 0,
+    reportId: undefined,
+  })),
+  events: [],
+  findings: [],
+  reports: [],
+}

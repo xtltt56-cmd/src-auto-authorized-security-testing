@@ -1,20 +1,22 @@
-import { ExternalLink, HeartPulse } from 'lucide-react'
+import { ExternalLink, HeartPulse, Play, RefreshCw, Square } from 'lucide-react'
 import type { LabStatus } from '../lib/types'
 import { StatusBadge } from './StatusBadge'
 
 type LabMatrixProps = {
   labs: LabStatus[]
   onOpenLabTask: (taskId: string) => void
+  onAction: (labId: string, action: 'start' | 'stop' | 'reset') => Promise<void>
+  pendingLabId?: string | null
 }
 
 const healthToState = (health: LabStatus['health']) => {
   if (health === 'healthy') return 'completed' as const
-  if (health === 'starting') return 'waiting' as const
+  if (health === 'starting') return 'starting' as const
   if (health === 'blocked') return 'blocked' as const
   return 'idle' as const
 }
 
-export function LabMatrix({ labs, onOpenLabTask }: LabMatrixProps) {
+export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }: LabMatrixProps) {
   return (
     <div className="surface-panel lab-matrix-panel">
       <div className="panel-header">
@@ -36,7 +38,7 @@ export function LabMatrix({ labs, onOpenLabTask }: LabMatrixProps) {
               <th scope="col">当前阶段</th>
               <th scope="col">耗时</th>
               <th scope="col">候选</th>
-              <th scope="col"><span className="sr-only">操作</span></th>
+              <th scope="col">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -52,10 +54,29 @@ export function LabMatrix({ labs, onOpenLabTask }: LabMatrixProps) {
                 <td data-label="当前阶段">{lab.stage}</td>
                 <td data-label="耗时">{lab.durationSeconds}s</td>
                 <td data-label="候选"><strong>{lab.candidates}</strong></td>
-                <td data-label="操作">
-                  <button className="table-link" type="button" aria-label={`查看 ${lab.name} 任务`} onClick={() => onOpenLabTask(lab.taskId)}>
-                    查看任务 <ExternalLink size={14} aria-hidden="true" />
-                  </button>
+                <td data-label="操作" className="lab-action-cell">
+                  <div className="lab-row-actions">
+                    <button className="table-link" type="button" aria-label={`查看 ${lab.name} 任务`} onClick={() => onOpenLabTask(lab.taskId)}>
+                      查看任务 <ExternalLink size={14} aria-hidden="true" />
+                    </button>
+                    {lab.health === 'stopped' || lab.health === 'blocked' ? (
+                      <button className="table-link" type="button" aria-label={`启动 ${lab.name}`} onClick={() => void onAction(lab.id, 'start')} disabled={pendingLabId === lab.id}>
+                        <Play size={14} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '启动'}
+                      </button>
+                    ) : (
+                      <button className="table-link table-link-danger" type="button" aria-label={`停止 ${lab.name}`} onClick={() => void onAction(lab.id, 'stop')} disabled={pendingLabId === lab.id}>
+                        <Square size={13} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '停止'}
+                      </button>
+                    )}
+                    <button className="table-link" type="button" aria-label={`重置 ${lab.name}`} onClick={() => void onAction(lab.id, 'reset')} disabled={pendingLabId === lab.id}>
+                      <RefreshCw size={14} aria-hidden="true" /> 重置
+                    </button>
+                    {lab.health === 'healthy' && lab.openUrl && /^http:\/\/127\.0\.0\.1:\d+(?:\/|$)/.test(lab.openUrl) ? (
+                      <a className="table-link" href={lab.openUrl} target="_blank" rel="noreferrer" aria-label={`打开 ${lab.name} 页面`}>
+                        打开页面 <ExternalLink size={14} aria-hidden="true" />
+                      </a>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}

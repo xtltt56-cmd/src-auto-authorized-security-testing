@@ -12,5 +12,6 @@ type Story = StoryObj<typeof meta>
 
 export const 运行中: Story = { args: { state: 'running' } }
 export const 等待人工: Story = { args: { state: 'waiting' } }
+export const 启动中: Story = { args: { state: 'starting' } }
 export const 已阻止: Story = { args: { state: 'blocked' } }
 export const 已完成: Story = { args: { state: 'completed' } }

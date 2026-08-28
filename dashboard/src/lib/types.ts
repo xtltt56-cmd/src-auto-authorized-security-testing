@@ -55,6 +55,15 @@ export type LabStatus = {
   candidates: number
   reportId?: string
   localOnly: true
+  operation?: 'idle' | 'queued' | 'running' | 'completed' | 'failed'
+  openUrl?: string
+  message?: string
+}
+
+export type DependencyStatus = {
+  executionServiceReady: boolean
+  dockerReady: boolean
+  message: string
 }
 
 export type Finding = {
@@ -103,7 +112,8 @@ export type TargetDraftResult = {
 }
 
 export type DashboardSnapshot = {
-  source: 'local-fixture'
+  source: 'local-fixture' | 'safe-placeholder' | 'loopback'
+  dependency?: DependencyStatus
   tasks: TaskSummary[]
   labs: LabStatus[]
   events: TaskEvent[]
