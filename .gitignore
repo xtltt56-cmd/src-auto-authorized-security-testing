@@ -23,11 +23,34 @@ lab/.cache/
 __pycache__/
 *.pyc
 
+# Keep only the five project-owned command wrappers needed by tool profiles.
+# All vendor binaries, virtual environments, caches, downloads and tool state remain local.
+!vendor/
+vendor/*
+!vendor/bin/
+vendor/bin/*
+!vendor/bin/bbot.cmd
+!vendor/bin/nuclei.cmd
+!vendor/bin/schemathesis.cmd
+!vendor/bin/testssl.cmd
+!vendor/bin/zap.cmd
+
 # Generated local validation evidence, scanner caches, and encrypted test data
 .schemathesis/
 validation/
 JUICE_SHOP_VALIDATION_REPORT.md
 *.dpapi
+.hypothesis/
+preservation_manifest.sha256
+
+# The release retains only two static, non-sensitive dashboard acceptance screenshots.
+# Everything else under validation/ is generated locally and must stay out of Git.
+!validation/
+validation/*
+!validation/dashboard/
+validation/dashboard/*
+!validation/dashboard/live-lab-controls.png
+!validation/dashboard/live-click-regression.png
 
 # Local dashboard toolchain and browser test output
 runtime/

@@ -1,5 +1,7 @@
 # 已知问题与诚实限制
 
+> **当前发布读取规则：** `v0.8.28-loopback-lab-control` 的有效状态以本文件首节、[RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部验收为准。下方早于 2026-08-28 的内容均为历史记录；它们不覆盖当前版本，也不表示这些旧工件会随 GitHub 发布上传。
+
 ## 2026-08-28 可视化控制升级后的实际状态
 
 - Dashboard 已接入固定回环控制 API：前端 `127.0.0.1:4173`，API `127.0.0.1:4174`；启动器会复用健康的 API，或在项目目录以隐藏进程启动 `src_auto.dashboard_server`。API 不接受任意 URL、容器名、命令或路径，所有变更请求需要短期进程令牌。
@@ -8,7 +10,7 @@
 - 回环 API 的状态、事件和令牌保存在进程内；关闭 API/启动器后，运行中的操作不会被恢复为历史“运行中”，重新打开会通过 Docker inspect 读取当前容器状态。未完成的执行历史需以项目内验证工件为准。
 - 若 4174 被旧的 Vite/其他程序占用，启动器会因健康检查不匹配而报告控制 API 未就绪；请先确认占用者是项目进程，再关闭旧 Dashboard 后重试，不要强行改成公网监听。
 
-## 2026-08-26 三期升级当前状态
+## 2026-08-26 三期升级状态（历史记录）
 
 - 当前代码/控制台/文档按三期计划接入，完整 Python 测试为 `238/238`；12 个项目 PowerShell 脚本解析无错误，关键中文脚本均保留 UTF-8 BOM。
 - 本地实验面已经从四个扩展为五个：新增确定性业务 API `127.0.0.1:8084`；原 VAmPI 继续使用 `127.0.0.1:8083`。五个入口都只允许回环地址。
@@ -16,7 +18,7 @@
 - 业务 API 对象矩阵、蓝队日志分析和桌面控制台的离线/进程内验证已完成；矩阵输出为待人工复核候选，日志分析不保留原始查询串/IP，自动处置数量为 `0`。远程 AI、真实外部目标和自动提交本轮均为 `0`。
 - Figma V2 视觉稿的 manifest/README 保存在 `design/frontend-mockups/2026-08-26-figma-v2/`；生产界面使用本地 WinForms 实现，设计插件导出额度不足不会被伪报为生产代码。
 
-## 2026-08-21 当前状态校正
+## 2026-08-21 状态校正（历史记录）
 
 WSL2 2.7.12、Ubuntu 和 Docker Desktop 4.87.0 已按操作者授权安装；Ubuntu 位于
 `D:\网络安全文件夹\WSL\Ubuntu`，Docker 的 WSL 数据位于
@@ -64,7 +66,7 @@ WSL2 2.7.12、Ubuntu 和 Docker Desktop 4.87.0 已按操作者授权安装；Ubu
    字段保持可解析。脚本需要稳定输入时，请显式使用 `--json`；交互人员请使用 `--human`，
    必要时先设置 `$env:PYTHONIOENCODING='utf-8'`。
 
-## 2026-08-24 当前状态
+## 2026-08-24 状态（历史记录）
 
 四个固定回环靶场（Juice Shop、DVWA、WebGoat、VAmPI）已在 Docker Desktop 就绪，最新验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`；完整测试 `214/214`、本地回归 `14/14`，远程 AI、外部目标接触和自动提交均为 0。详细结果以 `validation/autotest/LOCAL_LAB_SCORE.json` 和 `docs/THREE_PHASE_UPGRADE_REPORT.md` 为准。
 

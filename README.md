@@ -4,7 +4,9 @@
 
 完整中文使用手册：`USER_MANUAL.md`
 
-## 当前三期严格计划状态（2026-08-26）
+> **当前发布基线（2026-08-28）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.8.28-loopback-lab-control`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
+
+## 三期严格计划状态（2026-08-26，历史实施记录）
 
 本轮按已批准的三期计划完成了代码、控制台和本地证据链的升级：
 
@@ -16,7 +18,7 @@
 - Docker Desktop 已恢复，五个靶场本轮均为 `READY`；三轮本地验收为 `AUTHORIZED_LOCAL_VALIDATION_READY`，独立回归为 `30/30` 通过。此前 Docker 不可用的阻断过程和修复后的证据保存在 `validation/business-api/DOCKER_RUNTIME_BLOCKER.md` 与 `validation/autotest/`。
 - 远程 AI、真实目标接触和自动提交均为 `0`。选择启动提示中的“否”时，本次会话不会调用远程 AI；补天报告仍由人工复现、编辑和提交。
 
-> **完整备份说明：** 本仓库保留当前项目的工具下载目录和本地验证工件。`vendor/` 与 `validation/` 使用 Git LFS 存储；克隆完整备份前，请先安装 Git LFS 并执行 `git lfs pull`。DPAPI 密文、API 密钥、会话资料和 Git 元数据不会上传。
+> **发布内容说明：** 当前仓库只提交源码、配置、文档、测试和两张静态 Dashboard 验收截图。`vendor/bin` 下的五个 `.cmd` 包装脚本作为源码保留，但工具二进制、扫描缓存、ZAP 会话、`validation/` 下的运行工件、DPAPI 密文、API 密钥和会话资料均不上传；它们不属于可复现的发布基线。详见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)。
 
 ## 历史本地四靶场验收（2026-08-24）
 
@@ -37,7 +39,7 @@
 
 靶场采用成熟的 OWASP/官方项目，而不是重新编写脆弱应用： [Juice Shop 官方仓库](https://github.com/juice-shop/juice-shop)、[DVWA 官方仓库](https://github.com/digininja/DVWA) 和 [WebGoat 官方仓库](https://github.com/WebGoat/WebGoat)。项目只引用固定镜像 digest，并把端口发布限制在本机回环；这些上游项目的“故意脆弱”属性只用于本地训练，不构成任何真实目标授权。
 
-## 当前可运行状态（2026-08-26）
+## 可运行状态记录（2026-08-26，历史基线）
 
 本机回环靶场已经完成真实启动和五靶场验证：WSL2 2.7.12、Ubuntu 和 Docker Desktop
 4.87.0 已安装，Docker 镜像/容器数据位于 `D:\网络安全文件夹\DockerData`，项目和
