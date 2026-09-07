@@ -819,9 +819,9 @@ function Open-AISettings {
         $script = Join-Path $ProjectRoot 'tools\save_deepseek_key.ps1'
         Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
     }
-    $openrouter = New-GuiButton -Text '保存 OpenRouter / Ox Alpha 密钥' -Left 320 -Top 115 -Width 285 -Height 50 -Action {
-        $script = Join-Path $ProjectRoot 'tools\save_openrouter_key_gui.ps1'
-        Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-Sta','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
+    $openrouter = New-GuiButton -Text 'OpenRouter 密钥与模型设置' -Left 320 -Top 115 -Width 285 -Height 50 -Action {
+        $script = Join-Path $ProjectRoot 'tools\openrouter_settings_gui.ps1'
+        Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile','-Sta','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
     }
     $form.Controls.Add($deepseek)
     $form.Controls.Add($openrouter)

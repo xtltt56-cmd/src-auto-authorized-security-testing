@@ -6,6 +6,7 @@ import { OverviewPage } from './pages/OverviewPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TargetDraftPage } from './pages/TargetDraftPage'
 import { FindingsPage } from './pages/FindingsPage'
+import { AISettingsPage } from './pages/AISettingsPage'
 import { createLoopbackRepository, type TaskRepository } from './lib/taskRepository'
 import { safeDefaultSnapshot } from './lib/fixtures'
 import type { DashboardSnapshot, TargetDraftResult } from './lib/types'
@@ -92,8 +93,10 @@ export function App({ repository = defaultRepository }: AppProps) {
     content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} />
   } else if (activeKey === 'targets') {
     content = <TargetDraftPage savedResult={savedTargetResult} onSaved={setSavedTargetResult} />
+  } else if (activeKey === 'settings') {
+    content = <AISettingsPage />
   } else {
-    content = <PlaceholderPage kind={activeKey === 'settings' ? 'settings' : 'review'} />
+    content = <PlaceholderPage kind="review" />
   }
 
   const meta = pageMeta[activeKey]

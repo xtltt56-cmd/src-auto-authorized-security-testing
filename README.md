@@ -4,6 +4,8 @@
 
 完整中文使用手册：`USER_MANUAL.md`
 
+OpenRouter 模型下架、更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」可打开原生密钥与模型设置窗口。
+
 > **当前发布基线（2026-08-28）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.8.28-loopback-lab-control`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）

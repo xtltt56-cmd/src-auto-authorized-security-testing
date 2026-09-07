@@ -6,6 +6,9 @@ import argparse
 import json
 import re
 import secrets
+import os
+import subprocess
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -18,6 +21,40 @@ _ALLOWED_ORIGIN = "http://127.0.0.1:4173"
 _LAB_ACTION_ROUTE = re.compile(r"^/api/labs/([a-z0-9][a-z0-9_-]{0,31})/(start|stop|reset)$")
 _BATCH_ROUTE = re.compile(r"^/api/labs/(start-all|stop-all)$")
 _MAX_BODY_BYTES = 1024
+_settings_lock = threading.Lock()
+_settings_process = None
+
+
+def open_openrouter_settings():
+    """Open the fixed native dialog once; never accept a path or command from HTTP."""
+    global _settings_process
+    if os.name != 'nt':
+        raise OSError('windows_required')
+    with _settings_lock:
+        if _settings_process is not None and _settings_process.poll() is None:
+            return
+        root = Path(__file__).resolve().parents[1]
+        script = root / 'tools' / 'openrouter_settings_gui.ps1'
+        if not script.is_file():
+            raise OSError('settings_script_missing')
+        # Python inherits PS7 paths unchanged; the dialog needs Windows PS5 modules.
+        environment = {k: v for k, v in os.environ.items() if k.lower() != 'psmodulepath'}
+        environment['PSModulePath'] = (
+            r'C:\Windows\System32\WindowsPowerShell\v1.0\Modules;'
+            r'C:\Program Files\WindowsPowerShell\Modules'
+        )
+        _settings_process = subprocess.Popen(
+            [r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+             '-NoProfile', '-Sta', '-ExecutionPolicy', 'Bypass', '-File', str(script)],
+            cwd=str(root), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW, env=environment,
+        )
+        try:
+            _settings_process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            return
+        if _settings_process.returncode != 0:
+            raise OSError('settings_launch_failed')
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
@@ -120,6 +157,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if length < 0 or length > _MAX_BODY_BYTES:
             self._error(413, "request_too_large", "请求体超过本地控制接口限制")
             return
+        document = {}
         if length:
             if self.headers.get_content_type() != "application/json":
                 self._error(415, "json_required", "仅接受 JSON 请求")
@@ -132,6 +170,16 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        if self.path == '/api/settings/openrouter':
+            if document:
+                self._error(400, 'empty_body_required', '设置窗口入口不接受额外参数')
+                return
+            try:
+                open_openrouter_settings()
+                self._write_json(202, {'accepted': True})
+            except OSError:
+                self._error(503, 'settings_unavailable', '无法打开 Windows 设置窗口，请检查启动器')
+            return
         match = _LAB_ACTION_ROUTE.fullmatch(self.path)
         try:
             if match:

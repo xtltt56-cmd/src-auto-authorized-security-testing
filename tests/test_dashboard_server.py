@@ -1,10 +1,11 @@
 import json
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from src_auto.dashboard_server import create_server
+from src_auto.dashboard_server import create_server, open_openrouter_settings
 
 
 class FakeService:
@@ -28,6 +29,28 @@ class FakeService:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_native_dialog_uses_windows_powershell_module_path(self):
+        with patch('src_auto.dashboard_server._settings_process', None), patch('src_auto.dashboard_server.subprocess.Popen') as launch:
+            launch.return_value.wait.side_effect = __import__('subprocess').TimeoutExpired('dialog', 1)
+            open_openrouter_settings()
+            environment = launch.call_args.kwargs['env']
+            entries = [v for k, v in environment.items() if k.lower() == 'psmodulepath']
+            self.assertEqual(len(entries), 1)
+            self.assertIn('WindowsPowerShell', entries[0])
+            self.assertNotIn('PowerShell\\7', entries[0])
+
+    def test_openrouter_settings_requires_token_and_only_accepts_empty_body(self):
+        with patch('src_auto.dashboard_server.open_openrouter_settings', create=True) as launch:
+            status, _, _ = self.request('/api/settings/openrouter', method='POST', body={})
+            self.assertEqual(status, 401)
+            launch.assert_not_called()
+            status, _, _ = self.request('/api/settings/openrouter', method='POST', token='test-session-token', body={'path': 'bad'})
+            self.assertEqual(status, 400)
+            launch.assert_not_called()
+            status, _, _ = self.request('/api/settings/openrouter', method='POST', token='test-session-token', body={})
+            self.assertEqual(status, 202)
+            launch.assert_called_once_with()
+
     def setUp(self):
         self.service = FakeService()
         self.server = create_server(self.service, port=0, token="test-session-token")
