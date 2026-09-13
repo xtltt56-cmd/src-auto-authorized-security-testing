@@ -17,12 +17,17 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
   },
-  webServer: {
+  webServer: [{
     command: `${JSON.stringify(process.execPath)} ${JSON.stringify(viteEntry)} --host 127.0.0.1 --port 4173`,
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 120_000,
-  },
+  }, {
+    command: 'python tests/e2e/workspace_server.py',
+    url: 'http://127.0.0.1:4174/health',
+    reuseExistingServer: false,
+    timeout: 30000,
+  }],
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
   ],

@@ -14,9 +14,12 @@
     "deepseek": {
       "enabled": true,
       "manual_only": true,
+      "display_name": "DeepSeek V4 Flash（官方滚动最新版）",
       "protocol": "openai_chat_completions",
       "endpoint": "https://api.deepseek.com/chat/completions",
+      "models_endpoint": "https://api.deepseek.com/models",
       "model": "deepseek-v4-flash",
+      "catalog_aliases": ["deepseek-v4-flash", "deepseek-flash"],
       "key_env": "DEEPSEEK_API_KEY",
       "consent_env": "SRC_AUTO_DEEPSEEK_CONSENT",
       "thinking": false,

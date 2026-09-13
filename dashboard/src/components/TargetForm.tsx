@@ -6,7 +6,7 @@ import { validateTargetDraft } from '../lib/validation'
 
 type TargetFormProps = {
   initialDraft?: TargetDraft
-  onSave: (result: TargetDraftResult) => void
+  onSave: (result: TargetDraftResult) => void | Promise<void>
 }
 
 type FieldProps = {
@@ -69,21 +69,28 @@ function TextAreaField({ label, field, value, error, description, placeholder, o
 export function TargetForm({ initialDraft = blankTargetDraft, onSave }: TargetFormProps) {
   const [draft, setDraft] = useState<TargetDraft>(initialDraft)
   const [errors, setErrors] = useState<Partial<Record<keyof TargetDraft, string>>>({})
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const update = (field: keyof TargetDraft) => (value: string) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: undefined }))
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const result = validateTargetDraft(draft)
     setErrors(result.errors ?? {})
-    if (result.valid) onSave(result)
+    if (!result.valid || saving) return
+    setSaving(true)
+    setSaveError('')
+    try { await onSave(result) }
+    catch { setSaveError('保存失败：请检查本地服务、目标端口和目录权限。填写内容仍保留，可重试。') }
+    finally { setSaving(false) }
   }
 
   const handleReset = () => {
-    setDraft(initialDraft)
+    setDraft(blankTargetDraft)
     setErrors({})
   }
 
@@ -108,8 +115,9 @@ export function TargetForm({ initialDraft = blankTargetDraft, onSave }: TargetFo
       </div>
       <div className="form-actions">
         <button className="action-button" type="button" onClick={handleReset}><RotateCcw size={16} aria-hidden="true" /> 清空表单</button>
-        <button className="action-button" data-variant="primary" type="submit"><Save size={16} aria-hidden="true" /> 保存授权草稿</button>
+        <button className="action-button" data-variant="primary" type="submit" disabled={saving}><Save size={16} aria-hidden="true" /> {saving ? '正在保存…' : '保存授权草稿'}</button>
       </div>
+      {saveError && <p role="alert">{saveError}</p>}
     </form>
   )
 }

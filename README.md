@@ -178,7 +178,7 @@ python -m src_auto local-regression --local-only --lab dvwa --case dvwa-auth-bou
 当前 PowerShell 没有 Docker 路径，先执行下面的 PATH 设置：
 
 ```powershell
-$env:Path = "C:\Users\lenovo\AppData\Local\Programs\DockerDesktop\resources\bin;$env:Path"
+$env:Path = "$(Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\resources\bin');$env:Path"
 docker version
 python -m src_auto juice-shop-status --human
 python -m src_auto juice-shop-baseline --human
@@ -216,7 +216,7 @@ python -m src_auto remote-triage --run-id <RUN_ID> --finding-id <FINDING_ID> --p
 直接双击桌面快捷方式时，启动窗口会显示：
 
 ```text
-是否启用 DeepSeek v4 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用
+是否启用 DeepSeek V4 Flash（官方滚动最新版）远程 AI？输入 Y/是 启用，N/否/回车 禁用
 ```
 
 选择 `N`、`否` 或直接回车会把 `SRC_AUTO_DEEPSEEK_CONSENT` 设为 `disabled`；即使

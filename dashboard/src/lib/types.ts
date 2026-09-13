@@ -102,6 +102,8 @@ export type TargetDraft = {
 }
 
 export type TargetDraftResult = {
+  id?: string
+  savedPath?: string
   valid: boolean
   draft: TargetDraft
   normalizedUrl: string
@@ -109,6 +111,13 @@ export type TargetDraftResult = {
   networkContact: 'none'
   message: string
   errors?: Partial<Record<keyof TargetDraft, string>>
+}
+
+export type ReviewEntry = {
+  name: string
+  status: string
+  actionable: boolean
+  review?: { status: string; reason: string; targetCount: number }
 }
 
 export type DashboardSnapshot = {

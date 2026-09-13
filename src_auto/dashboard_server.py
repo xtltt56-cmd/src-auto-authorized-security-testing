@@ -15,6 +15,7 @@ from typing import Any, Dict
 
 from .dashboard_control import DashboardControlService
 from .local_labs import LocalLabManager
+from .dashboard_workspace import DashboardWorkspace
 
 
 _ALLOWED_ORIGIN = "http://127.0.0.1:4173"
@@ -144,6 +145,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 self._error(503, "snapshot_unavailable", "暂时无法读取本地靶场状态")
             return
+        if self.path in ('/api/drafts', '/api/review', '/api/artifacts'):
+            if not self._authorized(): return
+            try:
+                workspace = self.server.workspace
+                if self.path == '/api/drafts': payload = {'drafts': workspace.list_drafts()}
+                elif self.path == '/api/review': payload = {'entries': workspace.review_targets()}
+                else: payload = workspace.artifacts()
+                self._write_json(200, payload)
+            except (OSError, ValueError, TypeError):
+                self._error(503, 'workspace_unavailable', '本地数据暂时无法读取，请检查项目目录')
+            return
         self._error(404, "route_not_found", "接口不存在")
 
     def do_POST(self):
@@ -154,7 +166,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error(400, "invalid_content_length", "请求长度无效")
             return
-        if length < 0 or length > _MAX_BODY_BYTES:
+        limit = 32768 if self.path == '/api/drafts' else _MAX_BODY_BYTES
+        if length < 0 or length > limit:
             self._error(413, "request_too_large", "请求体超过本地控制接口限制")
             return
         document = {}
@@ -170,6 +183,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        if self.path == '/api/drafts':
+            try:
+                result = self.server.workspace.save_draft(document)
+                self._write_json(201, result)
+            except (ValueError, TypeError, OverflowError):
+                self._error(400, 'draft_invalid', '草稿校验失败，请核对网址、端口、时间和必填项')
+            except OSError:
+                self._error(503, 'draft_save_failed', '草稿未保存，请检查项目目录权限')
+            return
         if self.path == '/api/settings/openrouter':
             if document:
                 self._error(400, 'empty_body_required', '设置窗口入口不接受额外参数')
@@ -203,16 +225,18 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._error(404, "route_not_found", "接口不存在")
 
 
-def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN):
+def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN, project_root=None):
     """Create a server bound to the fixed IPv4 loopback address."""
 
-    return DashboardHTTPServer(
+    server = DashboardHTTPServer(
         ("127.0.0.1", int(port)),
         DashboardRequestHandler,
         service,
         token or secrets.token_urlsafe(32),
         allowed_origin,
     )
+    server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
+    return server
 
 
 def build_service(project_root: Path) -> DashboardControlService:

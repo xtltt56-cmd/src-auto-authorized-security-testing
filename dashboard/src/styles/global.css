@@ -552,6 +552,7 @@ textarea:focus-visible {
 
 .page-heading-aside { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #b9dfca; border-radius: 999px; color: var(--color-success); background: var(--color-success-soft); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .target-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(260px, .75fr); align-items: start; gap: 18px; }
+.panel-body > select { width: 100%; min-width: 0; min-height: 42px; padding: 0 36px 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: #fff; }
 .target-form { padding: 20px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-panel); box-shadow: var(--shadow-panel); }
 .form-safety-note { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 20px; padding: 14px 16px; border: 1px solid #b9d9f0; border-radius: var(--radius-control); color: var(--color-primary-dark); background: var(--color-primary-soft); }
 .form-safety-note svg { flex: 0 0 auto; margin-top: 2px; }

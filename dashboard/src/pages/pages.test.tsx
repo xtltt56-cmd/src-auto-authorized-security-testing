@@ -31,7 +31,7 @@ describe('dashboard pages', () => {
     render(<App repository={createFixtureRepository()} />)
 
     await userEvent.click(screen.getByRole('button', { name: '本地靶场' }))
-    await userEvent.click(screen.getByRole('button', { name: '打开当前任务' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开环境任务' }))
     await userEvent.click(screen.getByRole('button', { name: '暂停任务' }))
     expect(await screen.findByText('已暂停')).toBeVisible()
 
@@ -117,7 +117,7 @@ describe('dashboard pages', () => {
     render(<App repository={createFixtureRepository()} />)
 
     await userEvent.click(screen.getByRole('button', { name: '本地靶场' }))
-    await userEvent.click(screen.getByRole('button', { name: '打开当前任务' }))
+    await userEvent.click(screen.getByRole('button', { name: '打开环境任务' }))
     await userEvent.click(screen.getByRole('button', { name: /已处理授权夹具中的 42 个入口/ }))
 
     expect(await screen.findByRole('heading', { name: '事件详情' })).toBeVisible()

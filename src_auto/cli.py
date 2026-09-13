@@ -257,6 +257,7 @@ def _remote_status() -> Dict[str, Any]:
         key_env = str(config.get("key_env", ""))
         result[provider] = {
             "provider": provider,
+            "display_name": str(config.get("display_name", provider)),
             "model": str(config.get("model", "")),
             "enabled": bool(config.get("enabled", False)),
             "manual_only": bool(config.get("manual_only", True)),

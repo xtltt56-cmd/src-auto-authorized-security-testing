@@ -33,10 +33,10 @@ test('starts truthfully idle when the local execution service is disconnected', 
   await expect(page.getByText('运行中', { exact: true })).toHaveCount(0)
   await expect(page.getByText('未启动', { exact: true }).first()).toBeVisible()
   await expect(page.getByText(/真实目标不会自动执行/).first()).toBeVisible()
-  await page.getByRole('button', { name: '本地靶场' }).click()
+  await page.getByRole('button', { name: '本地靶场', exact: true }).click()
   for (const lab of ['Juice Shop', 'DVWA', 'WebGoat', 'VAmPI', 'Business API']) await expect(page.getByText(lab, { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: '打开当前任务' }).click()
+  await page.getByRole('button', { name: '打开环境任务' }).click()
   await expect(page.getByRole('heading', { name: '实时事件' })).toBeVisible()
   await expect(page.getByText('0s', { exact: false })).toBeVisible()
   await expect(page.getByRole('button', { name: '继续任务' })).toBeDisabled()
@@ -75,7 +75,7 @@ test('renders real loopback lab controls and sends only fixed actions', async ({
   await page.route('**/api/labs/**', async (route) => { calls.push(new URL(route.request().url()).pathname); await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ accepted: true }) }) })
 
   await page.goto('/')
-  await page.getByRole('button', { name: '本地靶场' }).click()
+  await page.getByRole('button', { name: '本地靶场', exact: true }).click()
   await page.getByRole('button', { name: '启动 DVWA' }).click()
   await expect(page.getByText(/dvwa 操作已提交/)).toBeVisible()
   await page.getByRole('button', { name: '重置 DVWA' }).click()
@@ -94,7 +94,7 @@ test('opens every local lab as its own task without external network contact', a
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: '本地靶场' }).click()
+  await page.getByRole('button', { name: '本地靶场', exact: true }).click()
   for (const [lab, title, port] of localLabTasks) {
     const taskButton = page.getByRole('button', { name: `查看 ${lab} 任务` })
     await expect(taskButton).toBeVisible()
@@ -108,7 +108,7 @@ test('opens every local lab as its own task without external network contact', a
   expect(externalRequests, externalRequests.join('\n')).toEqual([])
 })
 
-test('validates and saves target scope without network contact', async ({ page }) => {
+test('keeps draft input and reports a save failure when the backend is unavailable', async ({ page }) => {
   const externalRequests: string[] = []
   page.on('request', (request) => {
     const url = new URL(request.url())
@@ -128,7 +128,8 @@ test('validates and saves target scope without network contact', async ({ page }
   await page.getByLabel('结束时间').fill('2026-08-27T18:00')
   await page.getByLabel('授权证明或规则说明').fill('项目规则允许在时间窗内进行低频测试。')
   await page.getByRole('button', { name: '保存授权草稿' }).click()
-  await expect(page.getByText('授权草稿已保存', { exact: true })).toBeVisible()
-  await expect(page.getByText('未访问目标', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: '保存失败' })).toContainText('保存失败')
+  await expect(page.getByLabel('项目名称')).toHaveValue('示例授权项目')
+  await expect(page.getByText('授权草稿已保存', { exact: true })).toHaveCount(0)
   expect(externalRequests, externalRequests.join('\n')).toEqual([])
 })

@@ -13,6 +13,7 @@ reports/*
 .env
 config/secrets/
 config/sessions/
+config/targets/dashboard-*/
 .venv/
 .worktrees/
 STOP
@@ -62,6 +63,7 @@ dashboard/storybook-static/
 
 # Internal agent planning material is not part of the distributable project
 docs/superpowers/
+.upload-staged.ps1
 
 # Keep the directory structure without committing artifacts
 !data/.gitkeep

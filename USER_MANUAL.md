@@ -604,7 +604,7 @@ Ollama 服务如果没有运行，手动启动：
 
 `remote-status` 只显示 `key_present: true/false`，不显示密钥、长度、哈希或请求结果。曾经直接粘贴到聊天中的密钥不能继续使用；请先在 DeepSeek 控制台撤销并创建新密钥。临时环境变量会在会话关闭后失效，DPAPI 加密文件可通过重新运行保存工具进行轮换。
 
-点击 **本地靶场检测** 后，独立终端的提示为“是否启用 DeepSeek v4 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用”。
+点击 **本地靶场检测** 后，独立终端的提示为“是否启用 DeepSeek V4 Flash（官方滚动最新版）远程 AI？输入 Y/是 启用，N/否/回车 禁用”。
 选择 `N`、`否` 或回车会设置 `SRC_AUTO_DEEPSEEK_CONSENT=disabled`；即使环境变量中存在
 `DEEPSEEK_API_KEY`，也不会发出远程请求。选择 `Y`/`是` 只对当前进程树生效，关闭窗口后不会保存授权。
 直接运行 Python 命令时不会额外弹窗；如果没有在当前会话显式设置上述两个 `CONSENT` 变量，
@@ -614,7 +614,7 @@ Ollama 服务如果没有运行，手动启动：
 
 | 提供商 | 模型 | 状态 | 用途 |
 |---|---|---|---|
-| DeepSeek | `deepseek-v4-flash` | 已接入、人工启用 | 单次 Finding 审阅，非自动回退 |
+| DeepSeek V4 Flash（官方滚动最新版） | 请求 ID：`deepseek-v4-flash`；目录兼容标识：`deepseek-flash` | 已接入、人工启用 | 单次 Finding 审阅，非自动回退；显示名称不会替代官方模型 ID |
 | OpenAI | `gpt-5.6-luna` | 默认关闭 | 仅保留适配器，等待独立 Platform API 密钥 |
 
 ChatGPT Plus 订阅与 OpenAI Platform API 是两套独立的账户/计费体系，Plus 登录态不能当作 API 密钥，也不使用浏览器 Cookie 自动调用。需要 GPT 时，必须另外创建 Platform API key，再由人工审查后启用配置。
@@ -923,7 +923,7 @@ ChatGPT Plus 不是 Platform API 额度。OpenAI 适配器默认关闭，只有�
 如果当前 PowerShell 没有 Docker 路径，先执行：
 
     Set-Location 'D:\网络安全文件夹\SRC-Auto'
-    $env:Path = "C:\Users\lenovo\AppData\Local\Programs\DockerDesktop\resources\bin;$env:Path"
+    $env:Path = "$(Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\resources\bin');$env:Path"
     docker version
 
 启动器已验证的手动等价命令（只适用于本机三靶场）：

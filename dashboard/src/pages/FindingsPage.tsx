@@ -1,5 +1,6 @@
 import { FileText, Flag, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import type { TaskRepository } from '../lib/taskRepository'
 import type { Finding, ReportFile } from '../lib/types'
 import { FindingDetail } from '../components/FindingDetail'
 import { FindingList } from '../components/FindingList'
@@ -8,9 +9,22 @@ import { ReportViewer } from '../components/ReportViewer'
 type FindingsPageProps = {
   findings: Finding[]
   reports: ReportFile[]
+  repository?: TaskRepository
 }
 
-export function FindingsPage({ findings, reports }: FindingsPageProps) {
+export function FindingsPage({ findings: initialFindings, reports: initialReports, repository }: FindingsPageProps) {
+  const [data, setData] = useState({ findings: initialFindings, reports: initialReports })
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(Boolean(repository))
+  const { findings, reports } = data
+  const load = useCallback(async () => {
+    if (!repository) return
+    try { const result = await repository.getArtifacts(); setData(result); setNotice(result.warnings?.join('；') || '已读取本地历史结果；这些结果不代表本次靶场启动的扫描成绩。') }
+    catch { setNotice('本地结果读取失败，请检查服务和报告目录。') }
+  }, [repository])
+  const refresh = async () => { setBusy(true); await load(); setBusy(false) }
+  // oxlint-disable-next-line react/set-state-in-effect -- loading data is an external repository synchronization.
+  useEffect(() => { void load().finally(() => setBusy(false)) }, [load])
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null)
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const selectedFinding = findings.find((finding) => finding.id === selectedFindingId) ?? null
@@ -27,6 +41,8 @@ export function FindingsPage({ findings, reports }: FindingsPageProps) {
         <FindingList findings={findings} selectedId={selectedFindingId} onSelect={(finding) => setSelectedFindingId(finding.id)} />
         <FindingDetail finding={selectedFinding} />
       </div>
+      <button className="action-button" disabled={busy} onClick={() => void refresh()}>{busy ? '正在读取…' : '刷新本地候选与报告'}</button>
+      <p role="status">{notice}</p>
       <section className="surface-panel report-list-panel" aria-labelledby="report-list-title">
         <div className="panel-header"><div><h4 id="report-list-title">安全报告</h4><p>报告文件仅允许从项目白名单路径读取。</p></div><FileText size={20} aria-hidden="true" /></div>
         <div className="report-list">

@@ -103,6 +103,8 @@ class RemoteCLITests(unittest.TestCase):
         self.assertFalse(value["providers"]["deepseek"]["network_contact"])
         self.assertTrue(value["startup_consent_required"])
         self.assertTrue(value["providers"]["deepseek"]["session_consent"])
+        self.assertEqual(value["providers"]["deepseek"]["model"], "deepseek-v4-flash")
+        self.assertIn("DeepSeek V4 Flash", value["providers"]["deepseek"]["display_name"])
 
     def test_startup_consent_overlays_remote_runtime_only_for_current_session(self):
         with patch.dict(

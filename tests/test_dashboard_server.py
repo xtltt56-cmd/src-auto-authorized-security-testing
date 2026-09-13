@@ -1,11 +1,14 @@
 import json
 import threading
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from src_auto.dashboard_server import create_server, open_openrouter_settings
+from src_auto.dashboard_workspace import DashboardWorkspace
 
 
 class FakeService:
@@ -29,6 +32,20 @@ class FakeService:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_draft_api_persists_and_requires_authentication(self):
+        from test_dashboard_workspace import draft
+        with tempfile.TemporaryDirectory() as temp:
+            self.server.workspace = DashboardWorkspace(Path(temp))
+            self.assertEqual(self.request('/api/drafts', method='POST', body=draft())[0], 401)
+            status, _, result = self.request('/api/drafts', method='POST', token='test-session-token', body=draft())
+            self.assertEqual(status, 201)
+            self.server.workspace = DashboardWorkspace(Path(temp))
+            status, _, loaded = self.request('/api/drafts', token='test-session-token')
+            self.assertEqual(status, 200)
+            self.assertEqual(loaded['drafts'][0]['id'], result['id'])
+            self.assertEqual(self.request('/api/review', token='test-session-token')[2]['entries'][0]['status'], 'candidate_only')
+            self.assertEqual(self.request('/api/artifacts')[0], 401)
+
     def test_native_dialog_uses_windows_powershell_module_path(self):
         with patch('src_auto.dashboard_server._settings_process', None), patch('src_auto.dashboard_server.subprocess.Popen') as launch:
             launch.return_value.wait.side_effect = __import__('subprocess').TimeoutExpired('dialog', 1)

@@ -61,7 +61,7 @@ class DashboardControlService:
         self.manager = manager
         self._clock = clock or time.monotonic
         self._dependency_check = dependency_check or docker_dependency_status
-        self._executor = executor or ThreadPoolExecutor(max_workers=1, thread_name_prefix="src-auto-labs")
+        self._executor = executor or ThreadPoolExecutor(max_workers=min(5, len(manager.specs)), thread_name_prefix="src-auto-labs")
         self._owns_executor = executor is None
         self._lock = threading.RLock()
         self._operations: Dict[str, Dict[str, Any]] = {}
@@ -73,6 +73,9 @@ class DashboardControlService:
         return tuple(self.manager.specs.keys())
 
     def close(self) -> None:
+        with self._lock:
+            for operation in self._operations.values():
+                if operation['action'] != 'stop': operation['cancel'].set()
         if self._owns_executor:
             self._executor.shutdown(wait=False)
 
@@ -105,7 +108,11 @@ class DashboardControlService:
         with self._lock:
             current = self._operations.get(lab_id)
             if current and current.get("state") in ("queued", "running"):
-                raise RuntimeError("lab_operation_in_progress")
+                if action != "stop":
+                    raise RuntimeError("lab_operation_in_progress")
+                if current['action'] == 'stop':
+                    return {"accepted": True, "labId": lab_id, "action": action, "taskId": "run-lab-{}".format(lab_id)}
+                current['cancel'].set()
             operation = {
                 "lab_id": lab_id,
                 "action": action,
@@ -113,6 +120,9 @@ class DashboardControlService:
                 "started": self._clock(),
                 "finished": None,
                 "message": "操作已进入本地队列",
+                "cancel": threading.Event(),
+                "done": threading.Event(),
+                "previous": current if current and current.get('state') in ('queued', 'running') else None,
             }
             self._operations[lab_id] = operation
         self._append_event(lab_id, "info", "操作排队", "{} 已进入本地执行队列".format(_action_name(action)))
@@ -124,26 +134,47 @@ class DashboardControlService:
         if action not in ("start", "stop"):
             raise ValueError("unsupported_dashboard_batch_action")
         accepted = []
+        skipped = []
         for lab_id in self.lab_ids:
             try:
                 accepted.append(self.submit(lab_id, action))
             except RuntimeError:
                 # A running operation remains protected; batch actions are idempotent
                 # for other labs and report exactly which ones were accepted.
-                continue
-        return {"accepted": True, "action": action, "operations": accepted}
+                skipped.append(lab_id)
+        return {"accepted": bool(accepted), "action": action, "operations": accepted, "skipped": skipped}
 
     def _execute(self, operation: Dict[str, Any]) -> None:
+        try:
+            previous = operation.get('previous')
+            if previous:
+                previous['done'].wait()
+            self._perform(operation)
+        finally:
+            operation['done'].set()
+
+    def _perform(self, operation: Dict[str, Any]) -> None:
         lab_id = operation["lab_id"]
         action = operation["action"]
         with self._lock:
+            if operation['cancel'].is_set():
+                operation['state'] = 'cancelled'
+                operation['finished'] = self._clock()
+                self._append_event(lab_id, 'warning', '已取消', '排队操作已取消')
+                return
             operation["state"] = "running"
             operation["message"] = "正在{}".format(_action_name(action))
         self._append_event(lab_id, "info", "本地执行", "开始{}固定本地靶场".format(_action_name(action)))
         try:
-            result = self.manager.operate(action, lab_id, wait=action in ("start", "reset"))
+            result = self.manager.operate(action, lab_id, wait=action in ("start", "reset"), cancel_event=operation['cancel'])
             result_status = str(result.get("status", "FAILED")).upper()
             succeeded = result_status in ("READY", "COMPLETED", "STOPPED")
+            if operation['cancel'].is_set():
+                with self._lock:
+                    operation['state'] = 'cancelled'
+                    operation['finished'] = self._clock()
+                self._append_event(lab_id, 'warning', '停止请求', '当前启动操作已退出，队列将执行停止')
+                return
             with self._lock:
                 operation["state"] = "completed" if succeeded else "failed"
                 operation["finished"] = self._clock()

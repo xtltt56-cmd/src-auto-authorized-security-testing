@@ -17,7 +17,7 @@ export function OverviewPage({ snapshot, onNavigate, onOpenTask }: OverviewPageP
   const totalBlocked = snapshot.tasks.reduce((sum, task) => sum + task.counters.blocked, 0)
   const metrics = [
     { label: '当前任务', value: snapshot.tasks.filter((task) => task.state === 'running' || task.state === 'paused').length },
-    { label: '入口总数', value: activeTask.counters.endpoints },
+    { label: '入口总数', value: activeTask?.counters.endpoints ?? 0 },
     { label: '候选待复核', value: totalCandidates },
     { label: '策略阻止', value: totalBlocked },
   ]
@@ -29,7 +29,7 @@ export function OverviewPage({ snapshot, onNavigate, onOpenTask }: OverviewPageP
           <h3>清晰、可控地开始一次安全测试</h3>
           <p>先在本地靶场熟悉流程；真实项目只会在你确认授权范围和时间窗后进入人工复核。</p>
         </div>
-        <StatusBadge state={activeTask.state} />
+        <StatusBadge state={activeTask?.state ?? 'idle'} />
       </div>
 
       <div className="hero-safety surface-panel">
@@ -50,8 +50,8 @@ export function OverviewPage({ snapshot, onNavigate, onOpenTask }: OverviewPageP
             <span className="step-number">01</span>
             <TestTube2 size={22} aria-hidden="true" />
             <h5>练习本地靶场</h5>
-            <p>启动固定的五个回环靶场，观察入口发现、候选研判和报告生成。</p>
-            <button className="action-button" data-variant="primary" type="button" onClick={() => onNavigate('labs')}><PlayCircle size={16} aria-hidden="true" /> 开始本地检测 <ArrowRight size={15} aria-hidden="true" /></button>
+            <p>管理固定五个回环靶场的启动、停止和健康状态；漏洞验证需另行执行。</p>
+            <button className="action-button" data-variant="primary" type="button" onClick={() => onNavigate('labs')}><PlayCircle size={16} aria-hidden="true" /> 进入本地靶场 <ArrowRight size={15} aria-hidden="true" /></button>
           </article>
           <article className="quick-card">
             <span className="step-number">02</span>
@@ -75,13 +75,13 @@ export function OverviewPage({ snapshot, onNavigate, onOpenTask }: OverviewPageP
       <section className="surface-panel current-task-panel" aria-labelledby="current-task-title">
         <div className="panel-header">
           <div><h4 id="current-task-title">当前任务</h4><p>任务关闭后仍可从历史记录恢复查看</p></div>
-          <button className="table-link" type="button" onClick={() => onOpenTask(activeTask.id)}>打开任务详情 <ArrowRight size={15} aria-hidden="true" /></button>
+          {activeTask ? <button className="table-link" type="button" onClick={() => onOpenTask(activeTask.id)}>打开任务详情 <ArrowRight size={15} aria-hidden="true" /></button> : null}
         </div>
-        <div className="panel-body current-task-body">
+        {activeTask ? <div className="panel-body current-task-body">
           <div><div className="task-title-row"><strong>{activeTask.name}</strong><StatusBadge state={activeTask.state} /></div><span className="table-secondary">本地五靶场 · {activeTask.stage}</span></div>
           <ProgressBar value={activeTask.progress} label="总体进度" />
           <span className="network-note"><ShieldCheck size={14} aria-hidden="true" /> 网络接触：{activeTask.networkContact === 'loopback' ? '仅回环' : '无'}</span>
-        </div>
+        </div> : <div className="panel-body empty-state"><strong>尚无任务记录</strong><p>可从“进入本地靶场”启动回环环境，或先录入一份授权目标草稿。</p></div>}
       </section>
     </>
   )

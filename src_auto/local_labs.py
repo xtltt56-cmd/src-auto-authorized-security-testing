@@ -16,7 +16,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
+
+
+class _NoHealthRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def urlopen(request, timeout=3):
+    # Health probes never use an inherited proxy or follow a redirect.
+    return build_opener(ProxyHandler({}), _NoHealthRedirect()).open(request, timeout=timeout)
 
 
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -255,8 +265,25 @@ class LocalLabManager:
         return parse_lab_status(spec, raw if isinstance(raw, Mapping) else {})
 
     @staticmethod
-    def _run(command: Sequence[str], project_root: Path) -> Dict[str, Any]:
+    def _run(command: Sequence[str], project_root: Path, cancel_event=None) -> Dict[str, Any]:
         try:
+            if cancel_event is not None:
+                with subprocess.Popen(list(command), cwd=str(project_root), stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL, shell=False) as process:
+                    deadline = time.monotonic() + 120
+                    while process.poll() is None:
+                        if cancel_event.wait(0.2) or time.monotonic() >= deadline:
+                            process.terminate()
+                            try: process.wait(timeout=3)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait(timeout=3)
+                            return {'status': 'CANCELLED' if cancel_event.is_set() else 'FAILED',
+                                    'reason': 'cancelled' if cancel_event.is_set() else 'docker_command_timeout',
+                                    'network_contact': False}
+                    return {'status': 'COMPLETED' if process.returncode == 0 else 'FAILED',
+                            'reason': '' if process.returncode == 0 else 'docker_command_failed',
+                            'returncode': process.returncode, 'network_contact': False}
             result = subprocess.run(
                 list(command),
                 cwd=str(project_root),
@@ -280,12 +307,16 @@ class LocalLabManager:
             "network_contact": False,
         }
 
-    def _wait_health(self, spec: LabSpec, timeout: int = 120) -> Dict[str, Any]:
+    def _wait_health(self, spec: LabSpec, timeout: int = 120, cancel_event=None) -> Dict[str, Any]:
         deadline = time.time() + max(1, int(timeout))
         last = self.status(spec.lab_id)
+        contacted = False
         while time.time() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                return {"status": "CANCELLED", "network_contact": contacted}
             try:
                 request = Request(spec.health_url, headers={"User-Agent": "SRC-Auto/local-lab-health"})
+                contacted = True
                 with urlopen(request, timeout=3) as response:
                     final_url = str(getattr(response, "geturl", lambda: spec.health_url)())
                     final = urlsplit(final_url)
@@ -305,20 +336,25 @@ class LocalLabManager:
             last = self.status(spec.lab_id)
             if last["status"] in ("STOPPED", "NOT_FOUND", "UNHEALTHY"):
                 break
-            time.sleep(1)
+            if cancel_event is not None:
+                cancel_event.wait(1)
+            else:
+                time.sleep(1)
         last["status"] = "BLOCKED_HEALTH_TIMEOUT"
-        last["network_contact"] = False
+        last["network_contact"] = contacted
         return last
 
-    def operate(self, action: str, lab_id: str, wait: bool = True) -> Dict[str, Any]:
+    def operate(self, action: str, lab_id: str, wait: bool = True, cancel_event=None) -> Dict[str, Any]:
         action = str(action or "").strip().lower()
         requested_action = action
         spec = self.spec(lab_id)
+        if cancel_event is not None and cancel_event.is_set():
+            return {"status": "CANCELLED", "network_contact": False}
         if action == "status":
             return self.status(spec.lab_id)
         if action == "reset":
             remove = ["docker", "compose", "-f", str(self.compose_file), "rm", "-sf", spec.service]
-            removed = self._run(remove, self.project_root)
+            removed = self._run(remove, self.project_root, cancel_event=cancel_event)
             if removed["status"] != "COMPLETED":
                 return {"status": "FAILED", "reason": "lab_reset_remove_failed", "remove": removed, "network_contact": False}
             action = "up"
@@ -328,12 +364,12 @@ class LocalLabManager:
             # missing and an existing stopped container.
             action = "up"
         command = build_compose_command(self.compose_file, spec, action)
-        result = self._run(command, self.project_root)
+        result = self._run(command, self.project_root, cancel_event=cancel_event)
         if result["status"] != "COMPLETED":
             return {"lab_id": spec.lab_id, "action": action, **result}
         result.update({"lab_id": spec.lab_id, "action": requested_action, "pinned_image": spec.pinned_image})
         if action == "up" and wait:
-            health = self._wait_health(spec)
+            health = self._wait_health(spec, cancel_event=cancel_event)
             result["health"] = health
             result["status"] = "READY" if health.get("status") == "READY" else health.get("status", "BLOCKED")
             result["network_contact"] = bool(health.get("network_contact"))
