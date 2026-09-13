@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react'
+import { waitFor } from '@testing-library/react'
+import { App } from '../App'
 import { TaskDetailPage } from './TaskDetailPage'
 import { OverviewPage } from './OverviewPage'
 import { createFixtureRepository } from '../lib/taskRepository'
@@ -20,4 +22,16 @@ it('renders an actionable empty state when the real backend has no tasks yet', (
   expect(screen.getByRole('heading', { name: '清晰、可控地开始一次安全测试' })).toBeVisible()
   expect(screen.getByText('尚无任务记录')).toBeVisible()
   expect(screen.getByRole('button', { name: /进入本地靶场/ })).toBeEnabled()
+})
+
+it('shows a connecting state before the first dashboard response instead of a false disconnect warning', async () => {
+  let resolveSnapshot: ((value: typeof safeDefaultSnapshot) => void) | undefined
+  const repository = createFixtureRepository()
+  repository.getDashboardSnapshot = () => new Promise((resolve) => { resolveSnapshot = resolve })
+  render(<App repository={repository} />)
+  expect(screen.getByText('正在连接本地执行服务')).toBeVisible()
+  expect(screen.queryByText('未连接本地执行服务')).not.toBeInTheDocument()
+  await waitFor(() => expect(resolveSnapshot).toBeDefined())
+  resolveSnapshot?.(safeDefaultSnapshot)
+  await waitFor(() => expect(screen.queryByText('正在连接本地执行服务')).not.toBeInTheDocument())
 })

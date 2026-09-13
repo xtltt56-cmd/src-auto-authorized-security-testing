@@ -31,6 +31,7 @@ export function App({ repository = defaultRepository }: AppProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
   const [connectionMessage, setConnectionMessage] = useState('')
+  const [initialLoading, setInitialLoading] = useState(true)
 
   // The repository is an asynchronous external source; updating the snapshot is intentional.
   const refresh = useCallback(async () => {
@@ -41,6 +42,8 @@ export function App({ repository = defaultRepository }: AppProps) {
     } catch {
       setSnapshot(safeDefaultSnapshot)
       setConnectionMessage('本地执行服务暂不可用，当前任务状态未知；请恢复连接后核对')
+    } finally {
+      setInitialLoading(false)
     }
   }, [repository])
   useEffect(() => {
@@ -93,7 +96,12 @@ export function App({ repository = defaultRepository }: AppProps) {
   const meta = pageMeta[activeKey]
   return (
     <AppShell activeKey={activeKey} onNavigate={navigate} pageTitle={meta.title} pageDescription={meta.description}>
-      {snapshot.source === 'safe-placeholder' ? (
+      {initialLoading ? (
+        <div className="inline-notice data-source-notice" role="status" aria-label="数据来源状态">
+          <Info size={16} aria-hidden="true" />
+          <span><strong>正在连接本地执行服务</strong> · 正在读取真实任务与靶场状态，请稍候。</span>
+        </div>
+      ) : snapshot.source === 'safe-placeholder' ? (
         <div className="inline-notice data-source-notice" role="status" aria-label="数据来源状态">
           <Info size={16} aria-hidden="true" />
           <span><strong>未连接本地执行服务</strong> · {connectionMessage || '当前任务状态未知；页面不会把失联误判为已停止。'}</span>
