@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0f4d06237becf63250d081340bf3472869edf4897d160e96fe981f7e6b31b4a0
-size 355
+@echo off
+setlocal
+set "SRC_AUTO_ROOT=%~dp0..\.."
+if not exist "%SRC_AUTO_ROOT%\vendor\docker-state\testssl" mkdir "%SRC_AUTO_ROOT%\vendor\docker-state\testssl"
+docker run --rm -v "%SRC_AUTO_ROOT%\vendor\docker-state\testssl:/data" ghcr.io/testssl/testssl.sh@sha256:47d623064463c66ce3b02d37486c75dd1bff8fcef0d9947b37a5051b937ccd69 %*
+exit /b %ERRORLEVEL%

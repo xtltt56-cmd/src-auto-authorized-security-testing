@@ -12,6 +12,7 @@ TARGET_CONFIG_SCRIPT = PROJECT_ROOT / "tools" / "target_config.ps1"
 SESSION_GUI_SCRIPT = PROJECT_ROOT / "tools" / "session_profile_gui.ps1"
 LAUNCHER = PROJECT_ROOT / "START_SYSTEM.ps1"
 POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+CI_NONINTERACTIVE = os.environ.get("CI", "").lower() == "true"
 
 
 def _quote(value):
@@ -107,6 +108,7 @@ class DesktopGuiContractTests(unittest.TestCase):
         ):
             self.assertIn(required, content)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_dpi_aware_main_window_scales_from_96_dpi_design_baseline(self):
         """At 200% DPI, fonts and fixed controls must grow by the same factor."""
         content = GUI_SCRIPT.read_text(encoding="utf-8-sig")
@@ -455,6 +457,7 @@ class DesktopGuiContractTests(unittest.TestCase):
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_main_window_visible_buttons_are_real_mouse_targets(self):
         """A button must be above sibling panels at the point a user clicks."""
         probe = (
@@ -562,6 +565,7 @@ class DesktopGuiContractTests(unittest.TestCase):
             result = self._run_gui_probe(probe)
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_main_action_card_text_does_not_run_under_its_button(self):
         """The home cards keep a readable gap above their overlaid actions."""
         probe = (

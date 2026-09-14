@@ -1220,7 +1220,7 @@ function Show-SrcAutoMainWindow {
     $safety.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $safety.Controls.Add((New-GuiLabel -Text '安全提示' -Left 18 -Top 12 -Width 120 -Height 22 -Size 10 -Color $safeColor -Style ([System.Drawing.FontStyle]::Bold)))
     $safety.Controls.Add((New-GuiLabel -Text '仅对你明确拥有授权的目标操作。禁止越界、爆破、破坏性请求和批量收集个人信息。' -Left 18 -Top 38 -Width 825 -Height 22 -Size 9 -Color $safeColor))
-    $safety.Controls.Add((New-GuiLabel -Text '状态、报告和密钥密文均保存在 D:\网络安全文件夹\SRC-Auto。' -Left 18 -Top 59 -Width 825 -Height 20 -Size 9 -Color $safeColor))
+    $safety.Controls.Add((New-GuiLabel -Text "状态、报告和密钥密文均保存在：$ProjectRoot" -Left 18 -Top 59 -Width 825 -Height 20 -Size 9 -Color $safeColor))
     $form.Controls.Add($safety)
     $form.Controls.Add((New-GuiButton -Text '退出' -Left 954 -Top 680 -Width 164 -Height 32 -Action { $form.Close() } -BackColor $titleColor -ForeColor ([System.Drawing.Color]::White)))
     Enable-SrcAutoDpiLayout -Form $form

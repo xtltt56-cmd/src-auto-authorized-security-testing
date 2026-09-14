@@ -1,3 +1,9 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:87b1d756eb1c33cfa376220c75960d6bda2ed93132969443fae9acbc0684762c
-size 201
+@echo off
+setlocal
+set "ZAP_HOME=%~dp0..\zap\ZAP_2.17.0"
+if not exist "%ZAP_HOME%\zap.bat" exit /b 3
+pushd "%ZAP_HOME%"
+call "%ZAP_HOME%\zap.bat" %*
+set "ZAP_EXIT=%ERRORLEVEL%"
+popd
+exit /b %ZAP_EXIT%

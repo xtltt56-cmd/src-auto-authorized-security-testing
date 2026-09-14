@@ -262,7 +262,7 @@ class JuiceShopRunnerTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:3000/", command)
         self.assertIn("-quickout", command)
         self.assertIn("-dir", command)
-        self.assertTrue(str(output.parent) in command[command.index("-dir") + 1])
+        self.assertTrue(str(output.parent.resolve()) in command[command.index("-dir") + 1])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,15 @@
 # SRC-Auto
 
+## 下载最新正式版
+
+Windows 用户不需要安装 Git，也不需要切换开发分支。请从固定地址下载最近一次通过发布测试的正式分发包：
+
+**[下载 SRC-Auto Windows x64 最新正式版](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)**
+
+发布说明、历史版本和 SHA-256 校验文件位于 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest)。解压后双击 `START_DASHBOARD.bat`。分发包预先构建 Dashboard 并携带项目专用 Python 运行时，因此不要求客户安装 Git、Node.js 或 Python；本地靶场仍需要由用户另行安装并启动 Docker Desktop。平台默认仅访问本机回环地址，真实目标必须由人工确认授权、范围和时间窗，报告提交始终由人工完成。
+
+双击 `CHECK_UPDATE.bat` 可以人工检查是否存在新正式版；正常启动不会静默下载或覆盖程序文件。API 密钥、目标配置、会话、日志、报告和运行数据不包含在公开分发包中。
+
 一个面向补天 SRC 的低成本、CPU 友好、人工确认门控控制层。V1 的目标不是“扫描数量”，而是缩短人工复核时间、降低误报和重复、形成最小证据，并让每一个真实目标请求都可审计、可停止、可恢复。
 
 完整中文使用手册：`USER_MANUAL.md`

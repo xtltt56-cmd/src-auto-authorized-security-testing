@@ -60,6 +60,7 @@ dashboard/dist/
 dashboard/playwright-report/
 dashboard/test-results/
 dashboard/storybook-static/
+artifacts/
 
 # Internal agent planning material is not part of the distributable project
 docs/superpowers/
