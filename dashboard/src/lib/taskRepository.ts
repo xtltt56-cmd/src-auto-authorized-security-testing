@@ -1,5 +1,5 @@
 import { fixtureSnapshot } from './fixtures'
-import type { DashboardSnapshot, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
+import type { AIConnectionResult, AIProviderSettings, DashboardSnapshot, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -35,12 +35,21 @@ export interface TaskRepository {
   resetLab(labId: string): Promise<void>
   startAllLabs(): Promise<void>
   stopAllLabs(): Promise<void>
+  startDockerDesktop(): Promise<void>
+  listAIProviders(): Promise<AIProviderSettings[]>
+  saveAIProvider(provider: string, value: { apiKey: string; model: string }): Promise<AIProviderSettings>
+  testAIProvider(provider: string): Promise<AIConnectionResult>
 }
 
 export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fixtureSnapshot): TaskRepository => {
   const state = clone(initialSnapshot)
   const drafts: TargetDraftResult[] = []
   let nextEventId = Math.max(0, ...state.events.map((event) => event.id)) + 1
+  const providers: AIProviderSettings[] = [
+    { id: 'deepseek', displayName: 'DeepSeek V4.1 Flash', model: 'deepseek-flash', officialModel: 'deepseek-flash', keySaved: false, endpointHost: 'api.deepseek.com' },
+    { id: 'zhipu', displayName: '智谱 GLM-5.3-Flash', model: 'glm-5.3-flash', officialModel: 'glm-5.3-flash', keySaved: false, endpointHost: 'open.bigmodel.cn' },
+    { id: 'openrouter', displayName: 'OpenRouter', model: 'openrouter/free', officialModel: 'openrouter/free', keySaved: false, endpointHost: 'openrouter.ai' },
+  ]
 
   const taskOrThrow = (taskId: string): TaskSummary => {
     const task = state.tasks.find((item) => item.id === taskId)
@@ -129,6 +138,16 @@ export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fix
     async stopAllLabs() {
       for (const lab of state.labs) await this.stopLab(lab.id)
     },
+    async startDockerDesktop() { return undefined },
+    async listAIProviders() { return clone(providers) },
+    async saveAIProvider(provider, value) {
+      const item = providers.find(entry => entry.id === provider)
+      if (!item) throw new Error('PROVIDER_NOT_FOUND')
+      item.model = value.model
+      if (value.apiKey) item.keySaved = true
+      return clone(item)
+    },
+    async testAIProvider() { return { ok: true, code: 'reachable_model_available' } },
   }
 }
 
@@ -239,5 +258,9 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     resetLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/reset`),
     startAllLabs: () => action('/labs/start-all'),
     stopAllLabs: () => action('/labs/stop-all'),
+    startDockerDesktop: () => action('/dependencies/docker/start'),
+    async listAIProviders() { return (await request<{ providers: AIProviderSettings[] }>('/settings/providers')).providers },
+    saveAIProvider: (provider, value) => request<AIProviderSettings>(`/settings/providers/${encodeURIComponent(provider)}`, { method: 'POST', body: JSON.stringify(value) }),
+    testAIProvider: (provider) => request<AIConnectionResult>(`/settings/providers/${encodeURIComponent(provider)}/test`, { method: 'POST', body: JSON.stringify({ allowNetwork: true }) }),
   }
 }

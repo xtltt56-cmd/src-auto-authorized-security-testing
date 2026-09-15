@@ -98,9 +98,10 @@ jobs:
           $verifyRoot = Join-Path $env:RUNNER_TEMP 'src-auto-release-verify'
           Expand-Archive -LiteralPath artifacts/release/SRC-Auto-Windows-x64.zip -DestinationPath $verifyRoot
           $app = Join-Path $verifyRoot 'SRC-Auto'
+          Set-Location -LiteralPath $app
           & (Join-Path $app 'runtime/python/python.exe') -m src_auto --help | Out-Null
           if($LASTEXITCODE -ne 0){ throw 'Packaged Python runtime cannot start SRC-Auto.' }
-          $expected = Get-Content artifacts/release/SHA256SUMS.txt
+          $expected = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'artifacts/release/SHA256SUMS.txt')
           if($expected.Count -ne 2){ throw 'SHA256SUMS.txt is incomplete.' }
 
       - name: Create version tag when main is published
@@ -111,7 +112,7 @@ jobs:
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
           git fetch --tags --force
-          $existing = git rev-parse -q --verify "refs/tags/$tag" 2>$null
+          $existing = git rev-parse -q --verify "refs/tags/$tag^{commit}" 2>$null
           if($LASTEXITCODE -eq 0){
             if($existing.Trim() -ne (git rev-parse HEAD).Trim()){ throw "$tag already points to another commit; update VERSION." }
           } else {
@@ -119,6 +120,7 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git tag -a $tag -m "SRC-Auto $tag"
             git push origin $tag
+            if($LASTEXITCODE -ne 0){ throw 'Failed to publish version tag.' }
           }
 
       - name: Publish GitHub Release
@@ -135,7 +137,9 @@ jobs:
           )
           if(gh release view $tag --repo '${{ github.repository }}' 2>$null){
             gh release upload $tag @assets --repo '${{ github.repository }}' --clobber
+            if($LASTEXITCODE -ne 0){ throw 'Failed to upload release assets.' }
             gh release edit $tag --repo '${{ github.repository }}' --latest
           } else {
             gh release create $tag @assets --repo '${{ github.repository }}' --verify-tag --title "SRC-Auto $tag" --generate-notes --latest
           }
+          if($LASTEXITCODE -ne 0){ throw 'Failed to publish release.' }

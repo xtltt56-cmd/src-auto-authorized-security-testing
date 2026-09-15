@@ -4,6 +4,8 @@ param(
     [int]$Port = 4173,
     [ValidateRange(1024, 65535)]
     [int]$ApiPort = 4174,
+    [ValidateSet('overview','labs','targets','review','findings','settings')]
+    [string]$InitialPage = 'overview',
     [switch]$NoBrowser,
     [switch]$Foreground
 )
@@ -110,7 +112,8 @@ if(-not (Test-DashboardApiReady)){
     }
 }
 
-$url = "http://127.0.0.1:$Port/"
+$baseUrl = "http://127.0.0.1:$Port/"
+$url = if($InitialPage -eq 'overview'){ $baseUrl } else { $baseUrl + '?page=' + $InitialPage }
 $webArguments = @('-m', 'src_auto.dashboard_web', '--port', "$Port", '--api-port', "$ApiPort")
 
 if($Foreground){
@@ -140,7 +143,7 @@ $ready = $false
 for($attempt = 0; $attempt -lt 30; $attempt++){
     Start-Sleep -Milliseconds 250
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 2
         if($response.StatusCode -ge 200 -and $response.StatusCode -lt 500){
             $ready = $true
             break

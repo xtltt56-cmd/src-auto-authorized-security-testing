@@ -8,11 +8,20 @@ class LauncherTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         config = json.loads((root / "config" / "models.yaml").read_text(encoding="utf-8"))
         deepseek = config["remote_providers"]["deepseek"]
-        self.assertEqual(deepseek["model"], "deepseek-v4-flash")
+        self.assertEqual(deepseek["model"], "deepseek-flash")
         self.assertEqual(deepseek["models_endpoint"], "https://api.deepseek.com/models")
         self.assertEqual(deepseek["catalog_aliases"], ["deepseek-v4-flash", "deepseek-flash"])
-        self.assertIn("DeepSeek V4 Flash", deepseek["display_name"])
+        self.assertIn("DeepSeek V4.1 Flash", deepseek["display_name"])
         self.assertNotIn("v4.1", deepseek["model"].lower())
+
+    def test_zhipu_uses_official_flash_model_and_openai_compatible_endpoint(self):
+        root = Path(__file__).parents[1]
+        config = json.loads((root / "config" / "models.yaml").read_text(encoding="utf-8"))
+        zhipu = config["remote_providers"]["zhipu"]
+        self.assertEqual(zhipu["model"], "glm-5.3-flash")
+        self.assertGreaterEqual(zhipu["max_output_tokens"], 2048)
+        self.assertEqual(zhipu["endpoint"], "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+        self.assertEqual(zhipu["key_env"], "ZHIPU_API_KEY")
 
     def test_deepseek_ping_is_utf8_bom_encoded_for_windows_powershell(self):
         path = Path(__file__).parents[1] / "tools" / "deepseek_ping.ps1"
@@ -96,7 +105,7 @@ class LauncherTests(unittest.TestCase):
         request = content.index("[System.Net.WebRequest]::Create($ModelsEndpoint)")
         self.assertLess(consent, decrypt)
         self.assertLess(decrypt, request)
-        self.assertIn("$ModelId = 'deepseek-v4-flash'", content)
+        self.assertIn("$ModelId = 'deepseek-flash'", content)
         self.assertIn("$CatalogAliases = @('deepseek-v4-flash', 'deepseek-flash')", content)
         self.assertIn("$ids -contains $_", content)
         self.assertIn("config\\secrets\\deepseek_api_key.dpapi", content)

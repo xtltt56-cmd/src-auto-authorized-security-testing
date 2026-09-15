@@ -111,9 +111,26 @@ class DashboardWorkspace:
             return dict(reports=[], findings=[], warnings=['报告目录是符号链接，已拒绝读取'])
         report_root = self._inside(report_path)
         if report_root.exists():
-            files = sorted((p for p in report_root.iterdir() if p.is_file() and p.suffix.lower() in ('.md', '.txt', '.json', '.html')),
-                           key=lambda p: p.stat().st_mtime, reverse=True)
-            for path in files[:30]:
+            files = []
+            # Reports are grouped by run/lab in subdirectories.  Walk them
+            # without following links so a nested report can be previewed
+            # without broadening the project-local trust boundary.
+            for directory, names, filenames in os.walk(report_root, topdown=True, followlinks=False):
+                current = Path(directory)
+                names[:] = [name for name in names if not (current / name).is_symlink()
+                            and (current / name).resolve().parent == current.resolve()]
+                for filename in filenames:
+                    path = current / filename
+                    if path.suffix.lower() in ('.md', '.txt', '.json', '.html', '.log', '.xml'):
+                        try:
+                            if path.is_symlink():
+                                raise ValueError('report_symlink_not_allowed')
+                            self._inside(path, report_root)
+                            files.append((path.stat().st_mtime, path))
+                        except (OSError, ValueError):
+                            warnings.append('部分报告无法读取或路径不在允许范围')
+            files.sort(key=lambda item: item[0], reverse=True)
+            for _, path in files[:30]:
                 try:
                     if path.is_symlink():
                         raise ValueError('report_symlink_not_allowed')

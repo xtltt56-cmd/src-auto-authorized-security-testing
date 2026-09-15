@@ -43,13 +43,29 @@ export function FindingsPage({ findings: initialFindings, reports: initialReport
       </div>
       <button className="action-button" disabled={busy} onClick={() => void refresh()}>{busy ? '正在读取…' : '刷新本地候选与报告'}</button>
       <p role="status">{notice}</p>
-      <section className="surface-panel report-list-panel" aria-labelledby="report-list-title">
-        <div className="panel-header"><div><h4 id="report-list-title">安全报告</h4><p>报告文件仅允许从项目白名单路径读取。</p></div><FileText size={20} aria-hidden="true" /></div>
-        <div className="report-list">
-          {reports.length === 0 ? <div className="empty-state">暂无报告文件</div> : reports.map((report) => <div className="report-row" key={report.id}><span className="report-row-icon"><Flag size={16} aria-hidden="true" /></span><span className="report-row-copy"><strong>{report.name}</strong><small>{report.relativePath} · 已脱敏</small></span><button className="action-button" type="button" onClick={() => setSelectedReportId(report.id)}>查看 {report.name}</button></div>)}
-        </div>
-      </section>
-      {selectedReport ? <ReportViewer report={selectedReport} onClose={() => setSelectedReportId(null)} /> : null}
+      <div className="report-workspace">
+        <section className="surface-panel report-list-panel" aria-labelledby="report-list-title">
+          <div className="panel-header"><div><h4 id="report-list-title">安全报告</h4><p>点击整行即可在右侧查看报告正文；文件只从项目白名单路径读取。</p></div><FileText size={20} aria-hidden="true" /></div>
+          <div className="report-list">
+            {reports.length === 0 ? <div className="empty-state">暂无报告文件</div> : reports.map((report) => (
+              <button
+                className="report-row"
+                data-selected={selectedReportId === report.id}
+                key={report.id}
+                type="button"
+                aria-label={`查看 ${report.name}`}
+                aria-pressed={selectedReportId === report.id}
+                onClick={() => setSelectedReportId(report.id)}
+              >
+                <span className="report-row-icon"><Flag size={16} aria-hidden="true" /></span>
+                <span className="report-row-copy"><strong>{report.name}</strong><small>{report.relativePath} · 已脱敏</small></span>
+                <span className="report-row-action">查看正文</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <ReportViewer report={selectedReport} onClose={selectedReport ? () => setSelectedReportId(null) : undefined} />
+      </div>
     </>
   )
 }

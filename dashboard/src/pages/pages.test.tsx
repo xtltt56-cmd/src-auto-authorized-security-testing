@@ -157,5 +157,6 @@ describe('dashboard pages', () => {
     await userEvent.click(screen.getByRole('button', { name: '查看 juice-shop-summary.json' }))
     expect(await screen.findByRole('heading', { name: '报告查看器' })).toBeVisible()
     expect(screen.getByText('脚本不会执行')).toBeVisible()
+    expect(screen.getByLabelText('报告内容：juice-shop-summary.json')).toHaveTextContent('local-fixture')
   })
 })

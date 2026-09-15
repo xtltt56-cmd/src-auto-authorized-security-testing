@@ -235,7 +235,7 @@ class DashboardControlService:
                     "localOnly": True,
                     "operation": operation.get("state", "idle") if operation else "idle",
                     "openUrl": str(spec.health_url),
-                    "message": operation.get("message", ""),
+                    "message": dependency_message if not docker_ready else operation.get("message", ""),
                 }
             )
         aggregate_state = _aggregate_task_state(tasks)
@@ -301,7 +301,7 @@ def _elapsed_seconds(operation: Mapping[str, Any], now: float) -> int:
 def _map_state(status: str, operation: Mapping[str, Any], docker_ready: bool) -> Dict[str, Any]:
     operation_state = operation.get("state")
     if not docker_ready:
-        return {"task": "blocked", "health": "blocked", "stage": "等待 Docker Desktop", "progress": 0}
+        return {"task": "blocked", "health": "unavailable", "stage": "Docker 未就绪", "progress": 0}
     if operation_state == "queued":
         return {"task": "queued", "health": "starting", "stage": "等待执行", "progress": 5}
     if operation_state == "running":

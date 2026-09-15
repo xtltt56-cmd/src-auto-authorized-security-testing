@@ -49,7 +49,7 @@ export type LabStatus = {
   taskId: string
   name: string
   port: number
-  health: 'healthy' | 'starting' | 'stopped' | 'blocked'
+  health: 'healthy' | 'starting' | 'stopped' | 'unavailable' | 'blocked'
   stage: string
   durationSeconds: number
   candidates: number
@@ -119,6 +119,19 @@ export type ReviewEntry = {
   actionable: boolean
   review?: { status: string; reason: string; targetCount: number }
 }
+
+export type AIProviderSettings = {
+  id: 'deepseek' | 'zhipu' | 'openrouter'
+  displayName: string
+  model: string
+  officialModel: string
+  keySaved: boolean
+  endpointHost: string
+  manualOnly?: boolean
+  pricingNote?: string
+}
+
+export type AIConnectionResult = { ok: boolean; code: string }
 
 export type DashboardSnapshot = {
   source: 'local-fixture' | 'safe-placeholder' | 'loopback'

@@ -15,6 +15,12 @@ import type { DashboardSnapshot, TargetDraftResult } from './lib/types'
 type AppProps = { repository?: TaskRepository }
 
 const defaultRepository = createLoopbackRepository('/api')
+const navKeys: NavKey[] = ['overview', 'labs', 'targets', 'review', 'findings', 'settings']
+
+const initialNavKey = (): NavKey => {
+  const requested = new URLSearchParams(window.location.search).get('page') as NavKey | null
+  return requested && navKeys.includes(requested) ? requested : 'overview'
+}
 
 const pageMeta: Record<NavKey, { title: string; description: string }> = {
   overview: { title: '安全测试控制台', description: '本地优先 · 授权可控 · 人工最终确认' },
@@ -26,7 +32,7 @@ const pageMeta: Record<NavKey, { title: string; description: string }> = {
 }
 
 export function App({ repository = defaultRepository }: AppProps) {
-  const [activeKey, setActiveKey] = useState<NavKey>('overview')
+  const [activeKey, setActiveKey] = useState<NavKey>(initialNavKey)
   const [snapshot, setSnapshot] = useState<DashboardSnapshot>(safeDefaultSnapshot)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
@@ -75,6 +81,10 @@ export function App({ repository = defaultRepository }: AppProps) {
     else await repository.stopAllLabs()
     await refresh()
   }, [refresh, repository])
+  const startDockerDesktop = useCallback(async () => {
+    await repository.startDockerDesktop()
+    await refresh()
+  }, [refresh, repository])
 
   let content
   if (selectedTask) {
@@ -82,13 +92,13 @@ export function App({ repository = defaultRepository }: AppProps) {
   } else if (activeKey === 'overview') {
     content = <OverviewPage snapshot={snapshot} onNavigate={navigate} onOpenTask={openTask} />
   } else if (activeKey === 'labs') {
-    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} onAction={runLabAction} onBatchAction={runBatchAction} />
+    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} onAction={runLabAction} onBatchAction={runBatchAction} onStartDocker={startDockerDesktop} />
   } else if (activeKey === 'findings') {
     content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} repository={repository} />
   } else if (activeKey === 'targets') {
     content = <TargetDraftPage savedResult={savedTargetResult} onSaved={setSavedTargetResult} repository={repository} />
   } else if (activeKey === 'settings') {
-    content = <AISettingsPage />
+    content = <AISettingsPage repository={repository} />
   } else {
     content = <OfflineReviewPage repository={repository} />
   }

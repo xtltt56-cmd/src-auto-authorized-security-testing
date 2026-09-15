@@ -46,6 +46,20 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn('test-secret', content)
         self.assertNotIn('12345678901234567890', content)
 
+    def test_nested_reports_are_listed_with_clickable_content(self):
+        nested = self.root / 'reports' / 'local' / 'juice-shop'
+        nested.mkdir(parents=True)
+        (nested / 'validation.json').write_text(
+            '{"target":"127.0.0.1:3000","result":"nested-report-visible"}',
+            encoding='utf-8',
+        )
+
+        reports = self.workspace.artifacts()['reports']
+
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]['relativePath'], 'reports/local/juice-shop/validation.json')
+        self.assertIn('nested-report-visible', reports[0]['content'])
+
     def test_review_rejects_path_traversal(self):
         with self.assertRaises(ValueError): self.workspace.review_targets('../')
 

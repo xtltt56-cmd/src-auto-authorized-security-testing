@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, Circle, Clock3, Pause, Play, ShieldAlert, XCircle } from 'lucide-react'
 import type { TaskState } from '../lib/types'
 
-type StatusBadgeState = TaskState | 'waiting' | 'starting'
+type StatusBadgeState = TaskState | 'waiting' | 'starting' | 'unavailable'
 
 type StatusBadgeProps = {
   state: StatusBadgeState
@@ -14,6 +14,7 @@ const labels: Record<StatusBadgeProps['state'], string> = {
   paused: '已暂停',
   waiting: '等待人工',
   starting: '启动中',
+  unavailable: 'Docker 未就绪',
   blocked: '已阻止',
   failed: '失败',
   completed: '已完成',
@@ -27,6 +28,7 @@ const icons: Record<StatusBadgeProps['state'], typeof Circle> = {
   paused: Pause,
   waiting: Clock3,
   starting: Play,
+  unavailable: AlertCircle,
   blocked: ShieldAlert,
   failed: AlertCircle,
   completed: CheckCircle2,

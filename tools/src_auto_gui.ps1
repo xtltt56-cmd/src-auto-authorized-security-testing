@@ -808,29 +808,9 @@ function Select-ExistingTarget {
 }
 
 function Open-AISettings {
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'SRC-Auto - AI 模型与密钥设置'
-    $form.StartPosition = 'CenterParent'
-    $form.ClientSize = New-Object System.Drawing.Size(650, 300)
-    $form.BackColor = [System.Drawing.Color]::White
-    $form.Controls.Add((New-GuiLabel -Text 'AI 模型与密钥设置（AI 设置）' -Left 28 -Top 20 -Width 560 -Height 34 -Size 16 -Color $titleColor -Style ([System.Drawing.FontStyle]::Bold)))
-    $form.Controls.Add((New-GuiLabel -Text '远程 AI 默认关闭；保存密钥不会联网，也不会在窗口中显示明文。' -Left 30 -Top 60 -Width 575 -Height 30 -Size 9 -Color $safeColor))
-    $deepseek = New-GuiButton -Text '保存 DeepSeek 密钥' -Left 40 -Top 115 -Width 250 -Height 50 -Action {
-        $script = Join-Path $ProjectRoot 'tools\save_deepseek_key.ps1'
-        Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
-    }
-    $openrouter = New-GuiButton -Text 'OpenRouter 密钥与模型设置' -Left 320 -Top 115 -Width 285 -Height 50 -Action {
-        $script = Join-Path $ProjectRoot 'tools\openrouter_settings_gui.ps1'
-        Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile','-Sta','-ExecutionPolicy','Bypass','-File',$script) -WorkingDirectory $ProjectRoot | Out-Null
-    }
-    $form.Controls.Add($deepseek)
-    $form.Controls.Add($openrouter)
-    $form.Controls.Add((New-GuiLabel -Text '说明：模型只允许人工审阅已有 Finding，不参与自动发现、目标选择或报告提交。' -Left 40 -Top 195 -Width 565 -Height 34 -Size 9 -Color $mutedColor))
-    $close = New-GuiButton -Text '关闭' -Left 500 -Top 240 -Width 105 -Height 36 -Action { $form.Close() }
-    $form.Controls.Add($close)
-    Enable-SrcAutoDpiLayout -Form $form
-    [void]$form.ShowDialog()
-    $form.Dispose()
+    $script = Join-Path $ProjectRoot 'tools\start_dashboard.ps1'
+    if(-not (Test-Path -LiteralPath $script)){ Show-Warning '找不到平台系统设置入口。'; return }
+    Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script,'-InitialPage','settings') -WorkingDirectory $ProjectRoot -WindowStyle Hidden | Out-Null
 }
 
 function Open-SessionProfileManager {

@@ -7,6 +7,7 @@ from src_auto.remote_ai import (
     DeepSeekProvider,
     OpenAIProvider,
     OpenRouterProvider,
+    ZhipuProvider,
     RemoteProviderError,
     RemoteReviewRequest,
 )
@@ -27,6 +28,19 @@ class FakeResponse:
 
 
 class RemoteAITests(unittest.TestCase):
+    def test_saved_key_loader_runs_only_after_consent_and_runtime_gates(self):
+        from unittest.mock import Mock
+        loader = Mock(return_value='synthetic-key')
+        provider = DeepSeekProvider(endpoint='https://api.deepseek.com/chat/completions',
+                                    model='deepseek-flash', key_env='UNIT_KEY_NOT_SET',
+                                    key_loader=loader, allow_remote_llm=True)
+        with patch.dict(os.environ, {'SRC_AUTO_DEEPSEEK_CONSENT': 'disabled'}):
+            with self.assertRaises(RemoteProviderError): provider._key()
+        loader.assert_not_called()
+        with patch.dict(os.environ, {'SRC_AUTO_DEEPSEEK_CONSENT': 'enabled'}):
+            self.assertEqual(provider._key(), 'synthetic-key')
+        loader.assert_called_once()
+
     def setUp(self):
         self._consent = patch.dict(
             os.environ,
@@ -171,6 +185,43 @@ class RemoteAITests(unittest.TestCase):
         self.assertEqual(payload["tools"], [])
         self.assertEqual(payload["max_output_tokens"], 256)
         self.assertEqual(payload["text"]["format"]["type"], "json_schema")
+
+    def test_zhipu_uses_openai_compatible_manual_json_contract(self):
+        seen = {}
+
+        def fake_urlopen(request, timeout):
+            seen['url'] = request.full_url
+            seen['payload'] = json.loads(request.data.decode('utf-8'))
+            seen['authorization'] = request.headers.get('Authorization')
+            return FakeResponse({
+                'choices': [{'message': {'content': json.dumps({
+                    'disposition': 'manual_review',
+                    'confidence': 0.61,
+                    'reason': 'needs operator verification',
+                    'suggested_checks': ['compare authorized objects'],
+                })}}],
+                'usage': {'prompt_tokens': 40, 'completion_tokens': 12},
+            })
+
+        with patch.dict(os.environ, {
+            'ZHIPU_API_KEY': 'unit-test-zhipu-secret',
+            'SRC_AUTO_ZHIPU_CONSENT': 'enabled',
+        }, clear=False):
+            result = ZhipuProvider(
+                endpoint='https://open.bigmodel.cn/api/paas/v4/chat/completions',
+                model='glm-5.3-flash',
+                key_env='ZHIPU_API_KEY',
+                consent_env='SRC_AUTO_ZHIPU_CONSENT',
+                allow_remote_llm=True,
+                urlopen_fn=fake_urlopen,
+            ).review(self.finding)
+
+        self.assertEqual(seen['url'], 'https://open.bigmodel.cn/api/paas/v4/chat/completions')
+        self.assertEqual(seen['payload']['model'], 'glm-5.3-flash')
+        self.assertEqual(seen['payload']['response_format'], {'type': 'json_object'})
+        self.assertEqual(seen['payload']['thinking'], {'type': 'enabled'})
+        self.assertEqual(seen['authorization'], 'Bearer unit-test-zhipu-secret')
+        self.assertEqual(result['provider'], 'zhipu')
 
     def test_openrouter_ox_alpha_uses_private_manual_json_contract(self):
         calls = []

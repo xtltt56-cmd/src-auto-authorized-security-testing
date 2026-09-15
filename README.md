@@ -14,9 +14,9 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 完整中文使用手册：`USER_MANUAL.md`
 
-OpenRouter 模型下架、更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」可打开原生密钥与模型设置窗口。
+云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前发布基线（2026-08-28）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.8.28-loopback-lab-control`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
+> **当前发布基线（2026-09-15）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.10.0`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 
@@ -201,15 +201,11 @@ python -m src_auto juice-shop-zap --confirm-local --human
 `POSSIBLE` 候选并等待人工复核。结果位于本机 `validation/juice-shop/`；如果依赖再次不可用，命令会输出
 `BLOCKED_DEPENDENCY`，不会把未执行扫描算作通过。
 
-## 人工启用的 DeepSeek V4 Flash 审阅
+## 人工启用的 DeepSeek V4.1 Flash 审阅
 
 DeepSeek 只审阅已经落库的单个 Finding，不参与自动发现或自动回退。桌面一键启动每次都会先询问是否启用；选择否时设置会话级硬门 `remote_ai_disabled_for_session`，本次进程树不会发出远程请求。选择是也只允许人工 `remote-triage`，不会自动调用。API key 明文只存在于当前进程；项目可选择保存当前 Windows 用户绑定的 DPAPI 密文：
 
-推荐先运行一次 DPAPI 隐藏保存工具；它只在指定 D 盘项目内生成当前 Windows 用户可解密的密文，并被 Git 排除：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\save_deepseek_key.ps1
-```
+推荐启动 Dashboard 后进入左侧 **系统设置**，选择 DeepSeek，在页面内直接粘贴密钥并点击 **保存设置**。保存操作不联网；密钥只在指定 D 盘项目内生成当前 Windows 用户可解密的 DPAPI 密文，并被 Git 排除。旧的 `tools\save_deepseek_key.ps1` 仅作为命令行兼容入口保留。
 
 以后启动时选择“是”会自动加载，选择“否”不会读取或解密。若不希望保存，也可以继续使用下面的当前会话环境变量方式：
 
@@ -226,7 +222,7 @@ python -m src_auto remote-triage --run-id <RUN_ID> --finding-id <FINDING_ID> --p
 直接双击桌面快捷方式时，启动窗口会显示：
 
 ```text
-是否启用 DeepSeek V4 Flash（官方滚动最新版）远程 AI？输入 Y/是 启用，N/否/回车 禁用
+是否启用 DeepSeek V4.1 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用
 ```
 
 选择 `N`、`否` 或直接回车会把 `SRC_AUTO_DEEPSEEK_CONSENT` 设为 `disabled`；即使

@@ -26,6 +26,7 @@ const healthLabels: Record<LabStatus['health'], string> = {
   starting: '启动中',
   stopped: '已停止',
   blocked: '受阻',
+  unavailable: 'Docker 未就绪',
 }
 
 const stagesFor = (task: TaskSummary): StageItem[] => {

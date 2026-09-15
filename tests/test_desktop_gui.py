@@ -114,7 +114,9 @@ class DesktopGuiContractTests(unittest.TestCase):
         content = GUI_SCRIPT.read_text(encoding="utf-8-sig")
         self.assertIn("AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)", content)
         self.assertIn("function Enable-SrcAutoDpiLayout", content)
-        self.assertEqual(content.count("Enable-SrcAutoDpiLayout -Form $form"), 5)
+        self.assertEqual(content.count("Enable-SrcAutoDpiLayout -Form $form"), 4)
+        provider_ui = (GUI_SCRIPT.parent / 'ai_provider_settings_gui.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)', provider_ui)
         probe = (
             "$script:DpiLayoutCheck = $false\n"
             "$timer = New-Object System.Windows.Forms.Timer\n"
@@ -304,29 +306,19 @@ class DesktopGuiContractTests(unittest.TestCase):
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-    def test_ai_settings_can_open_and_close_without_runtime_errors(self):
-        probe = (
-            "$script:AISettingsSeen = $false\n"
-            "$timer = New-Object System.Windows.Forms.Timer\n"
-            "$timer.Interval = 100\n"
-            "$timer.Add_Tick({\n"
-            "    $window = [System.Windows.Forms.Application]::OpenForms | "
-            "Where-Object { $_.Text -eq 'SRC-Auto - AI 模型与密钥设置' }\n"
-            "    if($window) {\n"
-            "        $close = $window.Controls | "
-            "Where-Object { $_ -is [System.Windows.Forms.Button] -and $_.Text -eq '关闭' } | "
-            "Select-Object -First 1\n"
-            "        if(-not $close) { throw 'ai_settings_close_button_missing' }\n"
-            "        $script:AISettingsSeen = $true\n"
-            "        $close.PerformClick(); $timer.Stop()\n"
-            "    }\n"
-            "})\n"
-            "$timer.Start(); Open-AISettings\n"
-            "if(-not $script:AISettingsSeen) { throw 'ai_settings_never_opened' }\n"
-            "$timer.Dispose()"
-        )
-        result = self._run_gui_probe(probe)
-        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+    def test_ai_settings_routes_to_the_inline_dashboard_page(self):
+        content = GUI_SCRIPT.read_text(encoding='utf-8-sig')
+        function = content[content.index('function Open-AISettings'):content.index('function Open-SessionProfileManager')]
+        self.assertIn("tools\\start_dashboard.ps1", function)
+        self.assertIn("'-InitialPage','settings'", function)
+        self.assertNotIn('ai_provider_settings_gui.ps1', function)
+
+    def test_ai_settings_has_direct_paste_and_official_default_actions(self):
+        content = (GUI_SCRIPT.parent / 'ai_provider_settings_gui.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("'粘贴剪贴板密钥'", content)
+        self.assertIn("'恢复官方默认模型'", content)
+        self.assertIn('[Windows.Forms.Clipboard]::GetText()', content)
+        self.assertIn('$keyBox.Focus()', content)
 
     def test_offline_review_picker_can_open_and_close_with_navigation_controls(self):
         probe = (

@@ -12,6 +12,7 @@ type LabMatrixProps = {
 const healthToState = (health: LabStatus['health']) => {
   if (health === 'healthy') return 'completed' as const
   if (health === 'starting') return 'starting' as const
+  if (health === 'unavailable') return 'unavailable' as const
   if (health === 'blocked') return 'blocked' as const
   return 'idle' as const
 }
@@ -59,8 +60,8 @@ export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }
                     <button className="table-link" type="button" aria-label={`查看 ${lab.name} 任务`} onClick={() => onOpenLabTask(lab.taskId)}>
                       查看任务 <ExternalLink size={14} aria-hidden="true" />
                     </button>
-                    {lab.health === 'stopped' || lab.health === 'blocked' ? (
-                      <button className="table-link" type="button" aria-label={`启动 ${lab.name}`} onClick={() => void onAction(lab.id, 'start')} disabled={pendingLabId === lab.id}>
+                    {lab.health === 'stopped' || lab.health === 'blocked' || lab.health === 'unavailable' ? (
+                      <button className="table-link" type="button" aria-label={`启动 ${lab.name}`} onClick={() => void onAction(lab.id, 'start')} disabled={pendingLabId === lab.id || lab.health === 'unavailable'}>
                         <Play size={14} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '启动'}
                       </button>
                     ) : (
@@ -68,7 +69,7 @@ export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }
                         <Square size={13} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '停止'}
                       </button>
                     )}
-                    <button className="table-link" type="button" aria-label={`重置 ${lab.name}`} onClick={() => void onAction(lab.id, 'reset')} disabled={pendingLabId === lab.id}>
+                    <button className="table-link" type="button" aria-label={`重置 ${lab.name}`} onClick={() => void onAction(lab.id, 'reset')} disabled={pendingLabId === lab.id || lab.health === 'unavailable'}>
                       <RefreshCw size={14} aria-hidden="true" /> 重置
                     </button>
                     {lab.health === 'healthy' && lab.openUrl && /^http:\/\/127\.0\.0\.1:\d+(?:\/|$)/.test(lab.openUrl) ? (

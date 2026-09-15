@@ -7,8 +7,8 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ResultPath = Join-Path $ProjectRoot 'validation\deepseek_ping_latest.json'
 $SecretHelperPath = Join-Path $ProjectRoot 'tools\deepseek_secret.ps1'
 $SecretPath = Join-Path $ProjectRoot 'config\secrets\deepseek_api_key.dpapi'
-$ModelId = 'deepseek-v4-flash'
-$ModelDisplayName = 'DeepSeek V4 Flash（官方滚动最新版）'
+$ModelId = 'deepseek-flash'
+$ModelDisplayName = 'DeepSeek V4.1 Flash'
 $ModelsEndpoint = 'https://api.deepseek.com/models'
 $CatalogAliases = @('deepseek-v4-flash', 'deepseek-flash')
 Set-Location -LiteralPath $ProjectRoot

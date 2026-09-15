@@ -56,6 +56,21 @@ class ImmediateExecutor:
 
 
 class DashboardControlServiceTests(unittest.TestCase):
+    def test_missing_docker_is_reported_as_unavailable_not_failed_lab(self):
+        service = DashboardControlService(
+            FakeManager(),
+            executor=ImmediateExecutor(),
+            dependency_check=lambda: (False, "Docker Desktop 尚未就绪，请先启动 Docker Desktop"),
+        )
+
+        snapshot = service.snapshot()
+
+        self.assertFalse(snapshot['dependency']['dockerReady'])
+        self.assertTrue(all(lab['health'] == 'unavailable' for lab in snapshot['labs']))
+        self.assertTrue(all(lab['stage'] == 'Docker 未就绪' for lab in snapshot['labs']))
+        self.assertTrue(all('Docker Desktop' in lab['message'] for lab in snapshot['labs']))
+        self.assertTrue(all(task['state'] == 'blocked' for task in snapshot['tasks']))
+
     def test_stop_replaces_queued_start_without_starting_container(self):
         class Queue:
             def __init__(self): self.jobs = []

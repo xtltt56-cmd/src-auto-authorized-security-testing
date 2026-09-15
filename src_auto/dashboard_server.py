@@ -16,18 +16,21 @@ from typing import Any, Dict
 from .dashboard_control import DashboardControlService
 from .local_labs import LocalLabManager
 from .dashboard_workspace import DashboardWorkspace
+from .provider_settings import ProviderSettingsStore
 
 
 _ALLOWED_ORIGIN = "http://127.0.0.1:4173"
 _LAB_ACTION_ROUTE = re.compile(r"^/api/labs/([a-z0-9][a-z0-9_-]{0,31})/(start|stop|reset)$")
 _BATCH_ROUTE = re.compile(r"^/api/labs/(start-all|stop-all)$")
+_PROVIDER_ROUTE = re.compile(r"^/api/settings/providers/(deepseek|zhipu|openrouter)(/test)?$")
 _MAX_BODY_BYTES = 1024
 _settings_lock = threading.Lock()
 _settings_process = None
+_docker_desktop_process = None
 
 
-def open_openrouter_settings():
-    """Open the fixed native dialog once; never accept a path or command from HTTP."""
+def open_ai_provider_settings():
+    """Open the fixed native AI dialog once; never accept a path or command from HTTP."""
     global _settings_process
     if os.name != 'nt':
         raise OSError('windows_required')
@@ -35,7 +38,7 @@ def open_openrouter_settings():
         if _settings_process is not None and _settings_process.poll() is None:
             return
         root = Path(__file__).resolve().parents[1]
-        script = root / 'tools' / 'openrouter_settings_gui.ps1'
+        script = root / 'tools' / 'ai_provider_settings_gui.ps1'
         if not script.is_file():
             raise OSError('settings_script_missing')
         # Python inherits PS7 paths unchanged; the dialog needs Windows PS5 modules.
@@ -56,6 +59,35 @@ def open_openrouter_settings():
             return
         if _settings_process.returncode != 0:
             raise OSError('settings_launch_failed')
+
+
+def open_openrouter_settings():
+    """Backward-compatible alias for older launchers and tests."""
+    return open_ai_provider_settings()
+
+
+def start_docker_desktop():
+    """Start Docker Desktop from a fixed installed path without accepting input."""
+    global _docker_desktop_process
+    if os.name != 'nt':
+        raise OSError('windows_required')
+    candidates = (
+        Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'DockerDesktop' / 'Docker Desktop.exe',
+        Path(r'C:\Program Files\Docker\Docker\Docker Desktop.exe'),
+    )
+    executable = next((item for item in candidates if item.is_file()), None)
+    if executable is None:
+        raise OSError('docker_desktop_not_found')
+    if _docker_desktop_process is not None and _docker_desktop_process.poll() is None:
+        return
+    _docker_desktop_process = subprocess.Popen(
+        [str(executable)],
+        cwd=str(executable.parent),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
@@ -156,6 +188,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, TypeError):
                 self._error(503, 'workspace_unavailable', '本地数据暂时无法读取，请检查项目目录')
             return
+        if self.path == '/api/settings/providers':
+            if not self._authorized(): return
+            try:
+                self._write_json(200, self.server.provider_settings.public_status())
+            except (OSError, ValueError, TypeError):
+                self._error(503, 'provider_settings_unavailable', '云端 AI 设置暂时无法读取')
+            return
         self._error(404, "route_not_found", "接口不存在")
 
     def do_POST(self):
@@ -197,10 +236,43 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._error(400, 'empty_body_required', '设置窗口入口不接受额外参数')
                 return
             try:
-                open_openrouter_settings()
+                open_ai_provider_settings()
                 self._write_json(202, {'accepted': True})
             except OSError:
                 self._error(503, 'settings_unavailable', '无法打开 Windows 设置窗口，请检查启动器')
+            return
+        provider_match = _PROVIDER_ROUTE.fullmatch(self.path)
+        if provider_match:
+            provider = provider_match.group(1)
+            if provider_match.group(2):
+                if document != {'allowNetwork': True}:
+                    self._error(400, 'network_consent_required', '必须明确允许本次最小联网测试')
+                    return
+                try:
+                    self._write_json(200, self.server.provider_settings.test_connection(provider))
+                except (OSError, ValueError, TypeError):
+                    self._error(503, 'provider_test_unavailable', '无法完成本次连接测试')
+                return
+            if set(document) - {'apiKey', 'model'}:
+                self._error(400, 'provider_settings_invalid', '设置包含不支持的字段')
+                return
+            try:
+                result = self.server.provider_settings.save(provider, document.get('apiKey', ''), document.get('model', ''))
+                self._write_json(200, result)
+            except (ValueError, TypeError):
+                self._error(400, 'provider_settings_invalid', '请检查密钥和模型 API ID')
+            except OSError:
+                self._error(503, 'provider_settings_save_failed', '设置未保存，请检查项目目录权限')
+            return
+        if self.path == '/api/dependencies/docker/start':
+            if document:
+                self._error(400, 'empty_body_required', 'Docker 启动入口不接受额外参数')
+                return
+            try:
+                start_docker_desktop()
+                self._write_json(202, {'accepted': True, 'message': 'Docker Desktop 启动请求已提交'})
+            except OSError:
+                self._error(503, 'docker_desktop_unavailable', '未找到 Docker Desktop，请先安装或手动启动')
             return
         match = _LAB_ACTION_ROUTE.fullmatch(self.path)
         try:
@@ -236,6 +308,7 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
         allowed_origin,
     )
     server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
+    server.provider_settings = ProviderSettingsStore(project_root or Path(__file__).resolve().parents[1])
     return server
 
 
