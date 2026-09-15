@@ -1,10 +1,14 @@
 import json
 import threading
 import unittest
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from src_auto.dashboard_server import create_server
+from src_auto.dashboard_server import create_server, open_ai_provider_settings, start_docker_desktop
+from src_auto.dashboard_workspace import DashboardWorkspace
 
 
 class FakeService:
@@ -27,7 +31,76 @@ class FakeService:
         return {"accepted": True, "action": action}
 
 
+class FakeProviderSettings:
+    def __init__(self): self.calls = []
+    def public_status(self):
+        return {'providers': [{'id': 'deepseek', 'displayName': 'DeepSeek V4.1 Flash',
+                               'model': 'deepseek-flash', 'officialModel': 'deepseek-flash',
+                               'keySaved': False, 'endpointHost': 'api.deepseek.com'}]}
+    def save(self, provider, api_key, model):
+        self.calls.append(('save', provider, api_key, model))
+        return {'id': provider, 'model': model, 'keySaved': bool(api_key)}
+    def test_connection(self, provider):
+        self.calls.append(('test', provider))
+        return {'ok': True, 'code': 'reachable_model_available'}
+
+
 class DashboardServerTests(unittest.TestCase):
+    def test_draft_api_persists_and_requires_authentication(self):
+        from tests.test_dashboard_workspace import draft
+        with tempfile.TemporaryDirectory() as temp:
+            self.server.workspace = DashboardWorkspace(Path(temp))
+            self.assertEqual(self.request('/api/drafts', method='POST', body=draft())[0], 401)
+            status, _, result = self.request('/api/drafts', method='POST', token='test-session-token', body=draft())
+            self.assertEqual(status, 201)
+            self.server.workspace = DashboardWorkspace(Path(temp))
+            status, _, loaded = self.request('/api/drafts', token='test-session-token')
+            self.assertEqual(status, 200)
+            self.assertEqual(loaded['drafts'][0]['id'], result['id'])
+            self.assertEqual(self.request('/api/review', token='test-session-token')[2]['entries'][0]['status'], 'candidate_only')
+            self.assertEqual(self.request('/api/artifacts')[0], 401)
+
+    def test_native_dialog_uses_windows_powershell_module_path(self):
+        with patch('src_auto.dashboard_server._settings_process', None), patch('src_auto.dashboard_server.subprocess.Popen') as launch:
+            launch.return_value.wait.side_effect = __import__('subprocess').TimeoutExpired('dialog', 1)
+            open_ai_provider_settings()
+            environment = launch.call_args.kwargs['env']
+            entries = [v for k, v in environment.items() if k.lower() == 'psmodulepath']
+            self.assertEqual(len(entries), 1)
+            self.assertIn('WindowsPowerShell', entries[0])
+            self.assertNotIn('PowerShell\\7', entries[0])
+
+    def test_inline_ai_settings_requires_token_saves_and_tests_without_returning_secret(self):
+        self.server.provider_settings = FakeProviderSettings()
+        self.assertEqual(self.request('/api/settings/providers')[0], 401)
+        status, _, listed = self.request('/api/settings/providers', token='test-session-token')
+        self.assertEqual(status, 200)
+        self.assertNotIn('apiKey', json.dumps(listed))
+        status, _, saved = self.request('/api/settings/providers/deepseek', method='POST', token='test-session-token',
+                                        body={'apiKey': 'synthetic-key', 'model': 'deepseek-flash'})
+        self.assertEqual(status, 200)
+        self.assertNotIn('synthetic-key', json.dumps(saved))
+        status, _, tested = self.request('/api/settings/providers/deepseek/test', method='POST', token='test-session-token',
+                                         body={'allowNetwork': True})
+        self.assertEqual(status, 200)
+        self.assertTrue(tested['ok'])
+        self.assertEqual(self.server.provider_settings.calls,
+                         [('save', 'deepseek', 'synthetic-key', 'deepseek-flash'), ('test', 'deepseek')])
+
+    def test_inline_ai_test_requires_explicit_network_flag(self):
+        self.server.provider_settings = FakeProviderSettings()
+        status, _, payload = self.request('/api/settings/providers/deepseek/test', method='POST',
+                                          token='test-session-token', body={})
+        self.assertEqual(status, 400)
+        self.assertEqual(payload['error'], 'network_consent_required')
+
+    def test_docker_desktop_start_requires_token_and_has_no_user_path(self):
+        with patch('src_auto.dashboard_server.start_docker_desktop', create=True) as launch:
+            self.assertEqual(self.request('/api/dependencies/docker/start', method='POST', body={})[0], 401)
+            self.assertEqual(self.request('/api/dependencies/docker/start', method='POST', token='test-session-token', body={'path': 'bad'})[0], 400)
+            self.assertEqual(self.request('/api/dependencies/docker/start', method='POST', token='test-session-token', body={})[0], 202)
+            launch.assert_called_once_with()
+
     def setUp(self):
         self.service = FakeService()
         self.server = create_server(self.service, port=0, token="test-session-token")
@@ -51,7 +124,7 @@ class DashboardServerTests(unittest.TestCase):
             headers["Content-Type"] = "application/json"
         request = Request(self.base + path, data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=2) as response:
+            with urlopen(request, timeout=5) as response:
                 return response.status, dict(response.headers), json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             return exc.code, dict(exc.headers), json.loads(exc.read().decode("utf-8"))
@@ -101,7 +174,7 @@ class DashboardServerTests(unittest.TestCase):
             method="POST",
         )
         with self.assertRaises(HTTPError) as raised:
-            urlopen(request, timeout=2)
+            urlopen(request, timeout=5)
         self.assertEqual(raised.exception.code, 413)
 
 

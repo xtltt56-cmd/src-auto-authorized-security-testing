@@ -63,7 +63,7 @@ function Read-DeepSeekSessionKey {
     }
 }
 
-$deepSeekAnswer = (Read-Host '是否启用 DeepSeek v4 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用').Trim().ToLowerInvariant()
+$deepSeekAnswer = (Read-Host '是否启用 DeepSeek V4.1 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用').Trim().ToLowerInvariant()
 $deepSeekEnabled = $false
 if($deepSeekAnswer -in @('y', 'yes', '是', '启用')){
     if([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)){
@@ -102,7 +102,7 @@ if($deepSeekEnabled){
     $env:SRC_AUTO_REMOTE_AI_CONSENT = 'enabled'
     $env:SRC_AUTO_DEEPSEEK_CONSENT = 'enabled'
     $env:SRC_AUTO_OPENAI_CONSENT = 'disabled'
-    Write-Host 'DeepSeek v4 Flash 已获本次启动会话授权；仍只允许人工 remote-triage，不会自动调用。' -ForegroundColor Yellow
+    Write-Host 'DeepSeek V4.1 Flash（API 模型 ID：deepseek-flash）已获本次启动会话授权；仍只允许人工 remote-triage，不会自动调用。' -ForegroundColor Yellow
 } else {
     $env:SRC_AUTO_REMOTE_AI_CONSENT = 'disabled'
     $env:SRC_AUTO_DEEPSEEK_CONSENT = 'disabled'
@@ -209,7 +209,7 @@ $ollamaCommand = Get-Command ollama -ErrorAction SilentlyContinue
 if($ollamaCommand){
     $ollamaPath = $ollamaCommand.Source
 } else {
-    $candidate = 'C:\Users\lenovo\AppData\Local\Programs\Ollama\ollama.exe'
+    $candidate = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
     if(Test-Path -LiteralPath $candidate){
         $ollamaPath = $candidate
     }

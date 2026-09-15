@@ -1,9 +1,13 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.8.28-loopback-lab-control`
+**发布标识：** `v0.10.0`
 
-**发布日期：** 2026-08-28（Asia/Shanghai）
-**适用分支：** `main` 与 `codex/loopback-lab-control-v1`
+**发布日期：** 2026-09-15（Asia/Shanghai）
+**适用分支：** `main`
+
+**分发方式：** GitHub Actions 在正式发布门禁通过后生成 `SRC-Auto-Windows-x64.zip`、版本化 ZIP、`SHA256SUMS.txt` 和机器可读发布清单。固定最新版下载地址为：
+
+`https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip`
 
 ## 本发布包含什么
 
@@ -28,11 +32,12 @@ Set-Location 'D:\\网络安全文件夹\\SRC-Auto'
 
 | 验证项 | 当前证据 |
 |---|---|
-| Python 回归 | `254/254` 通过 |
-| 回环 API / 控制服务 | `10/10` 通过 |
-| Dashboard 前端单元测试 | `28/28` 通过 |
-| Chromium 浏览器验收 | `7/7` 通过 |
+| Python 回归 | `302` 项执行：`301` 通过，`1` 项按条件跳过，`0` 失败 |
+| 回环 API / 控制服务 | 已纳入 Python 全量回归并通过 |
+| Dashboard 前端单元测试 | `34/34` 通过 |
+| Chromium 浏览器验收 | `8/8` 通过 |
 | TypeScript、Lint、生产构建 | 均通过 |
+| Windows 分发包隔离启动 | 便携 Python、静态页面、构建资源、API 与同源代理均通过 |
 | 五靶场控制闭环 | 全部健康；Juice Shop 已完成真实“停止 → 启动”点击回归 |
 | 外部目标、远程 AI、自动提交 | `0 / 0 / 0` |
 
@@ -49,8 +54,8 @@ Set-Location 'D:\\网络安全文件夹\\SRC-Auto'
 
 ## 文档读取规则
 
-2026-08-28 的本清单和 `TEST_REPORT.md` 顶部的“可视化本地靶场控制升级验收”是当前版本的唯一验收基线。日期早于 2026-08-28、且标题标注为“历史”或“归档”的内容只用于追溯，不覆盖当前功能、测试数量或运行结论。
+2026-09-15 的本清单是 `v0.10.0` 分发版本的当前验收摘要。`TEST_REPORT.md` 及日期更早、标题标注为“历史”或“归档”的内容只用于追溯，不覆盖本清单记录的版本号、测试数量或分发结论。
 
 ## 回退方式
 
-本发布的 Git 标签为 `v0.8.28-loopback-lab-control`。如后续升级出现问题，可从该标签创建恢复分支；此做法不需要回退或删除 GitHub 的历史记录。
+本发布的 Git 标签为 `v0.10.0`。上一份可用回退基线保留为 `v0.9.0`；如后续升级出现问题，可从相应标签创建恢复分支，无需删除 GitHub 历史记录。

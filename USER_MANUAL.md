@@ -106,7 +106,7 @@ Juice Shop 状态/基线/ZAP 摘要、CLI 帮助和错误提示都使用中文�
 | 选择已有目标 | 打开文件夹优先选择器，可从 `config\\targets` 根目录或任意下级分组查看已有 Scope |
 | 离线审阅目标范围 | 选择一个或多个完整目标，逐个调用 `target-review` 并生成本地汇总；不会发出网络请求 |
 | 查看 Findings 和报告 | 列出项目内 `reports` 与 `validation` 摘要；单击文件名后在右侧只读预览详细内容，供人工阅读和整理报告草稿 |
-| AI 模型与密钥设置 | 仅打开既有 DeepSeek / OpenRouter 密钥保存工具；默认不启用远程 AI，也不会在界面显示明文密钥 |
+| AI 模型与密钥设置 | 打开 Dashboard 内置的“系统设置”；可直接保存 DeepSeek / 智谱 / OpenRouter 密钥和模型 ID，默认不启用远程 AI，也不会回显已保存密钥 |
 
 ### 离线审阅目标范围选择器
 
@@ -160,7 +160,7 @@ SRC-Auto 是一个“授权范围门控 + 资产/请求流水线 + Finding 去�
 - 生成最小证据和补天人工审核报告；
 - 在 loopback 本地靶场执行完整 E2E；
 - 对外部工具保持显式适配器门控。
-- 在人工选择 Finding、确认脱敏摘要和 SHA-256 摘要后，单次调用 DeepSeek V4 Flash 做辅助审阅；
+- 在人工选择 Finding、确认脱敏摘要和 SHA-256 摘要后，单次调用 DeepSeek V4.1 Flash 做辅助审阅；
 - 保留一个默认关闭的 OpenAI Responses API 适配器，等待独立的 OpenAI Platform API 密钥。
 
 当前不能做：
@@ -582,15 +582,13 @@ Ollama 服务如果没有运行，手动启动：
 
 一键启动脚本会在本地手动启动它，但不会注册开机自启动。
 
-## 12.1 人工启用 DeepSeek V4 Flash 审阅
+## 12.1 人工启用 DeepSeek V4.1 Flash 审阅
 
 远程模型是“对已经存在的 Finding 提供第二意见”，不是自动扫描器，也不会参与本地 Ollama 的故障回退。点击图形主菜单的 **本地靶场检测** 后，独立的本地验收启动器才会询问 DeepSeek 是否启用；选择否时，本次进程树设置会话级硬门，所有远程 Provider 在建连前返回 `remote_ai_disabled_for_session`。选择是也不会自动调用，仍必须由人选定 Finding、查看脱敏预览、核对摘要并显式确认 `remote-triage`。
 
 ### 12.1.1 密钥和提供商状态
 
-项目支持“当前进程环境变量”和“当前 Windows 用户 DPAPI 加密文件”两种方式，不把密钥明文写入配置、SQLite、报告、事件或 Git。推荐只运行一次隐藏保存工具：
-
-    powershell -NoProfile -ExecutionPolicy Bypass -File tools\save_deepseek_key.ps1
+项目支持“平台内置设置”“当前进程环境变量”和“当前 Windows 用户 DPAPI 加密文件”三种入口，不把密钥明文写入配置、SQLite、报告、事件或 Git。推荐启动 Dashboard，进入左侧 **系统设置**，选择服务商后直接粘贴密钥并点击 **保存设置**。保存时不联网，保存成功后输入框立即清空；已保存密钥只能覆盖或删除本地密文，前端不能读取明文。
 
 密钥加密后固定保存在 `config\secrets\deepseek_api_key.dpapi`，该目录已被 Git 排除。DPAPI 文件只能由当前电脑上的当前 Windows 用户解密；换电脑或换用户后需要重新保存。以后桌面启动器选择“是”时自动解密到当前启动进程，选择“否”时不会读取或解密该文件。
 
@@ -604,7 +602,7 @@ Ollama 服务如果没有运行，手动启动：
 
 `remote-status` 只显示 `key_present: true/false`，不显示密钥、长度、哈希或请求结果。曾经直接粘贴到聊天中的密钥不能继续使用；请先在 DeepSeek 控制台撤销并创建新密钥。临时环境变量会在会话关闭后失效，DPAPI 加密文件可通过重新运行保存工具进行轮换。
 
-点击 **本地靶场检测** 后，独立终端的提示为“是否启用 DeepSeek v4 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用”。
+点击 **本地靶场检测** 后，独立终端的提示为“是否启用 DeepSeek V4.1 Flash 远程 AI？输入 Y/是 启用，N/否/回车 禁用”。
 选择 `N`、`否` 或回车会设置 `SRC_AUTO_DEEPSEEK_CONSENT=disabled`；即使环境变量中存在
 `DEEPSEEK_API_KEY`，也不会发出远程请求。选择 `Y`/`是` 只对当前进程树生效，关闭窗口后不会保存授权。
 直接运行 Python 命令时不会额外弹窗；如果没有在当前会话显式设置上述两个 `CONSENT` 变量，
@@ -614,7 +612,9 @@ Ollama 服务如果没有运行，手动启动：
 
 | 提供商 | 模型 | 状态 | 用途 |
 |---|---|---|---|
-| DeepSeek | `deepseek-v4-flash` | 已接入、人工启用 | 单次 Finding 审阅，非自动回退 |
+| DeepSeek V4.1 Flash | `deepseek-flash` | 已接入、人工启用 | 单次 Finding 审阅，非自动回退 |
+| 智谱 GLM-5.3-Flash | `glm-5.3-flash` | 已接入、人工启用 | 单次 Finding 审阅；费用和权限以账户为准 |
+| OpenRouter 通用入口 | `openrouter/free`（可编辑） | 已接入、人工启用 | 模型更名时可在平台内更新精确模型 ID |
 | OpenAI | `gpt-5.6-luna` | 默认关闭 | 仅保留适配器，等待独立 Platform API 密钥 |
 
 ChatGPT Plus 订阅与 OpenAI Platform API 是两套独立的账户/计费体系，Plus 登录态不能当作 API 密钥，也不使用浏览器 Cookie 自动调用。需要 GPT 时，必须另外创建 Platform API key，再由人工审查后启用配置。
@@ -923,7 +923,7 @@ ChatGPT Plus 不是 Platform API 额度。OpenAI 适配器默认关闭，只有�
 如果当前 PowerShell 没有 Docker 路径，先执行：
 
     Set-Location 'D:\网络安全文件夹\SRC-Auto'
-    $env:Path = "C:\Users\lenovo\AppData\Local\Programs\DockerDesktop\resources\bin;$env:Path"
+    $env:Path = "$(Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\resources\bin');$env:Path"
     docker version
 
 启动器已验证的手动等价命令（只适用于本机三靶场）：

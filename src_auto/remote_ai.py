@@ -154,6 +154,7 @@ class _RemoteProvider:
         allow_remote_llm: bool = False,
         consent_env: str = "",
         urlopen_fn: Optional[Callable[..., Any]] = None,
+        key_loader: Optional[Callable[[], str]] = None,
     ):
         parsed_endpoint = urlsplit(str(endpoint))
         if (
@@ -182,6 +183,7 @@ class _RemoteProvider:
         self.allow_remote_llm = bool(allow_remote_llm)
         self.consent_env = str(consent_env or "").strip()
         self.urlopen_fn = urlopen_fn or urlopen
+        self.key_loader = key_loader
 
     def _key(self) -> str:
         if not remote_session_consent_enabled(self.provider_name, self.consent_env):
@@ -193,6 +195,11 @@ class _RemoteProvider:
         if not self.allow_remote_llm:
             raise RemoteProviderError("remote_llm_disabled_by_runtime")
         key = os.environ.get(self.key_env, "").strip()
+        if not key and self.key_loader:
+            try:
+                key = self.key_loader().strip()
+            except Exception:
+                raise RemoteProviderError('provider_key_unavailable') from None
         if not key:
             raise RemoteProviderError("provider_key_missing")
         return key
@@ -276,6 +283,44 @@ class DeepSeekProvider(_RemoteProvider):
         if not isinstance(usage, dict):
             usage = {}
         return self._normalize(_parse_json_text(content), usage)
+
+
+class ZhipuProvider(_RemoteProvider):
+    """Zhipu GLM OpenAI-compatible chat-completions adapter."""
+
+    provider_name = "zhipu"
+
+    def review(self, finding: Mapping[str, Any]) -> Dict[str, Any]:
+        text = self._payload_text(finding)
+        response = self._post(
+            {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Review only this unconfirmed observation. Do not claim exploitation success, expand scope, or suggest destructive actions. Return JSON with disposition, confidence, reason, suggested_checks.",
+                    },
+                    {"role": "user", "content": text},
+                ],
+                "thinking": {"type": "enabled"},
+                "response_format": {"type": "json_object"},
+                "max_tokens": self.max_output_tokens,
+                "stream": False,
+            }
+        )
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise RemoteProviderError("zhipu_response_missing_choices")
+        message = choices[0].get("message", {})
+        content = message.get("content") if isinstance(message, dict) else None
+        usage = response.get("usage", {})
+        if not isinstance(usage, dict):
+            usage = {}
+        review = self._normalize(_parse_json_text(content), usage)
+        if self.input_usd_per_million == 0 and self.output_usd_per_million == 0:
+            review['estimated_cost_usd'] = None
+            review['cost_note'] = 'pricing_not_configured_check_provider_billing'
+        return review
 
 
 class OpenRouterProvider(_RemoteProvider):

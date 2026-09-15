@@ -9,7 +9,7 @@ $SecretPath = Join-Path $ProjectRoot 'config\secrets\openrouter_api_key.dpapi'
 Set-Location -LiteralPath $ProjectRoot
 
 Write-Host 'OpenRouter API 密钥一次性加密保存' -ForegroundColor Cyan
-Write-Host '用于 SRC-Auto 的可选 Ox Alpha 人工审阅。' -ForegroundColor Cyan
+Write-Host '用于 SRC-Auto 的 OpenRouter 人工审阅；模型 ID 在模型设置中独立选择。' -ForegroundColor Cyan
 Write-Host '密钥将由当前 Windows 用户的 DPAPI 加密，只保存到指定 D 盘项目目录。' -ForegroundColor Yellow
 Write-Host '输入内容不会回显，也不会写入日志、数据库、报告或环境变量。' -ForegroundColor Yellow
 Write-Host '保存过程不会连接 OpenRouter 或任何其他网络服务。' -ForegroundColor Yellow

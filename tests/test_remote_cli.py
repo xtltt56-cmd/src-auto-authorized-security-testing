@@ -103,6 +103,8 @@ class RemoteCLITests(unittest.TestCase):
         self.assertFalse(value["providers"]["deepseek"]["network_contact"])
         self.assertTrue(value["startup_consent_required"])
         self.assertTrue(value["providers"]["deepseek"]["session_consent"])
+        self.assertEqual(value["providers"]["deepseek"]["model"], "deepseek-flash")
+        self.assertIn("DeepSeek V4.1 Flash", value["providers"]["deepseek"]["display_name"])
 
     def test_startup_consent_overlays_remote_runtime_only_for_current_session(self):
         with patch.dict(
@@ -123,6 +125,12 @@ class RemoteCLITests(unittest.TestCase):
         self.assertFalse(enabled.local_llm_only)
         self.assertTrue(enabled.allow_remote_llm)
         self.assertEqual(enabled.ai_provider, "remote")
+
+    def test_zhipu_session_consent_enables_remote_lane_without_persisting_policy(self):
+        with patch.dict(os.environ, {"SRC_AUTO_ZHIPU_CONSENT": "enabled"}, clear=False):
+            enabled = cli._runtime_policy()
+        self.assertFalse(enabled.local_llm_only)
+        self.assertTrue(enabled.allow_remote_llm)
 
         with patch.dict(
             os.environ,

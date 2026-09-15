@@ -19,7 +19,7 @@ $form.MinimizeBox = $false
 $form.TopMost = $true
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = 'OpenRouter / Ox Alpha 密钥安全保存'
+$title.Text = 'OpenRouter 密钥安全保存（所有模型通用）'
 $title.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 14, [System.Drawing.FontStyle]::Bold)
 $title.Location = New-Object System.Drawing.Point(24, 20)
 $title.AutoSize = $true

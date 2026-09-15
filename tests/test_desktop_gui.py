@@ -12,6 +12,7 @@ TARGET_CONFIG_SCRIPT = PROJECT_ROOT / "tools" / "target_config.ps1"
 SESSION_GUI_SCRIPT = PROJECT_ROOT / "tools" / "session_profile_gui.ps1"
 LAUNCHER = PROJECT_ROOT / "START_SYSTEM.ps1"
 POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+CI_NONINTERACTIVE = os.environ.get("CI", "").lower() == "true"
 
 
 def _quote(value):
@@ -107,12 +108,15 @@ class DesktopGuiContractTests(unittest.TestCase):
         ):
             self.assertIn(required, content)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_dpi_aware_main_window_scales_from_96_dpi_design_baseline(self):
         """At 200% DPI, fonts and fixed controls must grow by the same factor."""
         content = GUI_SCRIPT.read_text(encoding="utf-8-sig")
         self.assertIn("AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)", content)
         self.assertIn("function Enable-SrcAutoDpiLayout", content)
-        self.assertEqual(content.count("Enable-SrcAutoDpiLayout -Form $form"), 5)
+        self.assertEqual(content.count("Enable-SrcAutoDpiLayout -Form $form"), 4)
+        provider_ui = (GUI_SCRIPT.parent / 'ai_provider_settings_gui.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn('AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)', provider_ui)
         probe = (
             "$script:DpiLayoutCheck = $false\n"
             "$timer = New-Object System.Windows.Forms.Timer\n"
@@ -302,29 +306,19 @@ class DesktopGuiContractTests(unittest.TestCase):
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
-    def test_ai_settings_can_open_and_close_without_runtime_errors(self):
-        probe = (
-            "$script:AISettingsSeen = $false\n"
-            "$timer = New-Object System.Windows.Forms.Timer\n"
-            "$timer.Interval = 100\n"
-            "$timer.Add_Tick({\n"
-            "    $window = [System.Windows.Forms.Application]::OpenForms | "
-            "Where-Object { $_.Text -eq 'SRC-Auto - AI 模型与密钥设置' }\n"
-            "    if($window) {\n"
-            "        $close = $window.Controls | "
-            "Where-Object { $_ -is [System.Windows.Forms.Button] -and $_.Text -eq '关闭' } | "
-            "Select-Object -First 1\n"
-            "        if(-not $close) { throw 'ai_settings_close_button_missing' }\n"
-            "        $script:AISettingsSeen = $true\n"
-            "        $close.PerformClick(); $timer.Stop()\n"
-            "    }\n"
-            "})\n"
-            "$timer.Start(); Open-AISettings\n"
-            "if(-not $script:AISettingsSeen) { throw 'ai_settings_never_opened' }\n"
-            "$timer.Dispose()"
-        )
-        result = self._run_gui_probe(probe)
-        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+    def test_ai_settings_routes_to_the_inline_dashboard_page(self):
+        content = GUI_SCRIPT.read_text(encoding='utf-8-sig')
+        function = content[content.index('function Open-AISettings'):content.index('function Open-SessionProfileManager')]
+        self.assertIn("tools\\start_dashboard.ps1", function)
+        self.assertIn("'-InitialPage','settings'", function)
+        self.assertNotIn('ai_provider_settings_gui.ps1', function)
+
+    def test_ai_settings_has_direct_paste_and_official_default_actions(self):
+        content = (GUI_SCRIPT.parent / 'ai_provider_settings_gui.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("'粘贴剪贴板密钥'", content)
+        self.assertIn("'恢复官方默认模型'", content)
+        self.assertIn('[Windows.Forms.Clipboard]::GetText()', content)
+        self.assertIn('$keyBox.Focus()', content)
 
     def test_offline_review_picker_can_open_and_close_with_navigation_controls(self):
         probe = (
@@ -455,6 +449,7 @@ class DesktopGuiContractTests(unittest.TestCase):
         result = self._run_gui_probe(probe)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_main_window_visible_buttons_are_real_mouse_targets(self):
         """A button must be above sibling panels at the point a user clicks."""
         probe = (
@@ -562,6 +557,7 @@ class DesktopGuiContractTests(unittest.TestCase):
             result = self._run_gui_probe(probe)
             self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
+    @unittest.skipIf(CI_NONINTERACTIVE, "需要交互式 Windows 桌面会话")
     def test_main_action_card_text_does_not_run_under_its_button(self):
         """The home cards keep a readable gap above their overlaid actions."""
         probe = (

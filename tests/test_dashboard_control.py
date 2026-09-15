@@ -38,7 +38,7 @@ class FakeManager:
             "network_contact": False,
         }
 
-    def operate(self, action, lab_id, wait=True):
+    def operate(self, action, lab_id, wait=True, cancel_event=None):
         self.calls.append((action, lab_id, wait))
         self.release.wait(2)
         self.states[lab_id] = "READY" if action in ("start", "reset") else "STOPPED"
@@ -56,6 +56,62 @@ class ImmediateExecutor:
 
 
 class DashboardControlServiceTests(unittest.TestCase):
+    def test_missing_docker_is_reported_as_unavailable_not_failed_lab(self):
+        service = DashboardControlService(
+            FakeManager(),
+            executor=ImmediateExecutor(),
+            dependency_check=lambda: (False, "Docker Desktop 尚未就绪，请先启动 Docker Desktop"),
+        )
+
+        snapshot = service.snapshot()
+
+        self.assertFalse(snapshot['dependency']['dockerReady'])
+        self.assertTrue(all(lab['health'] == 'unavailable' for lab in snapshot['labs']))
+        self.assertTrue(all(lab['stage'] == 'Docker 未就绪' for lab in snapshot['labs']))
+        self.assertTrue(all('Docker Desktop' in lab['message'] for lab in snapshot['labs']))
+        self.assertTrue(all(task['state'] == 'blocked' for task in snapshot['tasks']))
+
+    def test_stop_replaces_queued_start_without_starting_container(self):
+        class Queue:
+            def __init__(self): self.jobs = []
+            def submit(self, fn, *args): self.jobs.append((fn, args))
+        manager = FakeManager()
+        manager.release.set()
+        queue = Queue()
+        service = DashboardControlService(manager, executor=queue)
+        service.submit('dvwa', 'start')
+        result = service.submit_all('stop')
+        self.assertEqual(len(result['operations']), 2)
+        for fn, args in queue.jobs: fn(*args)
+        self.assertNotIn(('start', 'dvwa', True), manager.calls)
+        self.assertIn(('stop', 'dvwa', False), manager.calls)
+
+    def test_stop_cancels_a_running_start_before_reporting_stopped(self):
+        class CancellableManager(FakeManager):
+            def __init__(self):
+                super().__init__(); self.started = threading.Event(); self.stopped = threading.Event()
+            def operate(self, action, lab_id, wait=True, cancel_event=None):
+                self.calls.append((action, lab_id, wait))
+                if action == 'start':
+                    self.started.set()
+                    self.assert_cancelled = cancel_event.wait(2)
+                    return {'status': 'CANCELLED', 'lab_id': lab_id, 'network_contact': False}
+                self.states[lab_id] = 'STOPPED'; self.stopped.set()
+                return {'status': 'STOPPED', 'lab_id': lab_id, 'network_contact': False}
+        manager = CancellableManager()
+        service = DashboardControlService(manager, dependency_check=lambda: (True, 'Docker 可用'))
+        try:
+            service.submit('juice-shop', 'start')
+            self.assertTrue(manager.started.wait(1))
+            service.submit('juice-shop', 'stop')
+            self.assertTrue(manager.stopped.wait(2))
+            self.assertTrue(manager.assert_cancelled)
+            self.assertEqual(manager.calls, [('start', 'juice-shop', True), ('stop', 'juice-shop', False)])
+            task = next(item for item in service.snapshot()['tasks'] if item['id'] == 'run-lab-juice-shop')
+            self.assertEqual(task['state'], 'idle')
+        finally:
+            service.close()
+
     def test_empty_snapshot_is_idle_with_zero_elapsed_time(self):
         manager = FakeManager()
         service = DashboardControlService(manager, executor=ImmediateExecutor(), dependency_check=lambda: (True, "Docker 可用"))

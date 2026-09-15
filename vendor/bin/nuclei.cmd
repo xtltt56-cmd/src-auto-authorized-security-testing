@@ -1,3 +1,6 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8881ef59a554985e91bf15faf2013c1a3689d620b0dc8af49f1a94ba3c21771b
-size 364
+@echo off
+setlocal
+set "SRC_AUTO_ROOT=%~dp0..\.."
+if not exist "%SRC_AUTO_ROOT%\vendor\docker-state\nuclei" mkdir "%SRC_AUTO_ROOT%\vendor\docker-state\nuclei"
+docker run --rm -v "%SRC_AUTO_ROOT%\vendor\docker-state\nuclei:/root/.config/nuclei" projectdiscovery/nuclei@sha256:582d5546902e67052097cb2d07296c642d50a1afc5e44623cb038845df9a32eb %*
+exit /b %ERRORLEVEL%

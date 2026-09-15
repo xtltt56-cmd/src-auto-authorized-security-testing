@@ -35,10 +35,10 @@ class OfflineScopePickerTests(unittest.TestCase):
 
             self.assertEqual(
                 [item.scope_path for item in found],
-                [valid / "scope_confirmed.yaml"],
+                [(valid / "scope_confirmed.yaml").resolve()],
             )
-            self.assertEqual(found[0].plan_path, valid / "live_plan.yaml")
-            self.assertEqual(found[0].target_dir, valid)
+            self.assertEqual(found[0].plan_path, (valid / "live_plan.yaml").resolve())
+            self.assertEqual(found[0].target_dir, valid.resolve())
             self.assertEqual(found[0].relative_name, "group/juice-shop")
 
     def test_direct_target_directory_can_be_selected(self):
@@ -141,8 +141,8 @@ class OfflineScopePickerTests(unittest.TestCase):
             self.assertEqual(payload["entries"][0]["status"], "ready")
             self.assertEqual(payload["targets"][0]["relative_name"], "group/target-a")
             self.assertEqual(
-                Path(payload["targets"][0]["scope_path"]),
-                target / "scope_confirmed.yaml",
+                Path(payload["targets"][0]["scope_path"]).resolve(),
+                (target / "scope_confirmed.yaml").resolve(),
             )
 
     def test_module_cli_fails_closed_for_outside_directory(self):

@@ -1,4 +1,6 @@
 # Full local backup content is stored through Git LFS so GitHub does not reject
 # the Docker installer, scanner distributions, or generated validation evidence.
 vendor/** filter=lfs diff=lfs merge=lfs -text
+# These five tiny command wrappers are maintained source code, not tool payloads.
+vendor/bin/*.cmd -filter -diff -merge text
 validation/** filter=lfs diff=lfs merge=lfs -text

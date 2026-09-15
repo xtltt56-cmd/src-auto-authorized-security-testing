@@ -5,6 +5,12 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = $utf8
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $ResultPath = Join-Path $ProjectRoot 'validation\deepseek_ping_latest.json'
+$SecretHelperPath = Join-Path $ProjectRoot 'tools\deepseek_secret.ps1'
+$SecretPath = Join-Path $ProjectRoot 'config\secrets\deepseek_api_key.dpapi'
+$ModelId = 'deepseek-flash'
+$ModelDisplayName = 'DeepSeek V4.1 Flash'
+$ModelsEndpoint = 'https://api.deepseek.com/models'
+$CatalogAliases = @('deepseek-v4-flash', 'deepseek-flash')
 Set-Location -LiteralPath $ProjectRoot
 
 function Write-PingResult {
@@ -19,7 +25,9 @@ function Write-PingResult {
         status = $Status
         network_contact = $NetworkContact
         http_status = $HttpStatus
-        model = 'deepseek-v4-flash'
+        model = $ModelId
+        display_name = $ModelDisplayName
+        catalog_model = ''
         model_present = $ModelPresent
         request_count = if($NetworkContact){ 1 } else { 0 }
         error = $ErrorCode
@@ -52,8 +60,8 @@ function Read-SessionKey {
     }
 }
 
-Write-Host 'DeepSeek V4 Flash 轻量连通性检测' -ForegroundColor Cyan
-Write-Host '本检测只访问 https://api.deepseek.com/models，不发送 Finding、靶场 URL 或文件内容。' -ForegroundColor Yellow
+Write-Host "$ModelDisplayName 轻量连通性检测" -ForegroundColor Cyan
+Write-Host "本检测只访问 $ModelsEndpoint，不发送 Finding、靶场 URL 或文件内容。" -ForegroundColor Yellow
 $answer = (Read-Host '是否授权本次单次连通性检测？输入 Y/是 继续，N/否/回车 拒绝').Trim().ToLowerInvariant()
 if($answer -notin @('y', 'yes', '是', '启用')){
     $blocked = Write-PingResult -Status 'blocked_by_user' -NetworkContact:$false -ErrorCode 'remote_ai_disabled_for_session'
@@ -62,7 +70,22 @@ if($answer -notin @('y', 'yes', '是', '启用')){
     exit 0
 }
 
-$key = Read-SessionKey
+$key = $null
+if((Test-Path -LiteralPath $SecretPath) -and (Test-Path -LiteralPath $SecretHelperPath)){
+    try {
+        . $SecretHelperPath
+        $key = Unprotect-DeepSeekKey -Path $SecretPath -ProjectRoot $ProjectRoot
+        if(-not [string]::IsNullOrWhiteSpace($key)){
+            Write-Host '已读取当前 Windows 用户的 DPAPI 加密密钥；密钥不会显示或写入日志。' -ForegroundColor Green
+        }
+    } catch {
+        $key = $null
+        Write-Host '已保存密钥无法解密，将改为本次临时输入；不会输出密钥。' -ForegroundColor Yellow
+    }
+}
+if([string]::IsNullOrWhiteSpace($key)){
+    $key = Read-SessionKey
+}
 if([string]::IsNullOrWhiteSpace($key)){
     $missing = Write-PingResult -Status 'blocked_missing_key' -NetworkContact:$false -ErrorCode 'provider_key_missing'
     Write-Host '未输入有效密钥；没有发起网络请求。' -ForegroundColor Yellow
@@ -77,7 +100,7 @@ $request = $null
 $response = $null
 $reader = $null
 try {
-    $request = [System.Net.WebRequest]::Create('https://api.deepseek.com/models')
+    $request = [System.Net.WebRequest]::Create($ModelsEndpoint)
     $request.Method = 'GET'
     $request.Timeout = 10000
     $request.ReadWriteTimeout = 10000
@@ -87,13 +110,16 @@ try {
     $body = $reader.ReadToEnd()
     $document = $body | ConvertFrom-Json
     $ids = @($document.data | ForEach-Object { [string]$_.id })
-    $present = $ids -contains 'deepseek-v4-flash'
+    $catalogModel = @($CatalogAliases | Where-Object { $ids -contains $_ } | Select-Object -First 1)
+    $present = $catalogModel.Count -gt 0
     if($present){
         $ok = Write-PingResult -Status 'reachable_authenticated' -NetworkContact:$true -HttpStatus ([int]$response.StatusCode) -ModelPresent:$true
-        Write-Host '连通性检测成功：密钥有效，DeepSeek V4 Flash 可用。' -ForegroundColor Green
+        $ok.catalog_model = [string]$catalogModel[0]
+        $ok | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultPath -Encoding UTF8
+        Write-Host "连通性检测成功：密钥有效，$ModelDisplayName 可用；实际请求 ID 为 $ModelId，目录标识为 $($catalogModel[0])。" -ForegroundColor Green
     } else {
         $ok = Write-PingResult -Status 'reachable_model_not_listed' -NetworkContact:$true -HttpStatus ([int]$response.StatusCode) -ModelPresent:$false -ErrorCode 'deepseek_v4_flash_not_listed'
-        Write-Host '已连接到 DeepSeek，但模型列表中没有 deepseek-v4-flash。' -ForegroundColor Yellow
+        Write-Host "已连接到 DeepSeek，但模型列表中没有 $ModelId。" -ForegroundColor Yellow
     }
     $ok | ConvertTo-Json -Compress
 } catch [System.Net.WebException] {

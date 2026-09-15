@@ -4,6 +4,8 @@ param(
     [int]$Port = 4173,
     [ValidateRange(1024, 65535)]
     [int]$ApiPort = 4174,
+    [ValidateSet('overview','labs','targets','review','findings','settings')]
+    [string]$InitialPage = 'overview',
     [switch]$NoBrowser,
     [switch]$Foreground
 )
@@ -25,23 +27,21 @@ if(-not (Test-Path -LiteralPath $DashboardRoot)){
     exit 2
 }
 
-$nodeCandidates = @(
-    (Join-Path $ProjectRoot 'runtime\node-v22.23.0-win-x64\node.exe'),
-    (Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
-)
-$nodeExe = $nodeCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-if(-not $nodeExe){
-    Write-Host '未找到项目专用 Node.js 运行时。请先安装到 D 盘 runtime 目录。' -ForegroundColor Red
-    exit 3
-}
-
-$viteEntry = Join-Path $DashboardRoot 'node_modules\vite\bin\vite.js'
-if(-not (Test-Path -LiteralPath $viteEntry)){
-    Write-Host '未找到 Vite 依赖；不会联网安装依赖，请先在 dashboard 目录完成离线依赖准备。' -ForegroundColor Red
-    exit 4
-}
-
 if(-not (Test-Path -LiteralPath $DistIndex)){
+    $nodeCandidates = @(
+        (Join-Path $ProjectRoot 'runtime\node-v22.23.0-win-x64\node.exe'),
+        (Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)
+    )
+    $nodeExe = $nodeCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    if(-not $nodeExe){
+        Write-Host 'Dashboard 尚未构建，且未找到 Node.js。正式分发包应自带预构建页面。' -ForegroundColor Red
+        exit 3
+    }
+    $viteEntry = Join-Path $DashboardRoot 'node_modules\vite\bin\vite.js'
+    if(-not (Test-Path -LiteralPath $viteEntry)){
+        Write-Host 'Dashboard 尚未构建，且未找到 Vite 依赖；不会自动联网安装。' -ForegroundColor Red
+        exit 4
+    }
     $npmCli = Join-Path (Split-Path -Parent $nodeExe) 'node_modules\npm\bin\npm-cli.js'
     if(-not (Test-Path -LiteralPath $npmCli)){
         Write-Host 'Dashboard 尚未构建，且项目专用 npm 不可用。' -ForegroundColor Red
@@ -112,26 +112,27 @@ if(-not (Test-DashboardApiReady)){
     }
 }
 
-$url = "http://127.0.0.1:$Port/"
-$arguments = @($viteEntry, '--host', '127.0.0.1', '--port', "$Port")
+$baseUrl = "http://127.0.0.1:$Port/"
+$url = if($InitialPage -eq 'overview'){ $baseUrl } else { $baseUrl + '?page=' + $InitialPage }
+$webArguments = @('-m', 'src_auto.dashboard_web', '--port', "$Port", '--api-port', "$ApiPort")
 
 if($Foreground){
     Write-Host "Dashboard 正在前台运行：$url" -ForegroundColor Green
     Write-Host '仅监听 127.0.0.1；按 Ctrl+C 停止。' -ForegroundColor Yellow
     try {
-        & $nodeExe @arguments
-        $viteExitCode = $LASTEXITCODE
+        & $pythonExe @webArguments
+        $webExitCode = $LASTEXITCODE
     } finally {
         if($apiStartedHere -and $apiServer -and -not $apiServer.HasExited){ Stop-Process -Id $apiServer.Id -ErrorAction SilentlyContinue }
     }
-    exit $viteExitCode
+    exit $webExitCode
 }
 
-$stdoutLog = Join-Path $logDirectory 'dashboard.stdout.log'
-$stderrLog = Join-Path $logDirectory 'dashboard.stderr.log'
+$stdoutLog = Join-Path $logDirectory 'dashboard-web.stdout.log'
+$stderrLog = Join-Path $logDirectory 'dashboard-web.stderr.log'
 
 try {
-    $server = Start-Process -FilePath $nodeExe -ArgumentList $arguments -WorkingDirectory $DashboardRoot -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
+    $server = Start-Process -FilePath $pythonExe -ArgumentList $webArguments -WorkingDirectory $ProjectRoot -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
 } catch {
     if($apiStartedHere -and $apiServer -and -not $apiServer.HasExited){ Stop-Process -Id $apiServer.Id -ErrorAction SilentlyContinue }
     Write-Host "Dashboard 进程启动失败：$($_.Exception.Message)" -ForegroundColor Red
@@ -142,7 +143,7 @@ $ready = $false
 for($attempt = 0; $attempt -lt 30; $attempt++){
     Start-Sleep -Milliseconds 250
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 2
         if($response.StatusCode -ge 200 -and $response.StatusCode -lt 500){
             $ready = $true
             break

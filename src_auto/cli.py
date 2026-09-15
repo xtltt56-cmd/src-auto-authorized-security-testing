@@ -24,11 +24,13 @@ from .remote_ai import (
     DeepSeekProvider,
     OpenAIProvider,
     OpenRouterProvider,
+    ZhipuProvider,
     RemoteProviderError,
     RemoteReviewRequest,
     remote_session_consent_enabled,
 )
 from .runtime_policy import RuntimePolicy
+from .provider_credentials import load_saved_provider_key
 from .target_review import review_target_selection
 from .local_labs import LocalLabManager, load_lab_specs
 from .log_analysis import analyse_jsonl_security_log, parse_defensive_log, summarize_defensive_events
@@ -61,7 +63,7 @@ MODELS_PATH = PROJECT_ROOT / "config" / "models.yaml"
 RUNTIME_POLICY_PATH = PROJECT_ROOT / "config" / "validation" / "local_only.json"
 LOCAL_LABS_PATH = PROJECT_ROOT / "config" / "labs" / "local_labs.json"
 LOCAL_LABS_COMPOSE = PROJECT_ROOT / "docker-compose.local-labs.yml"
-REMOTE_PROVIDER_NAMES = ("deepseek", "openai", "openrouter")
+REMOTE_PROVIDER_NAMES = ("deepseek", "zhipu", "openai", "openrouter")
 _OUTPUT_MODE = "json"
 _CURRENT_COMMAND = ""
 
@@ -96,6 +98,7 @@ def _runtime_policy() -> RuntimePolicy:
     # manual remote-review lane without changing the file on disk.
     if (
         remote_session_consent_enabled("deepseek", "SRC_AUTO_DEEPSEEK_CONSENT")
+        or remote_session_consent_enabled("zhipu", "SRC_AUTO_ZHIPU_CONSENT")
         or remote_session_consent_enabled("openai", "SRC_AUTO_OPENAI_CONSENT")
         or remote_session_consent_enabled("openrouter", "SRC_AUTO_OPENROUTER_CONSENT")
     ):
@@ -188,9 +191,12 @@ def _remote_provider(
         "consent_env": str(config.get("consent_env", "")),
         "allow_remote_llm": bool(runtime.allow_remote_llm and not runtime.local_llm_only),
         "urlopen_fn": urlopen_fn,
+        "key_loader": lambda: load_saved_provider_key(PROJECT_ROOT, provider, str(config.get('endpoint', ''))),
     }
     if provider == "deepseek":
         return DeepSeekProvider(**common)
+    if provider == "zhipu":
+        return ZhipuProvider(**common)
     if provider == "openai":
         return OpenAIProvider(**common)
     if provider == "openrouter":
@@ -257,6 +263,7 @@ def _remote_status() -> Dict[str, Any]:
         key_env = str(config.get("key_env", ""))
         result[provider] = {
             "provider": provider,
+            "display_name": str(config.get("display_name", provider)),
             "model": str(config.get("model", "")),
             "enabled": bool(config.get("enabled", False)),
             "manual_only": bool(config.get("manual_only", True)),

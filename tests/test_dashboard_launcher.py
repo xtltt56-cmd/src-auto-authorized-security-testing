@@ -36,6 +36,14 @@ class DashboardLauncherTests(unittest.TestCase):
         self.assertIn("127.0.0.1:$ApiPort", content)
         self.assertNotIn("--host 0.0.0.0", content)
 
+    def test_dashboard_launcher_uses_prebuilt_static_server_without_vite_runtime(self):
+        path = PROJECT_ROOT / "tools" / "start_dashboard.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        self.assertIn("src_auto.dashboard_web", content)
+        self.assertIn("dashboard-web.stdout.log", content)
+        self.assertNotIn("$arguments = @($viteEntry", content)
+        self.assertIn("if(-not (Test-Path -LiteralPath $DistIndex))", content)
+
     def test_vite_proxies_only_api_to_fixed_loopback_port(self):
         content = (PROJECT_ROOT / "dashboard" / "vite.config.ts").read_text(encoding="utf-8")
         self.assertIn("'/api'", content)

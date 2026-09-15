@@ -1,8 +1,28 @@
 import unittest
+import json
 from pathlib import Path
 
 
 class LauncherTests(unittest.TestCase):
+    def test_deepseek_uses_official_stable_model_id_and_separate_display_name(self):
+        root = Path(__file__).parents[1]
+        config = json.loads((root / "config" / "models.yaml").read_text(encoding="utf-8"))
+        deepseek = config["remote_providers"]["deepseek"]
+        self.assertEqual(deepseek["model"], "deepseek-flash")
+        self.assertEqual(deepseek["models_endpoint"], "https://api.deepseek.com/models")
+        self.assertEqual(deepseek["catalog_aliases"], ["deepseek-v4-flash", "deepseek-flash"])
+        self.assertIn("DeepSeek V4.1 Flash", deepseek["display_name"])
+        self.assertNotIn("v4.1", deepseek["model"].lower())
+
+    def test_zhipu_uses_official_flash_model_and_openai_compatible_endpoint(self):
+        root = Path(__file__).parents[1]
+        config = json.loads((root / "config" / "models.yaml").read_text(encoding="utf-8"))
+        zhipu = config["remote_providers"]["zhipu"]
+        self.assertEqual(zhipu["model"], "glm-5.3-flash")
+        self.assertGreaterEqual(zhipu["max_output_tokens"], 2048)
+        self.assertEqual(zhipu["endpoint"], "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+        self.assertEqual(zhipu["key_env"], "ZHIPU_API_KEY")
+
     def test_deepseek_ping_is_utf8_bom_encoded_for_windows_powershell(self):
         path = Path(__file__).parents[1] / "tools" / "deepseek_ping.ps1"
         self.assertTrue(
@@ -59,6 +79,8 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("-AsSecureString", content)
         self.assertIn("仅当前启动会话", content)
         self.assertNotIn("setx deepseek_api_key", content.lower())
+        self.assertIn("Join-Path $env:LOCALAPPDATA 'Programs\\Ollama\\ollama.exe'", content)
+        self.assertNotIn("C:\\Users\\lenovo", content)
 
     def test_launcher_loads_dpapi_key_only_after_affirmative_consent(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
@@ -74,6 +96,19 @@ class LauncherTests(unittest.TestCase):
         self.assertLess(consent, affirmative)
         self.assertLess(affirmative, decrypt)
         self.assertLess(decrypt, disabled)
+
+    def test_ping_reuses_saved_dpapi_key_only_after_consent_and_validates_model_catalog(self):
+        path = Path(__file__).parents[1] / "tools" / "deepseek_ping.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        consent = content.index("$answer =")
+        decrypt = content.index("Unprotect-DeepSeekKey")
+        request = content.index("[System.Net.WebRequest]::Create($ModelsEndpoint)")
+        self.assertLess(consent, decrypt)
+        self.assertLess(decrypt, request)
+        self.assertIn("$ModelId = 'deepseek-flash'", content)
+        self.assertIn("$CatalogAliases = @('deepseek-v4-flash', 'deepseek-flash')", content)
+        self.assertIn("$ids -contains $_", content)
+        self.assertIn("config\\secrets\\deepseek_api_key.dpapi", content)
 
     def test_one_click_launcher_starts_only_loopback_juice_shop(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"

@@ -1,5 +1,6 @@
 import { fixtureSnapshot } from './fixtures'
-import type { DashboardSnapshot, TaskEvent, TaskState, TaskSummary } from './types'
+import type { AIConnectionResult, AIProviderSettings, DashboardSnapshot, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
+import { validateTargetDraft } from './validation'
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -18,6 +19,11 @@ const eventFor = (task: TaskSummary, id: number, level: TaskEvent['level'], stag
 })
 
 export interface TaskRepository {
+  supportsPause?: boolean
+  listDrafts(): Promise<TargetDraftResult[]>
+  saveDraft(draft: TargetDraft): Promise<TargetDraftResult>
+  reviewTargets(): Promise<ReviewEntry[]>
+  getArtifacts(): Promise<Pick<DashboardSnapshot, 'findings' | 'reports'> & { warnings?: string[] }>
   getDashboardSnapshot(): Promise<DashboardSnapshot>
   getTask(taskId: string): Promise<TaskSummary>
   getEvents(taskId: string): Promise<TaskEvent[]>
@@ -29,11 +35,21 @@ export interface TaskRepository {
   resetLab(labId: string): Promise<void>
   startAllLabs(): Promise<void>
   stopAllLabs(): Promise<void>
+  startDockerDesktop(): Promise<void>
+  listAIProviders(): Promise<AIProviderSettings[]>
+  saveAIProvider(provider: string, value: { apiKey: string; model: string }): Promise<AIProviderSettings>
+  testAIProvider(provider: string): Promise<AIConnectionResult>
 }
 
 export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fixtureSnapshot): TaskRepository => {
   const state = clone(initialSnapshot)
+  const drafts: TargetDraftResult[] = []
   let nextEventId = Math.max(0, ...state.events.map((event) => event.id)) + 1
+  const providers: AIProviderSettings[] = [
+    { id: 'deepseek', displayName: 'DeepSeek V4.1 Flash', model: 'deepseek-flash', officialModel: 'deepseek-flash', keySaved: false, endpointHost: 'api.deepseek.com' },
+    { id: 'zhipu', displayName: '智谱 GLM-5.3-Flash', model: 'glm-5.3-flash', officialModel: 'glm-5.3-flash', keySaved: false, endpointHost: 'open.bigmodel.cn' },
+    { id: 'openrouter', displayName: 'OpenRouter', model: 'openrouter/free', officialModel: 'openrouter/free', keySaved: false, endpointHost: 'openrouter.ai' },
+  ]
 
   const taskOrThrow = (taskId: string): TaskSummary => {
     const task = state.tasks.find((item) => item.id === taskId)
@@ -53,6 +69,16 @@ export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fix
   }
 
   return {
+    supportsPause: true,
+    async listDrafts() { return clone(drafts) },
+    async saveDraft(draft) {
+      const result = validateTargetDraft(draft)
+      if (!result.valid) throw new Error('draft_invalid')
+      drafts.unshift(result)
+      return result
+    },
+    async reviewTargets() { return [] },
+    async getArtifacts() { return { findings: clone(state.findings), reports: clone(state.reports) } },
     async getDashboardSnapshot() {
       return clone(state)
     },
@@ -112,6 +138,16 @@ export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fix
     async stopAllLabs() {
       for (const lab of state.labs) await this.stopLab(lab.id)
     },
+    async startDockerDesktop() { return undefined },
+    async listAIProviders() { return clone(providers) },
+    async saveAIProvider(provider, value) {
+      const item = providers.find(entry => entry.id === provider)
+      if (!item) throw new Error('PROVIDER_NOT_FOUND')
+      item.model = value.model
+      if (value.apiKey) item.keySaved = true
+      return clone(item)
+    },
+    async testAIProvider() { return { ok: true, code: 'reachable_model_available' } },
   }
 }
 
@@ -171,7 +207,7 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     return sessionPromise
   }
 
-  const request = async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
+  const request = async <T,>(path: string, init: RequestInit = {}, renewed = false): Promise<T> => {
     const token = await getSession()
     const headers = new Headers(init.headers)
     headers.set('Accept', 'application/json')
@@ -179,6 +215,11 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
     try {
       const response = await fetchImpl(`${base}${path}`, { ...init, headers })
+      if (response.status === 401 && !renewed) {
+        sessionPromise = null
+        // The server rejects authentication before executing any action.
+        return request<T>(path, init, true)
+      }
       return await parseJson<T>(response)
     } catch (error) {
       if (error instanceof LoopbackRepositoryError) throw error
@@ -188,6 +229,10 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
 
   const action = (path: string): Promise<void> => request(path, { method: 'POST', body: '{}' }).then(() => undefined)
   return {
+    async listDrafts() { return (await request<{ drafts: TargetDraftResult[] }>('/drafts')).drafts },
+    saveDraft: (draft) => request<TargetDraftResult>('/drafts', { method: 'POST', body: JSON.stringify(draft) }),
+    async reviewTargets() { return (await request<{ entries: ReviewEntry[] }>('/review')).entries },
+    getArtifacts: () => request('/artifacts'),
     async getDashboardSnapshot() {
       return request<DashboardSnapshot>('/dashboard')
     },
@@ -205,6 +250,7 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     async resumeTask() { throw new LoopbackRepositoryError('LOCAL_TASK_RESUME_UNSUPPORTED') },
     async cancelTask(taskId) {
       const labId = taskId.replace(/^run-lab-/, '')
+      if (taskId === 'run-local-001') return action('/labs/stop-all')
       return action(`/labs/${encodeURIComponent(labId)}/stop`)
     },
     startLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/start`),
@@ -212,5 +258,9 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     resetLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/reset`),
     startAllLabs: () => action('/labs/start-all'),
     stopAllLabs: () => action('/labs/stop-all'),
+    startDockerDesktop: () => action('/dependencies/docker/start'),
+    async listAIProviders() { return (await request<{ providers: AIProviderSettings[] }>('/settings/providers')).providers },
+    saveAIProvider: (provider, value) => request<AIProviderSettings>(`/settings/providers/${encodeURIComponent(provider)}`, { method: 'POST', body: JSON.stringify(value) }),
+    testAIProvider: (provider) => request<AIConnectionResult>(`/settings/providers/${encodeURIComponent(provider)}/test`, { method: 'POST', body: JSON.stringify({ allowNetwork: true }) }),
   }
 }

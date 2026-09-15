@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --pool=threads --maxWorkers=1",
+    "test:watch": "vitest --pool=threads --maxWorkers=1",
     "storybook": "storybook dev -p 6006 --host 127.0.0.1",
     "build-storybook": "storybook build",
     "e2e": "playwright test"

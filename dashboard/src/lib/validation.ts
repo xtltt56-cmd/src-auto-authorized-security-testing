@@ -72,6 +72,10 @@ export function validateTargetDraft(draft: TargetDraft): TargetDraftResult {
   }
 
   const start = Date.parse(draft.windowStart)
+  if (parsedUrl && !errors.allowedPorts) {
+    const targetPort = parsedUrl.port || (parsedUrl.protocol === 'https:' ? '443' : '80')
+    if (!allowedPorts.includes(targetPort)) errors.allowedPorts = '允许端口必须包含目标 URL 的端口。'
+  }
   const end = Date.parse(draft.windowEnd)
   if (!draft.windowStart.trim() || Number.isNaN(start)) errors.windowStart = '请填写有效的开始时间。'
   if (!draft.windowEnd.trim() || Number.isNaN(end)) errors.windowEnd = '请填写有效的结束时间。'

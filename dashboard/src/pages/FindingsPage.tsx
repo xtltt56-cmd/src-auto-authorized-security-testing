@@ -1,5 +1,6 @@
 import { FileText, Flag, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import type { TaskRepository } from '../lib/taskRepository'
 import type { Finding, ReportFile } from '../lib/types'
 import { FindingDetail } from '../components/FindingDetail'
 import { FindingList } from '../components/FindingList'
@@ -8,9 +9,22 @@ import { ReportViewer } from '../components/ReportViewer'
 type FindingsPageProps = {
   findings: Finding[]
   reports: ReportFile[]
+  repository?: TaskRepository
 }
 
-export function FindingsPage({ findings, reports }: FindingsPageProps) {
+export function FindingsPage({ findings: initialFindings, reports: initialReports, repository }: FindingsPageProps) {
+  const [data, setData] = useState({ findings: initialFindings, reports: initialReports })
+  const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState(Boolean(repository))
+  const { findings, reports } = data
+  const load = useCallback(async () => {
+    if (!repository) return
+    try { const result = await repository.getArtifacts(); setData(result); setNotice(result.warnings?.join('；') || '已读取本地历史结果；这些结果不代表本次靶场启动的扫描成绩。') }
+    catch { setNotice('本地结果读取失败，请检查服务和报告目录。') }
+  }, [repository])
+  const refresh = async () => { setBusy(true); await load(); setBusy(false) }
+  // oxlint-disable-next-line react/set-state-in-effect -- loading data is an external repository synchronization.
+  useEffect(() => { void load().finally(() => setBusy(false)) }, [load])
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null)
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const selectedFinding = findings.find((finding) => finding.id === selectedFindingId) ?? null
@@ -27,13 +41,31 @@ export function FindingsPage({ findings, reports }: FindingsPageProps) {
         <FindingList findings={findings} selectedId={selectedFindingId} onSelect={(finding) => setSelectedFindingId(finding.id)} />
         <FindingDetail finding={selectedFinding} />
       </div>
-      <section className="surface-panel report-list-panel" aria-labelledby="report-list-title">
-        <div className="panel-header"><div><h4 id="report-list-title">安全报告</h4><p>报告文件仅允许从项目白名单路径读取。</p></div><FileText size={20} aria-hidden="true" /></div>
-        <div className="report-list">
-          {reports.length === 0 ? <div className="empty-state">暂无报告文件</div> : reports.map((report) => <div className="report-row" key={report.id}><span className="report-row-icon"><Flag size={16} aria-hidden="true" /></span><span className="report-row-copy"><strong>{report.name}</strong><small>{report.relativePath} · 已脱敏</small></span><button className="action-button" type="button" onClick={() => setSelectedReportId(report.id)}>查看 {report.name}</button></div>)}
-        </div>
-      </section>
-      {selectedReport ? <ReportViewer report={selectedReport} onClose={() => setSelectedReportId(null)} /> : null}
+      <button className="action-button" disabled={busy} onClick={() => void refresh()}>{busy ? '正在读取…' : '刷新本地候选与报告'}</button>
+      <p role="status">{notice}</p>
+      <div className="report-workspace">
+        <section className="surface-panel report-list-panel" aria-labelledby="report-list-title">
+          <div className="panel-header"><div><h4 id="report-list-title">安全报告</h4><p>点击整行即可在右侧查看报告正文；文件只从项目白名单路径读取。</p></div><FileText size={20} aria-hidden="true" /></div>
+          <div className="report-list">
+            {reports.length === 0 ? <div className="empty-state">暂无报告文件</div> : reports.map((report) => (
+              <button
+                className="report-row"
+                data-selected={selectedReportId === report.id}
+                key={report.id}
+                type="button"
+                aria-label={`查看 ${report.name}`}
+                aria-pressed={selectedReportId === report.id}
+                onClick={() => setSelectedReportId(report.id)}
+              >
+                <span className="report-row-icon"><Flag size={16} aria-hidden="true" /></span>
+                <span className="report-row-copy"><strong>{report.name}</strong><small>{report.relativePath} · 已脱敏</small></span>
+                <span className="report-row-action">查看正文</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <ReportViewer report={selectedReport} onClose={selectedReport ? () => setSelectedReportId(null) : undefined} />
+      </div>
     </>
   )
 }

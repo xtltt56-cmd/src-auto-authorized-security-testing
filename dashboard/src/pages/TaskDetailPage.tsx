@@ -16,39 +16,40 @@ type TaskDetailPageProps = {
   repository: TaskRepository
   onBack: () => void
   onOpenReport: () => void
+  onRefresh?: () => Promise<void>
 }
 
-const stageNames = ['策略检查', '依赖检查', '健康检查', '入口发现', '受控验证', 'API 对象对比', '候选研判', '报告生成']
+const stageNames = ['等待执行', '本地执行', '健康检查', '靶场已就绪']
 
 const healthLabels: Record<LabStatus['health'], string> = {
   healthy: '就绪',
   starting: '启动中',
   stopped: '已停止',
   blocked: '受阻',
+  unavailable: 'Docker 未就绪',
 }
 
 const stagesFor = (task: TaskSummary): StageItem[] => {
   const namedIndex = stageNames.indexOf(task.stage)
-  const currentIndex = namedIndex >= 0 ? namedIndex : Math.min(stageNames.length - 1, Math.max(0, Math.floor(task.progress / 16)))
+  const currentIndex = namedIndex >= 0 ? namedIndex : task.state === 'completed' ? 3 : task.state === 'running' ? 1 : 0
   return stageNames.map((label, index) => ({
     id: label,
     label,
-    state: task.state === 'blocked' || task.state === 'failed' ? (index === currentIndex ? 'blocked' : index < currentIndex ? 'completed' : 'idle') : index < currentIndex || task.state === 'completed' ? 'completed' : index === currentIndex ? 'running' : 'idle',
+    state: task.state === 'idle' || task.state === 'cancelled' ? 'idle' : task.state === 'blocked' || task.state === 'failed' ? (index === currentIndex ? 'blocked' : index < currentIndex ? 'completed' : 'idle') : index < currentIndex || task.state === 'completed' ? 'completed' : index === currentIndex ? 'running' : 'idle',
     detail: index === currentIndex ? task.stage : undefined,
   }))
 }
 
-export function TaskDetailPage({ task: initialTask, lab = null, events: initialEvents, repository, onBack, onOpenReport }: TaskDetailPageProps) {
-  const [task, setTask] = useState(initialTask)
-  const [events, setEvents] = useState(initialEvents)
+export function TaskDetailPage({ task: initialTask, lab = null, events: initialEvents, repository, onBack, onOpenReport, onRefresh }: TaskDetailPageProps) {
+  const task = initialTask
+  const events = initialEvents
   const [notice, setNotice] = useState('')
 
   const refresh = useCallback(async (message: string) => {
-    const [nextTask, nextEvents] = await Promise.all([repository.getTask(initialTask.id), repository.getEvents(initialTask.id)])
-    setTask(nextTask)
-    setEvents(nextEvents)
+    // Parent polling owns the authoritative task and event state.
+    await onRefresh?.()
     setNotice(message)
-  }, [initialTask.id, repository])
+  }, [onRefresh])
 
   const exportEvents = () => {
     const payload = JSON.stringify(events, null, 2)
@@ -96,6 +97,7 @@ export function TaskDetailPage({ task: initialTask, lab = null, events: initialE
         <div className="task-meta"><StatusBadge state={task.state} /><span><Clock3 size={15} aria-hidden="true" /> {task.elapsedSeconds}s</span></div>
       </div>
       {notice ? <div className="inline-notice" role="status"><ShieldCheck size={15} aria-hidden="true" /> {notice}</div> : null}
+      <p role="note">这里显示靶场环境的启动与停止进度。环境就绪不表示已执行漏洞扫描或生成报告。</p>
       <div className="detail-overview surface-panel">
         <div className="panel-body"><div className="detail-overview-top"><ProgressBar value={task.progress} label="总体进度" /><span className="network-note"><HeartPulse size={14} aria-hidden="true" /> 网络接触：仅回环</span></div><MetricStrip items={counters} /></div>
       </div>
@@ -107,14 +109,14 @@ export function TaskDetailPage({ task: initialTask, lab = null, events: initialE
       {lab ? (
         <div className="action-bar" role="toolbar" aria-label="靶场操作">
           <button className="action-button" type="button" aria-label="启动当前靶场" onClick={() => void runLabAction('start')} disabled={lab.health === 'healthy' || lab.operation === 'queued' || lab.operation === 'running'}><Play size={16} aria-hidden="true" /> 启动靶场</button>
-          <button className="action-button" type="button" aria-label="停止当前靶场" data-variant="danger" onClick={() => void runLabAction('stop')} disabled={lab.health === 'stopped' || lab.operation === 'queued' || lab.operation === 'running'}><Square size={15} aria-hidden="true" /> 停止靶场</button>
+          <button className="action-button" type="button" aria-label="停止当前靶场" data-variant="danger" onClick={() => void runLabAction('stop')} disabled={lab.health === 'stopped' && lab.operation !== 'queued' && lab.operation !== 'running'}><Square size={15} aria-hidden="true" /> 停止靶场</button>
           <button className="action-button" type="button" aria-label="重置当前靶场" onClick={() => void runLabAction('reset')} disabled={lab.operation === 'queued' || lab.operation === 'running'}><RefreshCw size={16} aria-hidden="true" /> 重置靶场</button>
           <span className="action-divider" aria-hidden="true" />
           <button className="action-button" type="button" onClick={openReport}>查看报告</button>
           <button className="action-button" type="button" onClick={exportEvents}>导出脱敏事件</button>
         </div>
       ) : (
-        <ActionBar state={task.state} onPause={() => void repository.pauseTask(task.id).then(() => refresh('任务已在安全检查点暂停'))} onResume={() => void repository.resumeTask(task.id).then(() => refresh('任务已恢复运行'))} onCancel={() => void repository.cancelTask(task.id).then(() => refresh('任务已取消，不再追加新的检测动作'))} onOpenReport={openReport} onExport={exportEvents} />
+        <ActionBar state={task.state} supportsPause={repository.supportsPause === true} onPause={() => void repository.pauseTask(task.id).then(() => refresh('任务已在安全检查点暂停')).catch(() => setNotice('暂停未成功，请检查任务状态'))} onResume={() => void repository.resumeTask(task.id).then(() => refresh('任务已恢复运行')).catch(() => setNotice('恢复未成功，请检查任务状态'))} onCancel={() => void repository.cancelTask(task.id).then(() => refresh('停止请求已提交，请等待实际停止状态')).catch(() => setNotice('停止未成功，请检查本地服务'))} onOpenReport={openReport} onExport={exportEvents} />
       )}
     </>
   )

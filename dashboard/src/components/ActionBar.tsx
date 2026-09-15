@@ -8,11 +8,12 @@ type ActionBarProps = {
   onCancel: () => void
   onOpenReport: () => void
   onExport: () => void
+  supportsPause?: boolean
 }
 
-export function ActionBar({ state, onPause, onResume, onCancel, onOpenReport, onExport }: ActionBarProps) {
-  const canPause = state === 'running'
-  const canResume = state === 'paused'
+export function ActionBar({ state, onPause, onResume, onCancel, onOpenReport, onExport, supportsPause = true }: ActionBarProps) {
+  const canPause = supportsPause && state === 'running'
+  const canResume = supportsPause && state === 'paused'
   const canCancel = state === 'running' || state === 'paused' || state === 'queued'
   return (
     <div className="action-bar" role="toolbar" aria-label="任务操作">

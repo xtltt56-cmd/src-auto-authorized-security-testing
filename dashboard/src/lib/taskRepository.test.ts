@@ -38,6 +38,22 @@ describe('fixture task repository', () => {
 })
 
 describe('loopback task repository', () => {
+  it('renews an expired session once after a backend restart', async () => {
+    let current = 'old'
+    let sessions = 0
+    const repository = createLoopbackRepository('/api', async (url, init) => {
+      if (String(url).endsWith('/session')) {
+        sessions++
+        return new Response(JSON.stringify({ token: current }))
+      }
+      const valid = new Headers(init?.headers).get('X-SRC-Auto-Token') === current
+      return new Response(JSON.stringify(valid ? safeDefaultSnapshot : { error: 'invalid_session_token' }), { status: valid ? 200 : 401 })
+    })
+    await repository.getDashboardSnapshot()
+    current = 'new'
+    await repository.getDashboardSnapshot()
+    expect(sessions).toBe(2)
+  })
   it('acquires one local session and sends it with snapshot and actions', async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
