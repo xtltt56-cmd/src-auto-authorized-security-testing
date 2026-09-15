@@ -66,6 +66,17 @@ class ReleaseDistributionTests(unittest.TestCase):
         self.assertIn("$grepExit", content)
         self.assertIn("$grepExit -eq 1", content)
 
+    def test_no_secret_match_is_an_explicit_success_in_every_workflow(self):
+        for name in ("ci.yml", "release.yml"):
+            content = (PROJECT_ROOT / ".github" / "workflows" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertRegex(
+                content,
+                r"if\(\$grepExit -eq 1\)\{[^\n]*exit 0[^\n]*\}",
+                msg=name,
+            )
+
     def test_download_documentation_uses_stable_latest_release_url(self):
         content = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
         url = (
