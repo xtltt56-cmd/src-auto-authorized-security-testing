@@ -71,6 +71,8 @@ describe('loopback task repository', () => {
     await repository.stopLab('dvwa')
     await repository.startAllLabs()
     await repository.stopAllLabs()
+    await repository.startLabDetection('dvwa')
+    await repository.stopLabDetection('dvwa')
 
     expect(requests.filter((request) => request.url === '/api/session')).toHaveLength(1)
     expect(requests.map((request) => request.url)).toEqual([
@@ -81,10 +83,27 @@ describe('loopback task repository', () => {
       '/api/labs/dvwa/stop',
       '/api/labs/start-all',
       '/api/labs/stop-all',
+      '/api/labs/dvwa/detect',
+      '/api/labs/dvwa/detect-stop',
     ])
     for (const request of requests.slice(1)) {
       expect(new Headers(request.init?.headers).get('X-SRC-Auto-Token')).toBe('local-token')
     }
+  })
+
+  it('loads the artifact summary and downloads a report through encoded loopback routes', async () => {
+    const requests: string[] = []
+    const repository = createLoopbackRepository('/api', async (input) => {
+      const url = String(input)
+      requests.push(url)
+      if (url === '/api/session') return new Response(JSON.stringify({ token: 'local-token' }), { status: 200 })
+      if (url === '/api/artifacts/summary') return new Response(JSON.stringify({ candidateCount: 4, reportCount: 2 }), { status: 200 })
+      return new Response(JSON.stringify({ id: 'reports/local/test.md', name: 'test.md', relativePath: 'reports/local/test.md', sizeBytes: 4, content: 'full', redacted: true, truncated: false }), { status: 200 })
+    })
+
+    expect(await repository.getArtifactSummary()).toEqual({ candidateCount: 4, reportCount: 2 })
+    expect((await repository.downloadReport('reports/local/test.md')).content).toBe('full')
+    expect(requests).toContain('/api/reports/reports%2Flocal%2Ftest.md')
   })
 
   it('rejects an unavailable or malformed local service', async () => {

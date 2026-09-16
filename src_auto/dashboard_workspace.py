@@ -14,6 +14,11 @@ from .offline_scope_picker import inspect_review_targets
 from .target_review import review_target_selection
 
 
+_REPORT_SUFFIXES = frozenset(('.md', '.txt', '.json', '.html', '.log', '.xml'))
+_REPORT_PREVIEW_CHARS = 65536
+_REPORT_EXPORT_BYTES = 4 * 1024 * 1024
+
+
 def safe_text(value, limit=262144):
     text = re.sub(r'\bsk-[A-Za-z0-9_-]{12,}\b', '[REDACTED]', str(value or ''))
     text = re.sub(r'(?im)^(.*(?:authorization|cookie|api[_-]?key|password|secret|token)[\"\s]*[:=]).*$', r'\1 [REDACTED]', text)
@@ -104,32 +109,89 @@ class DashboardWorkspace:
             results.append(result)
         return results
 
-    def artifacts(self):
-        reports, findings, warnings = [], [], []
+    def _report_files(self):
         report_path = self.root / 'reports'
         if report_path.is_symlink():
-            return dict(reports=[], findings=[], warnings=['报告目录是符号链接，已拒绝读取'])
+            raise ValueError('report_root_symlink_not_allowed')
         report_root = self._inside(report_path)
-        if report_root.exists():
-            files = []
-            # Reports are grouped by run/lab in subdirectories.  Walk them
-            # without following links so a nested report can be previewed
-            # without broadening the project-local trust boundary.
-            for directory, names, filenames in os.walk(report_root, topdown=True, followlinks=False):
-                current = Path(directory)
-                names[:] = [name for name in names if not (current / name).is_symlink()
-                            and (current / name).resolve().parent == current.resolve()]
-                for filename in filenames:
-                    path = current / filename
-                    if path.suffix.lower() in ('.md', '.txt', '.json', '.html', '.log', '.xml'):
-                        try:
-                            if path.is_symlink():
-                                raise ValueError('report_symlink_not_allowed')
-                            self._inside(path, report_root)
-                            files.append((path.stat().st_mtime, path))
-                        except (OSError, ValueError):
+        files, warnings = [], []
+        if not report_root.exists():
+            return report_root, files, warnings
+        for directory, names, filenames in os.walk(report_root, topdown=True, followlinks=False):
+            current = Path(directory)
+            safe_names = []
+            for name in names:
+                path = current / name
+                try:
+                    if path.is_symlink() or path.resolve().parent != current.resolve():
+                        if not warnings:
                             warnings.append('部分报告无法读取或路径不在允许范围')
-            files.sort(key=lambda item: item[0], reverse=True)
+                        continue
+                    safe_names.append(name)
+                except OSError:
+                    if not warnings:
+                        warnings.append('部分报告无法读取或路径不在允许范围')
+            names[:] = safe_names
+            for filename in filenames:
+                path = current / filename
+                if path.suffix.lower() not in _REPORT_SUFFIXES:
+                    continue
+                try:
+                    if path.is_symlink():
+                        raise ValueError('report_symlink_not_allowed')
+                    self._inside(path, report_root)
+                    files.append((path.stat().st_mtime, path))
+                except (OSError, ValueError):
+                    if not warnings:
+                        warnings.append('部分报告无法读取或路径不在允许范围')
+        files.sort(key=lambda item: item[0], reverse=True)
+        return report_root, files, warnings
+
+    def artifact_summary(self):
+        try:
+            _, files, _ = self._report_files()
+            report_count = min(len(files), 30)
+        except (OSError, ValueError):
+            report_count = 0
+        candidate_count = 0
+        db = self._inside(self.root / 'data' / 'src_auto.sqlite3')
+        if db.exists():
+            connection = None
+            try:
+                connection = sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=2)
+                candidate_count = min(int(connection.execute('SELECT COUNT(*) FROM findings').fetchone()[0]), 100)
+            except sqlite3.Error:
+                candidate_count = 0
+            finally:
+                if connection is not None:
+                    connection.close()
+        return dict(candidateCount=candidate_count, reportCount=report_count)
+
+    def read_report(self, relative):
+        if not isinstance(relative, str) or not relative.startswith('reports/'):
+            raise ValueError('report_path_not_allowed')
+        report_root = self._inside(self.root / 'reports')
+        if report_root.is_symlink():
+            raise ValueError('report_root_symlink_not_allowed')
+        path = self._inside(self.root / Path(relative), report_root)
+        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in _REPORT_SUFFIXES:
+            raise ValueError('report_path_not_allowed')
+        size = path.stat().st_size
+        if size > _REPORT_EXPORT_BYTES:
+            raise ValueError('report_too_large')
+        content = path.read_text(encoding='utf-8-sig', errors='replace')
+        return dict(id=relative, name=safe_text(path.name, 200), relativePath=relative,
+                    sizeBytes=size, content=safe_text(content, len(content) + 1), redacted=True,
+                    truncated=False)
+
+    def artifacts(self):
+        reports, findings, warnings = [], [], []
+        try:
+            report_root, files, report_warnings = self._report_files()
+            warnings.extend(report_warnings)
+        except ValueError:
+            return dict(reports=[], findings=[], warnings=['报告目录是符号链接，已拒绝读取'])
+        if report_root.exists():
             for _, path in files[:30]:
                 try:
                     if path.is_symlink():
@@ -137,11 +199,12 @@ class DashboardWorkspace:
                     path = self._inside(path, report_root)
                     size = path.stat().st_size
                     with path.open('r', encoding='utf-8-sig', errors='replace') as stream:
-                        content = stream.read(65536)
-                    if size > 65536: content += '\n[预览已截断，请在本地查看完整报告]'
+                        content = stream.read(_REPORT_PREVIEW_CHARS)
+                        truncated = bool(stream.read(1))
+                    if truncated: content += '\n[预览已截断，可下载完整脱敏报告]'
                     relative = path.relative_to(self.root).as_posix()
                     reports.append(dict(id=relative, name=safe_text(path.name, 200), relativePath=relative,
-                                        sizeBytes=size, content=safe_text(content), redacted=True))
+                                        sizeBytes=size, content=safe_text(content), redacted=True, truncated=truncated))
                 except (OSError, ValueError): warnings.append('部分报告无法读取或路径不在允许范围')
         db = self._inside(self.root / 'data' / 'src_auto.sqlite3')
         if db.exists():

@@ -26,6 +26,7 @@ export function AISettingsPage({ repository }: { repository: TaskRepository }) {
   const [message, setMessage] = useState('')
 
   const selected = useMemo(() => providers.find(item => item.id === selectedId) ?? null, [providers, selectedId])
+  const hasUnsavedChanges = Boolean(apiKey) || Boolean(selected && model.trim() !== selected.model)
 
   useEffect(() => {
     let active = true
@@ -60,7 +61,7 @@ export function AISettingsPage({ repository }: { repository: TaskRepository }) {
     setBusy('save'); setMessage('')
     try {
       const saved = await repository.saveAIProvider(selected.id, { apiKey, model: model.trim() })
-      updateProvider(saved); setApiKey('')
+      updateProvider(saved); setApiKey(''); setModel(saved.model); setAllowTest(false)
       setMessage('设置已加密保存。保存过程没有联网，也没有启用后台调用。')
     } catch { setMessage('保存失败：请检查密钥、模型 API ID 和项目目录权限。') }
     finally { setBusy(null) }
@@ -68,6 +69,7 @@ export function AISettingsPage({ repository }: { repository: TaskRepository }) {
 
   const testConnection = async () => {
     if (!selected || !allowTest) return
+    if (hasUnsavedChanges) { setMessage('当前输入尚未保存。请先保存设置，再测试刚保存的密钥和模型。'); return }
     setBusy('test'); setMessage('')
     try {
       const result = await repository.testAIProvider(selected.id)
@@ -84,7 +86,7 @@ export function AISettingsPage({ repository }: { repository: TaskRepository }) {
 
     <section className="surface-panel ai-settings-panel" aria-busy={busy === 'load'}>
       <div className="ai-provider-selector" role="tablist" aria-label="AI 服务商">
-        {providers.map(item => <button key={item.id} type="button" role="tab" aria-selected={selectedId === item.id}
+        {providers.map(item => <button key={item.id} type="button" role="tab" aria-selected={selectedId === item.id} disabled={busy === 'save' || busy === 'test'}
           className="ai-provider-tab" onClick={() => selectProvider(item)}>
           <span>{item.displayName}</span><small>{item.model}</small>
         </button>)}
@@ -120,8 +122,9 @@ export function AISettingsPage({ repository }: { repository: TaskRepository }) {
         <div className="ai-settings-actions">
           <button type="button" className="action-button" data-variant="primary" disabled={busy !== null} onClick={() => void save()}>{busy === 'save' ? '正在保存…' : '保存设置'}</button>
           <label className="network-consent"><input type="checkbox" checked={allowTest} onChange={event => setAllowTest(event.target.checked)} /> 允许本次联网测试（只发送“OK”测试文本，可能少量计费）</label>
-          <button type="button" className="action-button" disabled={!allowTest || busy !== null || !selected.keySaved} onClick={() => void testConnection()}><Wifi size={15} aria-hidden="true" /> {busy === 'test' ? '测试中…' : '测试连接'}</button>
+          <button type="button" className="action-button" disabled={!allowTest || busy !== null || !selected.keySaved || hasUnsavedChanges} onClick={() => void testConnection()}><Wifi size={15} aria-hidden="true" /> {busy === 'test' ? '测试中…' : hasUnsavedChanges ? '请先保存更改' : '测试连接'}</button>
         </div>
+        {hasUnsavedChanges ? <div className="inline-notice ai-settings-message" role="note">当前输入尚未保存；连接测试只会使用保存成功后的密钥和模型。</div> : null}
         {message ? <div className="inline-notice ai-settings-message" role="status">{message}</div> : null}
       </div> : <div className="ai-settings-empty">{busy === 'load' ? '正在读取本地加密设置…' : message || '没有可用服务商配置。'}</div>}
     </section>

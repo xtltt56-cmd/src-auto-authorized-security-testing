@@ -10,7 +10,7 @@ import { AISettingsPage } from './pages/AISettingsPage'
 import { OfflineReviewPage } from './pages/OfflineReviewPage'
 import { createLoopbackRepository, type TaskRepository } from './lib/taskRepository'
 import { safeDefaultSnapshot } from './lib/fixtures'
-import type { DashboardSnapshot, TargetDraftResult } from './lib/types'
+import type { ArtifactSummary, DashboardSnapshot, TargetDraftResult } from './lib/types'
 
 type AppProps = { repository?: TaskRepository }
 
@@ -37,6 +37,8 @@ export function App({ repository = defaultRepository }: AppProps) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [savedTargetResult, setSavedTargetResult] = useState<TargetDraftResult | null>(null)
   const [connectionMessage, setConnectionMessage] = useState('')
+  const [artifactSummary, setArtifactSummary] = useState<ArtifactSummary>({ candidateCount: 0, reportCount: 0 })
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const [initialLoading, setInitialLoading] = useState(true)
 
   // The repository is an asynchronous external source; updating the snapshot is intentional.
@@ -64,12 +66,20 @@ export function App({ repository = defaultRepository }: AppProps) {
     const timer = window.setInterval(() => { void tick() }, 2000)
     return () => { active = false; window.clearInterval(timer) }
   }, [refresh])
+  useEffect(() => {
+    let active = true
+    void repository.getArtifactSummary()
+      .then(summary => { if (active) setArtifactSummary(summary) })
+      .catch(() => { if (active) setArtifactSummary({ candidateCount: 0, reportCount: 0 }) })
+    return () => { active = false }
+  }, [repository])
 
   const selectedTask = useMemo(() => snapshot.tasks.find((task) => task.id === selectedTaskId) ?? null, [selectedTaskId, snapshot.tasks])
   const selectedLab = useMemo(() => snapshot.labs.find((lab) => lab.taskId === selectedTaskId) ?? null, [selectedTaskId, snapshot.labs])
   const selectedEvents = useMemo(() => snapshot.events.filter((event) => event.taskId === selectedTaskId), [selectedTaskId, snapshot.events])
-  const navigate = (key: NavKey) => { setSelectedTaskId(null); setActiveKey(key) }
-  const openTask = (taskId: string) => { setSelectedTaskId(taskId); setActiveKey('labs') }
+  const navigate = (key: NavKey) => { setSelectedTaskId(null); setSelectedReportId(null); setActiveKey(key) }
+  const openTask = (taskId: string) => { setSelectedTaskId(taskId); setSelectedReportId(null); setActiveKey('labs') }
+  const openTaskReport = (reportId?: string) => { setSelectedTaskId(null); setSelectedReportId(reportId ?? null); setActiveKey('findings') }
   const runLabAction = useCallback(async (labId: string, action: 'start' | 'stop' | 'reset') => {
     if (action === 'start') await repository.startLab(labId)
     else if (action === 'stop') await repository.stopLab(labId)
@@ -81,6 +91,11 @@ export function App({ repository = defaultRepository }: AppProps) {
     else await repository.stopAllLabs()
     await refresh()
   }, [refresh, repository])
+  const runDetectionAction = useCallback(async (labId: string, action: 'start' | 'stop') => {
+    if (action === 'start') await repository.startLabDetection(labId)
+    else await repository.stopLabDetection(labId)
+    await refresh()
+  }, [refresh, repository])
   const startDockerDesktop = useCallback(async () => {
     await repository.startDockerDesktop()
     await refresh()
@@ -88,13 +103,13 @@ export function App({ repository = defaultRepository }: AppProps) {
 
   let content
   if (selectedTask) {
-    content = <TaskDetailPage task={selectedTask} lab={selectedLab} events={selectedEvents} repository={repository} onRefresh={refresh} onBack={() => setSelectedTaskId(null)} onOpenReport={() => { setSelectedTaskId(null); setActiveKey('findings') }} />
+    content = <TaskDetailPage task={selectedTask} lab={selectedLab} events={selectedEvents} repository={repository} onRefresh={refresh} onBack={() => setSelectedTaskId(null)} onOpenReport={openTaskReport} />
   } else if (activeKey === 'overview') {
-    content = <OverviewPage snapshot={snapshot} onNavigate={navigate} onOpenTask={openTask} />
+    content = <OverviewPage snapshot={snapshot} artifactSummary={artifactSummary} onNavigate={navigate} onOpenTask={openTask} />
   } else if (activeKey === 'labs') {
-    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} onAction={runLabAction} onBatchAction={runBatchAction} onStartDocker={startDockerDesktop} />
+    content = <LabsPage snapshot={snapshot} onOpenTask={openTask} onNavigate={navigate} onAction={runLabAction} onDetectionAction={runDetectionAction} onBatchAction={runBatchAction} onStartDocker={startDockerDesktop} />
   } else if (activeKey === 'findings') {
-    content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} repository={repository} />
+    content = <FindingsPage findings={snapshot.findings} reports={snapshot.reports} repository={repository} initialSelectedReportId={selectedReportId} onArtifactSummary={setArtifactSummary} />
   } else if (activeKey === 'targets') {
     content = <TargetDraftPage savedResult={savedTargetResult} onSaved={setSavedTargetResult} repository={repository} />
   } else if (activeKey === 'settings') {

@@ -22,6 +22,7 @@ describe('LabMatrix', () => {
         labs={[startingLab]}
         onOpenLabTask={() => undefined}
         onAction={async () => undefined}
+        onDetectionAction={async () => undefined}
       />,
     )
 

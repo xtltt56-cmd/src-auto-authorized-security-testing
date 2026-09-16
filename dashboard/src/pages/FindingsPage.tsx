@@ -1,7 +1,7 @@
 import { FileText, Flag, ShieldCheck } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import type { TaskRepository } from '../lib/taskRepository'
-import type { Finding, ReportFile } from '../lib/types'
+import type { ArtifactSummary, Finding, ReportFile } from '../lib/types'
 import { FindingDetail } from '../components/FindingDetail'
 import { FindingList } from '../components/FindingList'
 import { ReportViewer } from '../components/ReportViewer'
@@ -10,23 +10,30 @@ type FindingsPageProps = {
   findings: Finding[]
   reports: ReportFile[]
   repository?: TaskRepository
+  initialSelectedReportId?: string | null
+  onArtifactSummary?: (summary: ArtifactSummary) => void
 }
 
-export function FindingsPage({ findings: initialFindings, reports: initialReports, repository }: FindingsPageProps) {
+export function FindingsPage({ findings: initialFindings, reports: initialReports, repository, initialSelectedReportId = null, onArtifactSummary }: FindingsPageProps) {
   const [data, setData] = useState({ findings: initialFindings, reports: initialReports })
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(Boolean(repository))
   const { findings, reports } = data
   const load = useCallback(async () => {
     if (!repository) return
-    try { const result = await repository.getArtifacts(); setData(result); setNotice(result.warnings?.join('；') || '已读取本地历史结果；这些结果不代表本次靶场启动的扫描成绩。') }
+    try {
+      const result = await repository.getArtifacts()
+      setData(result)
+      onArtifactSummary?.({ candidateCount: result.findings.length, reportCount: result.reports.length })
+      setNotice(result.warnings?.join('；') || '已读取本地历史结果；这些结果不代表本次靶场启动的扫描成绩。')
+    }
     catch { setNotice('本地结果读取失败，请检查服务和报告目录。') }
-  }, [repository])
+  }, [onArtifactSummary, repository])
   const refresh = async () => { setBusy(true); await load(); setBusy(false) }
   // oxlint-disable-next-line react/set-state-in-effect -- loading data is an external repository synchronization.
   useEffect(() => { void load().finally(() => setBusy(false)) }, [load])
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null)
-  const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(initialSelectedReportId)
   const selectedFinding = findings.find((finding) => finding.id === selectedFindingId) ?? null
   const selectedReport = reports.find((report) => report.id === selectedReportId) ?? null
 
@@ -64,7 +71,7 @@ export function FindingsPage({ findings: initialFindings, reports: initialReport
             ))}
           </div>
         </section>
-        <ReportViewer report={selectedReport} onClose={selectedReport ? () => setSelectedReportId(null) : undefined} />
+        <ReportViewer key={selectedReportId ?? 'no-report'} report={selectedReport} onDownload={repository ? report => repository.downloadReport(report.id) : undefined} onClose={selectedReport ? () => setSelectedReportId(null) : undefined} />
       </div>
     </>
   )
