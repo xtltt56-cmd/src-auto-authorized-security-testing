@@ -56,6 +56,74 @@ class ImmediateExecutor:
 
 
 class DashboardControlServiceTests(unittest.TestCase):
+    def test_detection_updates_real_task_counters_and_report_link(self):
+        manager = FakeManager()
+        manager.states["juice-shop"] = "READY"
+
+        def detection(lab_id, cancel_event, progress):
+            progress("表面发现", 45, {"endpoints": 7, "api": 2, "candidates": 0, "blocked": 0, "errors": 0}, "已完成回环表面发现")
+            return {
+                "status": "completed", "runId": "run-123", "reportId": "reports/run-123.md",
+                "candidateCount": 2, "endpointCount": 7, "apiCount": 2, "blockedCount": 0,
+                "networkContact": "loopback",
+            }
+
+        service = DashboardControlService(
+            manager, executor=ImmediateExecutor(), dependency_check=lambda: (True, "Docker 可用"),
+            detection_runner=detection,
+        )
+
+        accepted = service.submit_detection("juice-shop")
+        snapshot = service.snapshot()
+        task = next(item for item in snapshot["tasks"] if item["id"] == "run-lab-juice-shop")
+        lab = next(item for item in snapshot["labs"] if item["id"] == "juice-shop")
+
+        self.assertTrue(accepted["accepted"])
+        self.assertEqual(task["state"], "completed")
+        self.assertEqual(task["stage"], "检测完成")
+        self.assertEqual(task["counters"]["candidates"], 2)
+        self.assertEqual(lab["candidates"], 2)
+        self.assertEqual(lab["reportId"], "reports/run-123.md")
+        self.assertEqual(lab["lastRunId"], "run-123")
+        self.assertEqual(lab["detectionOperation"], "completed")
+        self.assertTrue(any(event["stage"] == "表面发现" for event in snapshot["events"]))
+
+    def test_detection_refuses_a_stopped_lab_before_network_contact(self):
+        called = []
+        service = DashboardControlService(
+            FakeManager(), executor=ImmediateExecutor(), dependency_check=lambda: (True, "Docker 可用"),
+            detection_runner=lambda *args: called.append(args),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "lab_not_ready"):
+            service.submit_detection("juice-shop")
+        self.assertEqual(called, [])
+
+    def test_detection_can_be_cancelled_at_a_safe_checkpoint(self):
+        manager = FakeManager()
+        manager.states["juice-shop"] = "READY"
+        started = threading.Event()
+
+        def detection(_lab_id, cancel_event, progress):
+            progress("候选检测", 60, {"endpoints": 1, "api": 0, "candidates": 0, "blocked": 0, "errors": 0}, "等待停止检查点")
+            started.set()
+            cancel_event.wait(2)
+            return {"status": "cancelled", "networkContact": "loopback"}
+
+        service = DashboardControlService(manager, dependency_check=lambda: (True, "Docker 可用"), detection_runner=detection)
+        try:
+            service.submit_detection("juice-shop")
+            self.assertTrue(started.wait(1))
+            service.cancel_detection("juice-shop")
+            for _ in range(20):
+                task = next(item for item in service.snapshot()["tasks"] if item["id"] == "run-lab-juice-shop")
+                if task["state"] == "cancelled":
+                    break
+                threading.Event().wait(0.05)
+            self.assertEqual(task["state"], "cancelled")
+        finally:
+            service.close()
+
     def test_missing_docker_is_reported_as_unavailable_not_failed_lab(self):
         service = DashboardControlService(
             FakeManager(),

@@ -1,6 +1,6 @@
 # 实现报告
 
-> **历史归档说明：** 本文主要记录 2026-08-22 及更早的实施快照，不是当前发布的验收依据。当前版本请以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)、[README.md](README.md) 和 [TEST_REPORT.md](TEST_REPORT.md) 顶部内容为准；本文中的旧测试数量、靶场数量和运行快照不覆盖 `v0.8.28-loopback-lab-control`。
+> **历史归档说明：** 本文主要记录 2026-08-22 及更早的实施快照，不是当前发布的验收依据。当前版本请以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)、[README.md](README.md) 和 [TEST_REPORT.md](TEST_REPORT.md) 顶部内容为准；本文中的旧测试数量、靶场数量和运行快照不覆盖 `v0.10.0`。
 
 ## 2026-08-22 三靶场最终验收摘要
 

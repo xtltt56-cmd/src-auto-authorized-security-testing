@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { waitFor } from '@testing-library/react'
+import { vi } from 'vitest'
 import { App } from '../App'
 import { TaskDetailPage } from './TaskDetailPage'
 import { OverviewPage } from './OverviewPage'
@@ -34,4 +35,14 @@ it('shows a connecting state before the first dashboard response instead of a fa
   await waitFor(() => expect(resolveSnapshot).toBeDefined())
   resolveSnapshot?.(safeDefaultSnapshot)
   await waitFor(() => expect(screen.queryByText('正在连接本地执行服务')).not.toBeInTheDocument())
+})
+
+it('shows the candidate count from the artifact source instead of lab lifecycle counters', async () => {
+  const repository = createFixtureRepository()
+  repository.getArtifactSummary = vi.fn().mockResolvedValue({ candidateCount: 7, reportCount: 3 })
+  render(<App repository={repository} />)
+
+  expect(await screen.findByText('历史候选记录')).toBeVisible()
+  const metric = screen.getByText('历史候选记录').closest('div')
+  expect(metric).toHaveTextContent('7')
 })

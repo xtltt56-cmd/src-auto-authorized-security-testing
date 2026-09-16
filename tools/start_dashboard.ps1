@@ -6,6 +6,8 @@ param(
     [int]$ApiPort = 4174,
     [ValidateSet('overview','labs','targets','review','findings','settings')]
     [string]$InitialPage = 'overview',
+    [ValidateSet('ask','enabled','disabled')]
+    [string]$RemoteAIConsent = 'ask',
     [switch]$NoBrowser,
     [switch]$Foreground
 )
@@ -15,6 +17,22 @@ $ProgressPreference = 'SilentlyContinue'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
+
+if($RemoteAIConsent -eq 'ask'){
+    $answer = (Read-Host '是否允许本次 Dashboard 使用云端 AI？输入 Y/是允许，N/否/回车禁止；连接测试仍需页面再次确认').Trim().ToLowerInvariant()
+    $RemoteAIConsent = if($answer -in @('y','yes','是','允许','启用')){ 'enabled' } else { 'disabled' }
+}
+$remoteAIEnabled = $RemoteAIConsent -eq 'enabled'
+$env:SRC_AUTO_REMOTE_AI_CONSENT = if($remoteAIEnabled){ 'enabled' } else { 'disabled' }
+$env:SRC_AUTO_DEEPSEEK_CONSENT = if($remoteAIEnabled){ 'enabled' } else { 'disabled' }
+$env:SRC_AUTO_ZHIPU_CONSENT = if($remoteAIEnabled){ 'enabled' } else { 'disabled' }
+$env:SRC_AUTO_OPENROUTER_CONSENT = if($remoteAIEnabled){ 'enabled' } else { 'disabled' }
+$env:SRC_AUTO_OPENAI_CONSENT = 'disabled'
+if($remoteAIEnabled){
+    Write-Host '本次 Dashboard 已允许云端 AI；只有在系统设置中再次勾选联网测试才会发送请求。' -ForegroundColor Yellow
+} else {
+    Write-Host '本次 Dashboard 已禁用云端 AI；连接测试接口将被服务端硬拒绝。' -ForegroundColor Green
+}
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $DashboardRoot = Join-Path $ProjectRoot 'dashboard'

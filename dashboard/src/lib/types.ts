@@ -53,9 +53,11 @@ export type LabStatus = {
   stage: string
   durationSeconds: number
   candidates: number
-  reportId?: string
+  reportId?: string | null
+  lastRunId?: string | null
   localOnly: true
   operation?: 'idle' | 'queued' | 'running' | 'completed' | 'failed'
+  detectionOperation?: 'idle' | 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
   openUrl?: string
   message?: string
 }
@@ -85,7 +87,10 @@ export type ReportFile = {
   sizeBytes: number
   content: string
   redacted: true
+  truncated?: boolean
 }
+
+export type ArtifactSummary = { candidateCount: number; reportCount: number }
 
 export type TargetDraft = {
   projectName: string
@@ -129,6 +134,8 @@ export type AIProviderSettings = {
   endpointHost: string
   manualOnly?: boolean
   pricingNote?: string
+  /** Whether the Dashboard process was started with remote-AI consent. */
+  sessionEnabled?: boolean
 }
 
 export type AIConnectionResult = { ok: boolean; code: string }

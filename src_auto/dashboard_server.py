@@ -12,17 +12,21 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
+from urllib.parse import unquote
 
 from .dashboard_control import DashboardControlService
 from .local_labs import LocalLabManager
 from .dashboard_workspace import DashboardWorkspace
 from .provider_settings import ProviderSettingsStore
+from .remote_ai import remote_session_consent_enabled
 
 
 _ALLOWED_ORIGIN = "http://127.0.0.1:4173"
 _LAB_ACTION_ROUTE = re.compile(r"^/api/labs/([a-z0-9][a-z0-9_-]{0,31})/(start|stop|reset)$")
+_DETECTION_ROUTE = re.compile(r"^/api/labs/([a-z0-9][a-z0-9_-]{0,31})/(detect|detect-stop)$")
 _BATCH_ROUTE = re.compile(r"^/api/labs/(start-all|stop-all)$")
 _PROVIDER_ROUTE = re.compile(r"^/api/settings/providers/(deepseek|zhipu|openrouter)(/test)?$")
+_REPORT_ROUTE = re.compile(r"^/api/reports/([^/?#]{1,2048})$")
 _MAX_BODY_BYTES = 1024
 _settings_lock = threading.Lock()
 _settings_process = None
@@ -93,11 +97,17 @@ def start_docker_desktop():
 class DashboardHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, server_address, handler_class, service, token, allowed_origin):
+    def __init__(self, server_address, handler_class, service, token, allowed_origin, remote_ai_enabled=None):
         super().__init__(server_address, handler_class)
         self.service = service
         self.session_token = token
         self.allowed_origin = allowed_origin
+        # The consent is intentionally captured once when the API process starts.
+        # A later browser checkbox cannot elevate a session that was started denied.
+        self.remote_ai_session_enabled = (
+            remote_session_consent_enabled("dashboard", "SRC_AUTO_REMOTE_AI_CONSENT")
+            if remote_ai_enabled is None else bool(remote_ai_enabled)
+        )
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -188,10 +198,35 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError, TypeError):
                 self._error(503, 'workspace_unavailable', '本地数据暂时无法读取，请检查项目目录')
             return
+        if self.path == '/api/artifacts/summary':
+            if not self._authorized(): return
+            try:
+                self._write_json(200, self.server.workspace.artifact_summary())
+            except (OSError, ValueError, TypeError):
+                self._error(503, 'artifact_summary_unavailable', '本地候选统计暂时无法读取')
+            return
+        report_match = _REPORT_ROUTE.fullmatch(self.path)
+        if report_match:
+            if not self._authorized(): return
+            try:
+                self._write_json(200, self.server.workspace.read_report(unquote(report_match.group(1))))
+            except ValueError as exc:
+                if str(exc) == 'report_too_large':
+                    self._error(413, 'report_too_large', '报告超过安全导出上限，请在项目目录中查看')
+                else:
+                    self._error(400, 'report_path_not_allowed', '报告路径不在项目白名单中')
+            except OSError:
+                self._error(503, 'report_unavailable', '报告暂时无法读取')
+            return
         if self.path == '/api/settings/providers':
             if not self._authorized(): return
             try:
-                self._write_json(200, self.server.provider_settings.public_status())
+                payload = self.server.provider_settings.public_status()
+                payload['providers'] = [
+                    dict(provider, sessionEnabled=self.server.remote_ai_session_enabled)
+                    for provider in payload.get('providers', [])
+                ]
+                self._write_json(200, payload)
             except (OSError, ValueError, TypeError):
                 self._error(503, 'provider_settings_unavailable', '云端 AI 设置暂时无法读取')
             return
@@ -245,6 +280,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if provider_match:
             provider = provider_match.group(1)
             if provider_match.group(2):
+                if not self.server.remote_ai_session_enabled:
+                    self._error(403, 'remote_ai_disabled_for_session', '本次启动未授权远程 AI；请关闭 Dashboard 后重新启动并明确允许')
+                    return
                 if document != {'allowNetwork': True}:
                     self._error(400, 'network_consent_required', '必须明确允许本次最小联网测试')
                     return
@@ -276,6 +314,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         match = _LAB_ACTION_ROUTE.fullmatch(self.path)
         try:
+            detection = _DETECTION_ROUTE.fullmatch(self.path)
+            if detection:
+                if document:
+                    self._error(400, 'empty_body_required', '本地检测入口不接受额外参数')
+                    return
+                if detection.group(2) == 'detect':
+                    payload = self.server.service.submit_detection(detection.group(1))
+                else:
+                    payload = self.server.service.cancel_detection(detection.group(1))
+                self._write_json(202, dict(payload))
+                return
             if match:
                 payload = self.server.service.submit(match.group(1), match.group(2))
                 self._write_json(202, dict(payload))
@@ -291,13 +340,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._error(400, code, "请求未通过固定靶场操作校验")
             return
         except RuntimeError as exc:
-            code = "lab_operation_in_progress" if str(exc) == "lab_operation_in_progress" else "operation_conflict"
-            self._error(409, code, "该靶场已有操作正在执行")
+            reason = str(exc)
+            messages = {
+                "lab_operation_in_progress": "该靶场已有环境操作正在执行",
+                "detection_in_progress": "该靶场已有检测任务正在执行",
+                "detection_not_running": "该靶场当前没有可停止的检测任务",
+                "lab_not_ready": "请先启动靶场并等待健康状态变为就绪",
+                "docker_not_ready": "Docker 尚未就绪，无法启动本地检测",
+                "detection_runner_unavailable": "本地检测执行器不可用",
+            }
+            code = reason if reason in messages else "operation_conflict"
+            self._error(409, code, messages.get(reason, "该靶场已有操作正在执行"))
             return
         self._error(404, "route_not_found", "接口不存在")
 
 
-def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN, project_root=None):
+def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN, project_root=None, remote_ai_enabled=None):
     """Create a server bound to the fixed IPv4 loopback address."""
 
     server = DashboardHTTPServer(
@@ -306,6 +364,7 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
         service,
         token or secrets.token_urlsafe(32),
         allowed_origin,
+        remote_ai_enabled=remote_ai_enabled,
     )
     server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
     server.provider_settings = ProviderSettingsStore(project_root or Path(__file__).resolve().parents[1])
