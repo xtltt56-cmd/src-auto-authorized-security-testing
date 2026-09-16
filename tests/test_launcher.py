@@ -92,6 +92,18 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("连接测试接口将被服务端硬拒绝", content)
         self.assertLess(content.index("Read-Host '是否允许本次 Dashboard 使用云端 AI"), content.index("src_auto.dashboard_server"))
 
+    def test_dashboard_launcher_rejects_stale_consent_and_only_stops_verified_idle_api(self):
+        path = Path(__file__).parents[1] / "tools" / "start_dashboard.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        self.assertIn("remoteAiSessionEnabled", content)
+        self.assertIn("Test-DashboardHasActiveWork", content)
+        self.assertIn("Get-VerifiedDashboardApiProcessId", content)
+        self.assertIn("src_auto\\.dashboard_server", content)
+        self.assertIn("授权状态与本次选择不一致", content)
+        self.assertIn("Stop-Process -Id $existingApiProcessId", content)
+        self.assertIn("Test-DashboardWebReady", content)
+        self.assertIn("只有人工在系统设置中再次确认后才会执行连接测试", content)
+
     def test_launcher_loads_dpapi_key_only_after_affirmative_consent(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
         content = path.read_text(encoding="utf-8-sig")
