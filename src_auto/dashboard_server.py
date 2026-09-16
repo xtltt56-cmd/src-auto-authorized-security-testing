@@ -18,6 +18,7 @@ from .dashboard_control import DashboardControlService
 from .local_labs import LocalLabManager
 from .dashboard_workspace import DashboardWorkspace
 from .provider_settings import ProviderSettingsStore
+from .remote_ai import remote_session_consent_enabled
 
 
 _ALLOWED_ORIGIN = "http://127.0.0.1:4173"
@@ -96,11 +97,17 @@ def start_docker_desktop():
 class DashboardHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, server_address, handler_class, service, token, allowed_origin):
+    def __init__(self, server_address, handler_class, service, token, allowed_origin, remote_ai_enabled=None):
         super().__init__(server_address, handler_class)
         self.service = service
         self.session_token = token
         self.allowed_origin = allowed_origin
+        # The consent is intentionally captured once when the API process starts.
+        # A later browser checkbox cannot elevate a session that was started denied.
+        self.remote_ai_session_enabled = (
+            remote_session_consent_enabled("dashboard", "SRC_AUTO_REMOTE_AI_CONSENT")
+            if remote_ai_enabled is None else bool(remote_ai_enabled)
+        )
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
@@ -214,7 +221,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if self.path == '/api/settings/providers':
             if not self._authorized(): return
             try:
-                self._write_json(200, self.server.provider_settings.public_status())
+                payload = self.server.provider_settings.public_status()
+                payload['providers'] = [
+                    dict(provider, sessionEnabled=self.server.remote_ai_session_enabled)
+                    for provider in payload.get('providers', [])
+                ]
+                self._write_json(200, payload)
             except (OSError, ValueError, TypeError):
                 self._error(503, 'provider_settings_unavailable', '云端 AI 设置暂时无法读取')
             return
@@ -268,6 +280,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if provider_match:
             provider = provider_match.group(1)
             if provider_match.group(2):
+                if not self.server.remote_ai_session_enabled:
+                    self._error(403, 'remote_ai_disabled_for_session', '本次启动未授权远程 AI；请关闭 Dashboard 后重新启动并明确允许')
+                    return
                 if document != {'allowNetwork': True}:
                     self._error(400, 'network_consent_required', '必须明确允许本次最小联网测试')
                     return
@@ -340,7 +355,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self._error(404, "route_not_found", "接口不存在")
 
 
-def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN, project_root=None):
+def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN, project_root=None, remote_ai_enabled=None):
     """Create a server bound to the fixed IPv4 loopback address."""
 
     server = DashboardHTTPServer(
@@ -349,6 +364,7 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
         service,
         token or secrets.token_urlsafe(32),
         allowed_origin,
+        remote_ai_enabled=remote_ai_enabled,
     )
     server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
     server.provider_settings = ProviderSettingsStore(project_root or Path(__file__).resolve().parents[1])

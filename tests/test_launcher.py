@@ -82,6 +82,16 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("Join-Path $env:LOCALAPPDATA 'Programs\\Ollama\\ollama.exe'", content)
         self.assertNotIn("C:\\Users\\lenovo", content)
 
+    def test_dashboard_launcher_locks_remote_ai_consent_before_starting_api(self):
+        path = Path(__file__).parents[1] / "tools" / "start_dashboard.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        self.assertIn("RemoteAIConsent", content)
+        self.assertIn("是否允许本次 Dashboard 使用云端 AI", content)
+        self.assertIn("SRC_AUTO_REMOTE_AI_CONSENT", content)
+        self.assertIn("SRC_AUTO_DEEPSEEK_CONSENT", content)
+        self.assertIn("连接测试接口将被服务端硬拒绝", content)
+        self.assertLess(content.index("Read-Host '是否允许本次 Dashboard 使用云端 AI"), content.index("src_auto.dashboard_server"))
+
     def test_launcher_loads_dpapi_key_only_after_affirmative_consent(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"
         content = path.read_text(encoding="utf-8-sig")

@@ -58,3 +58,17 @@ it('never tests a previously saved model while the form has unsaved changes', as
   expect(repository.saveAIProvider).toHaveBeenCalledWith('deepseek', { apiKey: '', model: 'deepseek-chat' })
   expect(repository.testAIProvider).toHaveBeenCalledWith('deepseek')
 })
+
+it('blocks the connection test when the Dashboard session denied remote AI', async () => {
+  const repository = createFixtureRepository()
+  repository.listAIProviders = vi.fn().mockResolvedValue([
+    { id: 'deepseek', displayName: 'DeepSeek V4.1 Flash', model: 'deepseek-flash', officialModel: 'deepseek-flash', keySaved: true, endpointHost: 'api.deepseek.com', sessionEnabled: false },
+  ])
+  repository.testAIProvider = vi.fn().mockResolvedValue({ ok: true, code: 'reachable_model_available' })
+  render(<AISettingsPage repository={repository} />)
+  const checkbox = await screen.findByLabelText(/本次启动已禁用远程 AI/)
+  expect(checkbox).toBeDisabled()
+  expect(screen.getByRole('button', { name: '测试连接' })).toBeDisabled()
+  expect(screen.getByText(/远程 AI 硬门为“禁用”/)).toBeVisible()
+  expect(repository.testAIProvider).not.toHaveBeenCalled()
+})

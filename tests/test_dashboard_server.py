@@ -115,6 +115,7 @@ class DashboardServerTests(unittest.TestCase):
         status, _, listed = self.request('/api/settings/providers', token='test-session-token')
         self.assertEqual(status, 200)
         self.assertNotIn('apiKey', json.dumps(listed))
+        self.assertTrue(listed['providers'][0]['sessionEnabled'])
         status, _, saved = self.request('/api/settings/providers/deepseek', method='POST', token='test-session-token',
                                         body={'apiKey': 'synthetic-key', 'model': 'deepseek-flash'})
         self.assertEqual(status, 200)
@@ -133,6 +134,15 @@ class DashboardServerTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(payload['error'], 'network_consent_required')
 
+    def test_inline_ai_test_is_hard_blocked_when_session_denied_remote_ai(self):
+        self.server.provider_settings = FakeProviderSettings()
+        self.server.remote_ai_session_enabled = False
+        status, _, payload = self.request('/api/settings/providers/deepseek/test', method='POST',
+                                          token='test-session-token', body={'allowNetwork': True})
+        self.assertEqual(status, 403)
+        self.assertEqual(payload['error'], 'remote_ai_disabled_for_session')
+        self.assertEqual(self.server.provider_settings.calls, [])
+
     def test_docker_desktop_start_requires_token_and_has_no_user_path(self):
         with patch('src_auto.dashboard_server.start_docker_desktop', create=True) as launch:
             self.assertEqual(self.request('/api/dependencies/docker/start', method='POST', body={})[0], 401)
@@ -142,7 +152,9 @@ class DashboardServerTests(unittest.TestCase):
 
     def setUp(self):
         self.service = FakeService()
-        self.server = create_server(self.service, port=0, token="test-session-token")
+        # Tests which exercise the explicit connection checkbox run in an
+        # explicitly enabled synthetic session; production defaults to denied.
+        self.server = create_server(self.service, port=0, token="test-session-token", remote_ai_enabled=True)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = "http://127.0.0.1:{}".format(self.server.server_address[1])

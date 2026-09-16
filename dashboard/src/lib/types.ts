@@ -134,6 +134,8 @@ export type AIProviderSettings = {
   endpointHost: string
   manualOnly?: boolean
   pricingNote?: string
+  /** Whether the Dashboard process was started with remote-AI consent. */
+  sessionEnabled?: boolean
 }
 
 export type AIConnectionResult = { ok: boolean; code: string }

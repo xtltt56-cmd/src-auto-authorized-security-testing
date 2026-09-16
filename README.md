@@ -16,7 +16,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前发布基线（2026-09-15）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.10.0`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。
+> **当前发布基线（2026-09-16）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.11.0`；本仓库中早于该日期并标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。Dashboard 启动时会询问是否允许云端 AI；选择“否”后，本次会话的服务端硬门会拒绝所有远程连接测试。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 
