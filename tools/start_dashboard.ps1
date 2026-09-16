@@ -98,16 +98,83 @@ if($dockerExe){
 $apiHealthUrl = "http://127.0.0.1:$ApiPort/health"
 $apiStartedHere = $false
 $apiServer = $null
-function Test-DashboardApiReady {
+function Get-DashboardApiHealth {
     try {
         $health = Invoke-RestMethod -Uri $apiHealthUrl -TimeoutSec 2
-        return $health.status -eq 'ok' -and $health.service -eq 'src-auto-dashboard-api'
+        if($health.status -eq 'ok' -and $health.service -eq 'src-auto-dashboard-api'){ return $health }
+        return $null
     } catch {
-        return $false
+        return $null
     }
 }
 
-if(-not (Test-DashboardApiReady)){
+function Test-DashboardApiReady {
+    return $null -ne (Get-DashboardApiHealth)
+}
+
+function Test-DashboardHasActiveWork {
+    $origin = "http://127.0.0.1:$Port"
+    $session = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/session" -Headers @{ Origin = $origin } -TimeoutSec 2
+    if([string]::IsNullOrWhiteSpace([string]$session.token)){ throw '旧 Dashboard API 没有返回会话令牌。' }
+    $snapshot = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/dashboard" -Headers @{ Origin = $origin; 'X-SRC-Auto-Token' = [string]$session.token } -TimeoutSec 3
+    return @($snapshot.tasks | Where-Object { $_.state -in @('queued','running','paused','cancelling') }).Count -gt 0
+}
+
+function Get-VerifiedDashboardApiProcessId([object]$Health){
+    $candidateId = 0
+    if($Health -and $Health.PSObject.Properties['processId']){
+        $candidateId = [int]$Health.processId
+    } else {
+        $listener = Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $ApiPort -ErrorAction SilentlyContinue | Select-Object -First 1
+        if($listener){ $candidateId = [int]$listener.OwningProcess }
+    }
+    if($candidateId -le 0){ return $null }
+    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $candidateId" -ErrorAction SilentlyContinue
+    if(-not $processInfo){ return $null }
+    $commandLine = [string]$processInfo.CommandLine
+    $portPattern = [regex]::Escape([string]$ApiPort)
+    if($commandLine -notmatch '(?i)(?:^|\s)-m\s+src_auto\.dashboard_server(?:\s|$)' -or $commandLine -notmatch "(?i)(?:^|\s)--port\s+$portPattern(?:\s|$)"){
+        return $null
+    }
+    return $candidateId
+}
+
+$existingApiHealth = Get-DashboardApiHealth
+if($existingApiHealth){
+    $consentProperty = $existingApiHealth.PSObject.Properties['remoteAiSessionEnabled']
+    $consentMatches = $consentProperty -and ([bool]$consentProperty.Value -eq $remoteAIEnabled)
+    if(-not $consentMatches){
+        try {
+            if(Test-DashboardHasActiveWork){
+                Write-Host '已有 Dashboard 正在执行任务，且其云端 AI 授权与本次选择不一致。为保护任务和授权状态，本次启动已停止。请先在原 Dashboard 中停止任务后重试。' -ForegroundColor Red
+                exit 10
+            }
+        } catch {
+            Write-Host "无法确认旧 Dashboard 是否正在执行任务，已拒绝复用或终止：$($_.Exception.Message)" -ForegroundColor Red
+            exit 10
+        }
+        $existingApiProcessId = Get-VerifiedDashboardApiProcessId $existingApiHealth
+        if(-not $existingApiProcessId){
+            Write-Host '已有 Dashboard API 的授权状态与本次选择不一致，但无法安全确认其进程身份。请关闭旧 Dashboard 服务后重试。' -ForegroundColor Red
+            exit 10
+        }
+        Write-Host '检测到旧 Dashboard API 的云端 AI 授权与本次选择不一致，正在安全重启本地控制接口……' -ForegroundColor Cyan
+        Stop-Process -Id $existingApiProcessId -ErrorAction Stop
+        for($attempt = 0; $attempt -lt 20; $attempt++){
+            Start-Sleep -Milliseconds 100
+            if(-not (Test-DashboardApiReady)){ break }
+        }
+        if(Test-DashboardApiReady){
+            Write-Host '旧 Dashboard API 未能安全停止，本次启动已取消。' -ForegroundColor Red
+            exit 10
+        }
+        $existingApiHealth = $null
+    } else {
+        Write-Host '现有 Dashboard API 的云端 AI 授权与本次选择一致，安全复用该本机服务。' -ForegroundColor DarkGray
+    }
+}
+
+if(-not $existingApiHealth){
     $apiStdoutLog = Join-Path $logDirectory 'dashboard-api.stdout.log'
     $apiStderrLog = Join-Path $logDirectory 'dashboard-api.stderr.log'
     try {
@@ -134,7 +201,21 @@ $baseUrl = "http://127.0.0.1:$Port/"
 $url = if($InitialPage -eq 'overview'){ $baseUrl } else { $baseUrl + '?page=' + $InitialPage }
 $webArguments = @('-m', 'src_auto.dashboard_web', '--port', "$Port", '--api-port', "$ApiPort")
 
+function Test-DashboardWebReady {
+    try {
+        $session = Invoke-RestMethod -Uri ($baseUrl + 'api/session') -TimeoutSec 2
+        return -not [string]::IsNullOrWhiteSpace([string]$session.token)
+    } catch {
+        return $false
+    }
+}
+
 if($Foreground){
+    if(Test-DashboardWebReady){
+        Write-Host "Dashboard 已在运行并将继续复用：$url" -ForegroundColor Green
+        if(-not $NoBrowser){ Start-Process -FilePath $url | Out-Null }
+        exit 0
+    }
     Write-Host "Dashboard 正在前台运行：$url" -ForegroundColor Green
     Write-Host '仅监听 127.0.0.1；按 Ctrl+C 停止。' -ForegroundColor Yellow
     try {
@@ -149,39 +230,42 @@ if($Foreground){
 $stdoutLog = Join-Path $logDirectory 'dashboard-web.stdout.log'
 $stderrLog = Join-Path $logDirectory 'dashboard-web.stderr.log'
 
-try {
-    $server = Start-Process -FilePath $pythonExe -ArgumentList $webArguments -WorkingDirectory $ProjectRoot -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
-} catch {
-    if($apiStartedHere -and $apiServer -and -not $apiServer.HasExited){ Stop-Process -Id $apiServer.Id -ErrorAction SilentlyContinue }
-    Write-Host "Dashboard 进程启动失败：$($_.Exception.Message)" -ForegroundColor Red
-    exit 8
-}
-
-$ready = $false
-for($attempt = 0; $attempt -lt 30; $attempt++){
-    Start-Sleep -Milliseconds 250
+$webReused = Test-DashboardWebReady
+$server = $null
+if(-not $webReused){
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 2
-        if($response.StatusCode -ge 200 -and $response.StatusCode -lt 500){
-            $ready = $true
-            break
-        }
+        $server = Start-Process -FilePath $pythonExe -ArgumentList $webArguments -WorkingDirectory $ProjectRoot -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -WindowStyle Hidden -PassThru
     } catch {
-        if($server.HasExited){ break }
+        if($apiStartedHere -and $apiServer -and -not $apiServer.HasExited){ Stop-Process -Id $apiServer.Id -ErrorAction SilentlyContinue }
+        Write-Host "Dashboard 进程启动失败：$($_.Exception.Message)" -ForegroundColor Red
+        exit 8
     }
 }
 
+$ready = $webReused
+for($attempt = 0; $attempt -lt 30; $attempt++){
+    if($ready){ break }
+    Start-Sleep -Milliseconds 250
+    if(Test-DashboardWebReady){ $ready = $true; break }
+    if($server -and $server.HasExited){ break }
+}
+
 if(-not $ready){
-    if(-not $server.HasExited){ Stop-Process -Id $server.Id -ErrorAction SilentlyContinue }
+    if($server -and -not $server.HasExited){ Stop-Process -Id $server.Id -ErrorAction SilentlyContinue }
     if($apiStartedHere -and $apiServer -and -not $apiServer.HasExited){ Stop-Process -Id $apiServer.Id -ErrorAction SilentlyContinue }
     Write-Host "Dashboard 未在规定时间内就绪；请查看 $stderrLog" -ForegroundColor Red
     exit 9
 }
 
 Write-Host "Dashboard 已启动：$url" -ForegroundColor Green
-Write-Host "进程 ID：$($server.Id)；日志：$logDirectory" -ForegroundColor DarkGray
+if($webReused){ Write-Host "已复用现有 Dashboard 网页服务；日志：$logDirectory" -ForegroundColor DarkGray }
+else { Write-Host "进程 ID：$($server.Id)；日志：$logDirectory" -ForegroundColor DarkGray }
 Write-Host "本地控制接口：http://127.0.0.1:$ApiPort（仅回环；靶场必须由页面人工点击启动）" -ForegroundColor DarkGray
-Write-Host '网络接触：仅本机回环；不会自动启动靶场、不会访问真实目标、不会调用远程 AI。' -ForegroundColor Yellow
+if($remoteAIEnabled){
+    Write-Host '网络接触：靶场仅本机回环；不会自动访问真实目标或调用远程 AI。只有人工在系统设置中再次确认后才会执行连接测试。' -ForegroundColor Yellow
+} else {
+    Write-Host '网络接触：仅本机回环；不会自动启动靶场、不会访问真实目标；本次会话不会调用远程 AI。' -ForegroundColor Yellow
+}
 
 if(-not $NoBrowser){
     Start-Process -FilePath $url | Out-Null

@@ -185,6 +185,10 @@ class DashboardServerTests(unittest.TestCase):
         status, headers, payload = self.request("/health")
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["service"], "src-auto-dashboard-api")
+        self.assertTrue(payload["loopbackOnly"])
+        self.assertTrue(payload["remoteAiSessionEnabled"])
+        self.assertGreater(payload["processId"], 0)
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertNotIn("test-session-token", json.dumps(payload))
 

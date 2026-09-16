@@ -174,7 +174,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if not self._preflight():
             return
         if self.path == "/health":
-            self._write_json(200, {"status": "ok", "service": "src-auto-dashboard-api", "loopbackOnly": True})
+            self._write_json(200, {
+                "status": "ok",
+                "service": "src-auto-dashboard-api",
+                "loopbackOnly": True,
+                "processId": os.getpid(),
+                "remoteAiSessionEnabled": self.server.remote_ai_session_enabled,
+            })
             return
         if self.path == "/api/session":
             self._write_json(200, {"token": self.server.session_token, "expires": "process"})
