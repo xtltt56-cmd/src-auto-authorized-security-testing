@@ -114,28 +114,42 @@ class DashboardWorkspace:
         if report_path.is_symlink():
             raise ValueError('report_root_symlink_not_allowed')
         report_root = self._inside(report_path)
-        files = []
+        files, warnings = [], []
         if not report_root.exists():
-            return report_root, files
+            return report_root, files, warnings
         for directory, names, filenames in os.walk(report_root, topdown=True, followlinks=False):
             current = Path(directory)
-            names[:] = [name for name in names if not (current / name).is_symlink()
-                        and (current / name).resolve().parent == current.resolve()]
+            safe_names = []
+            for name in names:
+                path = current / name
+                try:
+                    if path.is_symlink() or path.resolve().parent != current.resolve():
+                        if not warnings:
+                            warnings.append('部分报告无法读取或路径不在允许范围')
+                        continue
+                    safe_names.append(name)
+                except OSError:
+                    if not warnings:
+                        warnings.append('部分报告无法读取或路径不在允许范围')
+            names[:] = safe_names
             for filename in filenames:
                 path = current / filename
-                if path.suffix.lower() not in _REPORT_SUFFIXES or path.is_symlink():
+                if path.suffix.lower() not in _REPORT_SUFFIXES:
                     continue
                 try:
+                    if path.is_symlink():
+                        raise ValueError('report_symlink_not_allowed')
                     self._inside(path, report_root)
                     files.append((path.stat().st_mtime, path))
                 except (OSError, ValueError):
-                    continue
+                    if not warnings:
+                        warnings.append('部分报告无法读取或路径不在允许范围')
         files.sort(key=lambda item: item[0], reverse=True)
-        return report_root, files
+        return report_root, files, warnings
 
     def artifact_summary(self):
         try:
-            _, files = self._report_files()
+            _, files, _ = self._report_files()
             report_count = min(len(files), 30)
         except (OSError, ValueError):
             report_count = 0
@@ -173,7 +187,8 @@ class DashboardWorkspace:
     def artifacts(self):
         reports, findings, warnings = [], [], []
         try:
-            report_root, files = self._report_files()
+            report_root, files, report_warnings = self._report_files()
+            warnings.extend(report_warnings)
         except ValueError:
             return dict(reports=[], findings=[], warnings=['报告目录是符号链接，已拒绝读取'])
         if report_root.exists():
