@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from src_auto.dashboard_server import create_server, open_ai_provider_settings, start_docker_desktop
@@ -29,6 +30,18 @@ class FakeService:
     def submit_all(self, action):
         self.calls.append(("all", action))
         return {"accepted": True, "action": action}
+
+    def submit_detection(self, lab_id):
+        if lab_id not in self.lab_ids:
+            raise ValueError("unknown_lab_id")
+        self.calls.append((lab_id, "detect"))
+        return {"accepted": True, "labId": lab_id, "action": "detect"}
+
+    def cancel_detection(self, lab_id):
+        if lab_id not in self.lab_ids:
+            raise ValueError("unknown_lab_id")
+        self.calls.append((lab_id, "detect-stop"))
+        return {"accepted": True, "labId": lab_id, "action": "detect-stop"}
 
 
 class FakeProviderSettings:
@@ -59,6 +72,32 @@ class DashboardServerTests(unittest.TestCase):
             self.assertEqual(loaded['drafts'][0]['id'], result['id'])
             self.assertEqual(self.request('/api/review', token='test-session-token')[2]['entries'][0]['status'], 'candidate_only')
             self.assertEqual(self.request('/api/artifacts')[0], 401)
+
+    def test_full_report_download_requires_authentication_and_uses_a_safe_report_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'reports').mkdir()
+            marker = 'FULL-CONTENT-AFTER-PREVIEW'
+            (root / 'reports' / 'long.md').write_text('x' * 70000 + marker, encoding='utf-8')
+            self.server.workspace = DashboardWorkspace(root)
+            report_id = quote('reports/long.md', safe='')
+
+            self.assertEqual(self.request('/api/reports/' + report_id)[0], 401)
+            status, _, payload = self.request('/api/reports/' + report_id, token='test-session-token')
+            self.assertEqual(status, 200)
+            self.assertIn(marker, payload['content'])
+            self.assertEqual(self.request('/api/reports/' + quote('../private.txt', safe=''), token='test-session-token')[0], 400)
+
+    def test_artifact_summary_requires_authentication(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'reports').mkdir()
+            (root / 'reports' / 'one.md').write_text('one', encoding='utf-8')
+            self.server.workspace = DashboardWorkspace(root)
+            self.assertEqual(self.request('/api/artifacts/summary')[0], 401)
+            status, _, payload = self.request('/api/artifacts/summary', token='test-session-token')
+            self.assertEqual(status, 200)
+            self.assertEqual(payload, {'candidateCount': 0, 'reportCount': 1})
 
     def test_native_dialog_uses_windows_powershell_module_path(self):
         with patch('src_auto.dashboard_server._settings_process', None), patch('src_auto.dashboard_server.subprocess.Popen') as launch:
@@ -157,6 +196,25 @@ class DashboardServerTests(unittest.TestCase):
         self.assertEqual(status, 202)
         self.assertTrue(payload["accepted"])
         self.assertEqual(self.service.calls, [("dvwa", "start")])
+
+    def test_detection_routes_require_token_and_accept_only_fixed_local_labs(self):
+        self.assertEqual(self.request("/api/labs/juice-shop/detect", method="POST", body={})[0], 401)
+        status, _, payload = self.request(
+            "/api/labs/juice-shop/detect", method="POST", token="test-session-token", body={}
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(payload["action"], "detect")
+        status, _, payload = self.request(
+            "/api/labs/juice-shop/detect-stop", method="POST", token="test-session-token", body={}
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(payload["action"], "detect-stop")
+        self.assertEqual(self.service.calls, [("juice-shop", "detect"), ("juice-shop", "detect-stop")])
+        status, _, payload = self.request(
+            "/api/labs/not-known/detect", method="POST", token="test-session-token", body={}
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "unknown_lab_id")
 
     def test_unknown_route_and_lab_fail_closed(self):
         status, _, payload = self.request("/api/labs/not-known/start", method="POST", token="test-session-token", body={})

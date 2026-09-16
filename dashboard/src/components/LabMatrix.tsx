@@ -6,7 +6,9 @@ type LabMatrixProps = {
   labs: LabStatus[]
   onOpenLabTask: (taskId: string) => void
   onAction: (labId: string, action: 'start' | 'stop' | 'reset') => Promise<void>
+  onDetectionAction: (labId: string, action: 'start' | 'stop') => Promise<void>
   pendingLabId?: string | null
+  pendingDetectionLabId?: string | null
 }
 
 const healthToState = (health: LabStatus['health']) => {
@@ -17,7 +19,7 @@ const healthToState = (health: LabStatus['health']) => {
   return 'idle' as const
 }
 
-export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }: LabMatrixProps) {
+export function LabMatrix({ labs, onOpenLabTask, onAction, onDetectionAction, pendingLabId = null, pendingDetectionLabId = null }: LabMatrixProps) {
   return (
     <div className="surface-panel lab-matrix-panel">
       <div className="panel-header">
@@ -43,7 +45,9 @@ export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }
             </tr>
           </thead>
           <tbody>
-            {labs.map((lab) => (
+            {labs.map((lab) => {
+              const detectionBusy = lab.detectionOperation === 'queued' || lab.detectionOperation === 'running' || lab.detectionOperation === 'cancelling'
+              return (
               <tr key={lab.id}>
                 <th scope="row">
                   <button className="lab-name-button" type="button" onClick={() => onOpenLabTask(lab.taskId)}>
@@ -61,17 +65,26 @@ export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }
                       查看任务 <ExternalLink size={14} aria-hidden="true" />
                     </button>
                     {lab.health === 'stopped' || lab.health === 'blocked' || lab.health === 'unavailable' ? (
-                      <button className="table-link" type="button" aria-label={`启动 ${lab.name}`} onClick={() => void onAction(lab.id, 'start')} disabled={pendingLabId === lab.id || lab.health === 'unavailable'}>
+                      <button className="table-link" type="button" aria-label={`启动 ${lab.name}`} onClick={() => void onAction(lab.id, 'start')} disabled={pendingLabId === lab.id || lab.health === 'unavailable' || detectionBusy}>
                         <Play size={14} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '启动'}
                       </button>
                     ) : (
-                      <button className="table-link table-link-danger" type="button" aria-label={`停止 ${lab.name}`} onClick={() => void onAction(lab.id, 'stop')} disabled={pendingLabId === lab.id}>
+                      <button className="table-link table-link-danger" type="button" aria-label={`停止 ${lab.name}`} onClick={() => void onAction(lab.id, 'stop')} disabled={pendingLabId === lab.id || detectionBusy}>
                         <Square size={13} aria-hidden="true" /> {pendingLabId === lab.id ? '处理中' : '停止'}
                       </button>
                     )}
-                    <button className="table-link" type="button" aria-label={`重置 ${lab.name}`} onClick={() => void onAction(lab.id, 'reset')} disabled={pendingLabId === lab.id || lab.health === 'unavailable'}>
+                    <button className="table-link" type="button" aria-label={`重置 ${lab.name}`} onClick={() => void onAction(lab.id, 'reset')} disabled={pendingLabId === lab.id || lab.health === 'unavailable' || detectionBusy}>
                       <RefreshCw size={14} aria-hidden="true" /> 重置
                     </button>
+                    {detectionBusy ? (
+                      <button className="table-link table-link-danger" type="button" aria-label={`停止检测 ${lab.name}`} onClick={() => void onDetectionAction(lab.id, 'stop')} disabled={pendingDetectionLabId === lab.id}>
+                        <Square size={13} aria-hidden="true" /> {pendingDetectionLabId === lab.id ? '处理中' : '停止检测'}
+                      </button>
+                    ) : (
+                      <button className="table-link" type="button" aria-label={`检测 ${lab.name}`} onClick={() => void onDetectionAction(lab.id, 'start')} disabled={pendingDetectionLabId === lab.id || lab.health !== 'healthy' || pendingLabId === lab.id}>
+                        <Play size={14} aria-hidden="true" /> {pendingDetectionLabId === lab.id ? '处理中' : lab.detectionOperation === 'completed' ? '再次检测' : '开始检测'}
+                      </button>
+                    )}
                     {lab.health === 'healthy' && lab.openUrl && /^http:\/\/127\.0\.0\.1:\d+(?:\/|$)/.test(lab.openUrl) ? (
                       <a className="table-link" href={lab.openUrl} target="_blank" rel="noreferrer" aria-label={`打开 ${lab.name} 页面`}>
                         打开页面 <ExternalLink size={14} aria-hidden="true" />
@@ -80,7 +93,7 @@ export function LabMatrix({ labs, onOpenLabTask, onAction, pendingLabId = null }
                   </div>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>

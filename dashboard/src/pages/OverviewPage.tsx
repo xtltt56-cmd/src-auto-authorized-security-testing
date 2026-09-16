@@ -1,5 +1,5 @@
 import { ArrowRight, FileSearch, LockKeyhole, PlayCircle, ShieldCheck, TestTube2 } from 'lucide-react'
-import type { DashboardSnapshot } from '../lib/types'
+import type { ArtifactSummary, DashboardSnapshot } from '../lib/types'
 import type { NavKey } from '../components/AppShell'
 import { MetricStrip } from '../components/MetricStrip'
 import { ProgressBar } from '../components/ProgressBar'
@@ -9,16 +9,17 @@ type OverviewPageProps = {
   snapshot: DashboardSnapshot
   onNavigate: (key: NavKey) => void
   onOpenTask: (taskId: string) => void
+  artifactSummary?: ArtifactSummary
 }
 
-export function OverviewPage({ snapshot, onNavigate, onOpenTask }: OverviewPageProps) {
+export function OverviewPage({ snapshot, onNavigate, onOpenTask, artifactSummary }: OverviewPageProps) {
   const activeTask = snapshot.tasks.find((task) => task.state === 'running' || task.state === 'paused') ?? snapshot.tasks[0]
   const totalCandidates = snapshot.tasks.reduce((sum, task) => sum + task.counters.candidates, 0)
   const totalBlocked = snapshot.tasks.reduce((sum, task) => sum + task.counters.blocked, 0)
   const metrics = [
     { label: '当前任务', value: snapshot.tasks.filter((task) => task.state === 'running' || task.state === 'paused').length },
     { label: '入口总数', value: activeTask?.counters.endpoints ?? 0 },
-    { label: '候选待复核', value: totalCandidates },
+    { label: '历史候选记录', value: artifactSummary?.candidateCount ?? totalCandidates },
     { label: '策略阻止', value: totalBlocked },
   ]
 

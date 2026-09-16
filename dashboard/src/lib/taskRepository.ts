@@ -1,5 +1,5 @@
 import { fixtureSnapshot } from './fixtures'
-import type { AIConnectionResult, AIProviderSettings, DashboardSnapshot, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
+import type { AIConnectionResult, AIProviderSettings, ArtifactSummary, DashboardSnapshot, ReportFile, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -24,6 +24,8 @@ export interface TaskRepository {
   saveDraft(draft: TargetDraft): Promise<TargetDraftResult>
   reviewTargets(): Promise<ReviewEntry[]>
   getArtifacts(): Promise<Pick<DashboardSnapshot, 'findings' | 'reports'> & { warnings?: string[] }>
+  getArtifactSummary(): Promise<ArtifactSummary>
+  downloadReport(reportId: string): Promise<ReportFile>
   getDashboardSnapshot(): Promise<DashboardSnapshot>
   getTask(taskId: string): Promise<TaskSummary>
   getEvents(taskId: string): Promise<TaskEvent[]>
@@ -33,6 +35,8 @@ export interface TaskRepository {
   startLab(labId: string): Promise<void>
   stopLab(labId: string): Promise<void>
   resetLab(labId: string): Promise<void>
+  startLabDetection(labId: string): Promise<void>
+  stopLabDetection(labId: string): Promise<void>
   startAllLabs(): Promise<void>
   stopAllLabs(): Promise<void>
   startDockerDesktop(): Promise<void>
@@ -79,6 +83,12 @@ export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fix
     },
     async reviewTargets() { return [] },
     async getArtifacts() { return { findings: clone(state.findings), reports: clone(state.reports) } },
+    async getArtifactSummary() { return { candidateCount: state.findings.length, reportCount: state.reports.length } },
+    async downloadReport(reportId) {
+      const report = state.reports.find(item => item.id === reportId)
+      if (!report) throw new Error('REPORT_NOT_FOUND')
+      return { ...clone(report), truncated: false }
+    },
     async getDashboardSnapshot() {
       return clone(state)
     },
@@ -131,6 +141,42 @@ export const createFixtureRepository = (initialSnapshot: DashboardSnapshot = fix
     async resetLab(labId) {
       await this.stopLab(labId)
       await this.startLab(labId)
+    },
+    async startLabDetection(labId) {
+      const lab = state.labs.find((item) => item.id === labId)
+      if (!lab) throw new Error(`LAB_NOT_FOUND:${labId}`)
+      if (lab.health !== 'healthy') throw new Error('LAB_NOT_READY')
+      const task = taskOrThrow(lab.taskId)
+      lab.detectionOperation = 'completed'
+      lab.stage = '检测完成'
+      lab.lastRunId = `fixture-${labId}`
+      lab.candidates = Math.max(1, lab.candidates)
+      if (!lab.reportId) {
+        lab.reportId = `report-${labId}`
+        state.reports.push({
+          id: lab.reportId,
+          name: `${labId}-detection.md`,
+          relativePath: `reports/local/${labId}-detection.md`,
+          sizeBytes: 120,
+          content: `# ${lab.name} 本地检测\n\n真实回环检测夹具已完成；候选仍需人工复核。`,
+          redacted: true,
+        })
+      }
+      task.state = 'completed'
+      task.stage = '检测完成'
+      task.progress = 100
+      task.counters = { ...task.counters, endpoints: Math.max(1, task.counters.endpoints), candidates: lab.candidates }
+      task.networkContact = 'loopback'
+      append(task, 'success', task.stage, '真实回环检测已完成；报告已关联到当前任务')
+    },
+    async stopLabDetection(labId) {
+      const lab = state.labs.find((item) => item.id === labId)
+      if (!lab) throw new Error(`LAB_NOT_FOUND:${labId}`)
+      const task = taskOrThrow(lab.taskId)
+      lab.detectionOperation = 'cancelled'
+      task.state = 'cancelled'
+      task.stage = '已取消'
+      append(task, 'warning', task.stage, '检测已在安全检查点停止')
     },
     async startAllLabs() {
       for (const lab of state.labs) await this.startLab(lab.id)
@@ -233,6 +279,8 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     saveDraft: (draft) => request<TargetDraftResult>('/drafts', { method: 'POST', body: JSON.stringify(draft) }),
     async reviewTargets() { return (await request<{ entries: ReviewEntry[] }>('/review')).entries },
     getArtifacts: () => request('/artifacts'),
+    getArtifactSummary: () => request('/artifacts/summary'),
+    downloadReport: (reportId) => request(`/reports/${encodeURIComponent(reportId)}`),
     async getDashboardSnapshot() {
       return request<DashboardSnapshot>('/dashboard')
     },
@@ -256,6 +304,8 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
     startLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/start`),
     stopLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/stop`),
     resetLab: (labId) => action(`/labs/${encodeURIComponent(labId)}/reset`),
+    startLabDetection: (labId) => action(`/labs/${encodeURIComponent(labId)}/detect`),
+    stopLabDetection: (labId) => action(`/labs/${encodeURIComponent(labId)}/detect-stop`),
     startAllLabs: () => action('/labs/start-all'),
     stopAllLabs: () => action('/labs/stop-all'),
     startDockerDesktop: () => action('/dependencies/docker/start'),

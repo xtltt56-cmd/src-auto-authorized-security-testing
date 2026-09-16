@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { vi } from 'vitest'
 import { App } from '../App'
 import { createFixtureRepository } from '../lib/taskRepository'
 
@@ -103,6 +104,37 @@ describe('dashboard pages', () => {
     expect(screen.getByRole('heading', { name: 'VAmPI · 本地任务' })).toBeVisible()
   })
 
+  it('starts a real local detection from a healthy lab and exposes its report', async () => {
+    const user = userEvent.setup()
+    const repository = createFixtureRepository()
+    const detect = vi.spyOn(repository, 'startLabDetection')
+    render(<App repository={repository} />)
+
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: '检测 Juice Shop' }))
+
+    expect(detect).toHaveBeenCalledWith('juice-shop')
+    expect(await screen.findByText(/检测任务已提交/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '查看 Juice Shop 任务' }))
+    expect((await screen.findAllByText('检测完成')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/真实回环检测已完成/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '查看报告' }))
+    expect(await screen.findByRole('heading', { name: '报告查看器' })).toBeVisible()
+  })
+
+  it('opens the report associated with the selected lab task', async () => {
+    const user = userEvent.setup()
+    render(<App repository={createFixtureRepository()} />)
+
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    await user.click(screen.getByRole('button', { name: '查看 Juice Shop 任务' }))
+    await user.click(screen.getByRole('button', { name: '查看报告' }))
+
+    expect(await screen.findByRole('heading', { name: '报告查看器' })).toBeVisible()
+    expect(screen.getByLabelText('报告内容：juice-shop-summary.json')).toHaveTextContent('127.0.0.1:3000')
+    expect(screen.queryByLabelText('报告内容：dvwa-adjudication.md')).not.toBeInTheDocument()
+  })
+
   it('opens the matching task when a lab name is selected', async () => {
     const user = userEvent.setup()
     render(<App repository={createFixtureRepository()} />)
@@ -158,5 +190,27 @@ describe('dashboard pages', () => {
     expect(await screen.findByRole('heading', { name: '报告查看器' })).toBeVisible()
     expect(screen.getByText('脚本不会执行')).toBeVisible()
     expect(screen.getByLabelText('报告内容：juice-shop-summary.json')).toHaveTextContent('local-fixture')
+  })
+
+  it('downloads the complete report when the visible preview is truncated', async () => {
+    const repository = createFixtureRepository()
+    const report = {
+      id: 'reports/long.md', name: 'long.md', relativePath: 'reports/long.md', sizeBytes: 70000,
+      content: 'preview only', redacted: true as const, truncated: true,
+    }
+    repository.getArtifacts = vi.fn().mockResolvedValue({ findings: [], reports: [report] })
+    repository.downloadReport = vi.fn().mockResolvedValue({ ...report, content: 'complete redacted content', truncated: false })
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:report') })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    render(<App repository={repository} />)
+
+    await userEvent.click(screen.getByRole('button', { name: '候选与报告' }))
+    await userEvent.click(await screen.findByRole('button', { name: '查看 long.md' }))
+    await userEvent.click(screen.getByRole('button', { name: '下载完整脱敏报告' }))
+
+    expect(repository.downloadReport).toHaveBeenCalledWith('reports/long.md')
+    expect(click).toHaveBeenCalled()
+    click.mockRestore()
   })
 })

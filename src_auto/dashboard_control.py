@@ -57,6 +57,7 @@ class DashboardControlService:
         executor: Optional[Any] = None,
         clock: Optional[Callable[[], float]] = None,
         dependency_check: Optional[Callable[[], Tuple[bool, str]]] = None,
+        detection_runner: Optional[Callable[..., Mapping[str, Any]]] = None,
     ) -> None:
         self.manager = manager
         self._clock = clock or time.monotonic
@@ -65,8 +66,17 @@ class DashboardControlService:
         self._owns_executor = executor is None
         self._lock = threading.RLock()
         self._operations: Dict[str, Dict[str, Any]] = {}
+        self._detections: Dict[str, Dict[str, Any]] = {}
         self._events = deque(maxlen=200)
         self._next_event_id = 1
+        if detection_runner is not None:
+            self._detection_runner = detection_runner
+        elif getattr(manager, "project_root", None) is not None:
+            from .dashboard_detection import LocalDetectionWorkflow
+
+            self._detection_runner = LocalDetectionWorkflow(manager.project_root, manager).run
+        else:
+            self._detection_runner = None
 
     @property
     def lab_ids(self):
@@ -76,6 +86,8 @@ class DashboardControlService:
         with self._lock:
             for operation in self._operations.values():
                 if operation['action'] != 'stop': operation['cancel'].set()
+            for detection in self._detections.values():
+                detection['cancel'].set()
         if self._owns_executor:
             self._executor.shutdown(wait=False)
 
@@ -106,6 +118,9 @@ class DashboardControlService:
         lab_id = self._validate(lab_id, action)
         action = str(action).strip().lower()
         with self._lock:
+            detection = self._detections.get(lab_id)
+            if detection and detection.get("state") in ("queued", "running", "cancelling"):
+                raise RuntimeError("detection_in_progress")
             current = self._operations.get(lab_id)
             if current and current.get("state") in ("queued", "running"):
                 if action != "stop":
@@ -143,6 +158,122 @@ class DashboardControlService:
                 # for other labs and report exactly which ones were accepted.
                 skipped.append(lab_id)
         return {"accepted": bool(accepted), "action": action, "operations": accepted, "skipped": skipped}
+
+    def submit_detection(self, lab_id: str) -> Mapping[str, Any]:
+        lab_id = self.manager.spec(lab_id).lab_id
+        if self._detection_runner is None:
+            raise RuntimeError("detection_runner_unavailable")
+        docker_ready, _message = self._dependency_check()
+        if not docker_ready:
+            raise RuntimeError("docker_not_ready")
+        status = self.manager.status(lab_id)
+        if str(status.get("status", "")) != "READY":
+            raise RuntimeError("lab_not_ready")
+        with self._lock:
+            lifecycle = self._operations.get(lab_id)
+            if lifecycle and lifecycle.get("state") in ("queued", "running"):
+                raise RuntimeError("lab_operation_in_progress")
+            current = self._detections.get(lab_id)
+            if current and current.get("state") in ("queued", "running", "cancelling"):
+                raise RuntimeError("detection_in_progress")
+            operation = {
+                "lab_id": lab_id,
+                "action": "detect",
+                "state": "queued",
+                "stage": "检测排队",
+                "progress": 3,
+                "started": self._clock(),
+                "finished": None,
+                "message": "检测任务已进入本地队列",
+                "counters": {"endpoints": 0, "api": 0, "candidates": 0, "blocked": 0, "errors": 0},
+                "cancel": threading.Event(),
+                "done": threading.Event(),
+                "run_id": "",
+                "report_id": "",
+                "network_contact": "none",
+            }
+            self._detections[lab_id] = operation
+        self._append_event(lab_id, "info", "检测排队", "真实回环检测已进入本地执行队列")
+        self._executor.submit(self._execute_detection, operation)
+        return {"accepted": True, "labId": lab_id, "action": "detect", "taskId": "run-lab-{}".format(lab_id)}
+
+    def cancel_detection(self, lab_id: str) -> Mapping[str, Any]:
+        lab_id = self.manager.spec(lab_id).lab_id
+        with self._lock:
+            operation = self._detections.get(lab_id)
+            if not operation or operation.get("state") not in ("queued", "running", "cancelling"):
+                raise RuntimeError("detection_not_running")
+            operation["cancel"].set()
+            operation["state"] = "cancelling"
+            operation["stage"] = "正在停止检测"
+            operation["message"] = "已请求在下一个安全检查点停止"
+        self._append_event(lab_id, "warning", "停止检测", "已请求在下一个安全检查点停止检测")
+        return {"accepted": True, "labId": lab_id, "action": "detect-stop", "taskId": "run-lab-{}".format(lab_id)}
+
+    def _execute_detection(self, operation: Dict[str, Any]) -> None:
+        try:
+            self._perform_detection(operation)
+        finally:
+            operation["done"].set()
+
+    def _perform_detection(self, operation: Dict[str, Any]) -> None:
+        lab_id = operation["lab_id"]
+        with self._lock:
+            if operation["cancel"].is_set():
+                operation.update(state="cancelled", stage="已取消", finished=self._clock(), message="检测已取消")
+                self._append_event(lab_id, "warning", "已取消", "检测在网络接触前已取消")
+                return
+            operation.update(state="running", stage="范围预检", progress=5, message="正在校验固定回环范围")
+
+        def progress(stage, value, counters, message, level="info"):
+            with self._lock:
+                operation["stage"] = str(stage)[:80]
+                operation["progress"] = max(0, min(100, int(value)))
+                operation["message"] = str(message)[:200]
+                if isinstance(counters, Mapping):
+                    operation["counters"] = {
+                        key: max(0, int(counters.get(key, 0)))
+                        for key in ("endpoints", "api", "candidates", "blocked", "errors")
+                    }
+            self._append_event(lab_id, str(level), str(stage)[:80], str(message)[:200])
+
+        try:
+            result = dict(self._detection_runner(lab_id, operation["cancel"], progress))
+            status = str(result.get("status", "failed"))
+            with self._lock:
+                operation["finished"] = self._clock()
+                operation["run_id"] = str(result.get("runId", ""))[:100]
+                operation["report_id"] = str(result.get("reportId", ""))[:500]
+                operation["network_contact"] = str(result.get("networkContact", "none"))
+                if status == "completed":
+                    operation.update(state="completed", stage="检测完成", progress=100, message="检测完成，等待人工复核")
+                    operation["counters"].update(
+                        endpoints=max(0, int(result.get("endpointCount", operation["counters"]["endpoints"]))),
+                        api=max(0, int(result.get("apiCount", operation["counters"]["api"]))),
+                        candidates=max(0, int(result.get("candidateCount", operation["counters"]["candidates"]))),
+                        blocked=max(0, int(result.get("blockedCount", operation["counters"]["blocked"]))),
+                        errors=max(0, int(result.get("errorCount", operation["counters"]["errors"]))),
+                    )
+                elif status == "cancelled":
+                    operation.update(state="cancelled", stage="已取消", message="检测已在安全检查点停止")
+                elif status == "blocked":
+                    operation.update(state="failed", stage="检测受阻", message="检测因本地依赖或范围检查未通过而停止")
+                    operation["counters"]["blocked"] += 1
+                else:
+                    operation.update(state="failed", stage="检测失败", message="检测未完成，请查看脱敏事件")
+                    operation["counters"]["errors"] += 1
+            if status == "cancelled":
+                self._append_event(lab_id, "warning", "已取消", "检测已在安全检查点停止")
+            elif status != "completed":
+                self._append_event(lab_id, "danger", operation["stage"], operation["message"])
+        except Exception as exc:
+            with self._lock:
+                operation.update(
+                    state="failed", stage="检测失败", finished=self._clock(),
+                    message="本地检测异常（{}）".format(exc.__class__.__name__),
+                )
+                operation["counters"]["errors"] += 1
+            self._append_event(lab_id, "danger", "检测失败", operation["message"])
 
     def _execute(self, operation: Dict[str, Any]) -> None:
         try:
@@ -205,8 +336,23 @@ class DashboardControlService:
                 raw = {"status": "NOT_FOUND"}
             with self._lock:
                 operation = dict(self._operations.get(lab_id, {}))
+                detection = dict(self._detections.get(lab_id, {}))
             mapped = _map_state(str(raw.get("status", "NOT_FOUND")), operation, docker_ready)
             elapsed = _elapsed_seconds(operation, now)
+            counters = {"endpoints": 0, "api": 0, "candidates": 0, "blocked": 0, "errors": 1 if mapped["task"] == "failed" else 0}
+            detection_state = str(detection.get("state", ""))
+            if detection and operation.get("state") not in ("queued", "running", "failed"):
+                detection_map = {
+                    "queued": "queued", "running": "running", "cancelling": "running",
+                    "completed": "completed", "failed": "failed", "cancelled": "cancelled",
+                }
+                mapped["task"] = detection_map.get(detection_state, mapped["task"])
+                mapped["stage"] = str(detection.get("stage") or mapped["stage"])
+                mapped["progress"] = max(0, min(100, int(detection.get("progress", 0))))
+                elapsed = _elapsed_seconds(detection, now)
+                counters.update(detection.get("counters", {}))
+                if mapped["task"] == "failed":
+                    counters["errors"] = max(1, int(counters.get("errors", 0)))
             task_id = "run-lab-{}".format(lab_id)
             tasks.append(
                 {
@@ -217,8 +363,8 @@ class DashboardControlService:
                     "stage": mapped["stage"],
                     "progress": mapped["progress"],
                     "elapsedSeconds": elapsed,
-                    "counters": {"endpoints": 0, "api": 0, "candidates": 0, "blocked": 0, "errors": 1 if mapped["task"] == "failed" else 0},
-                    "networkContact": "loopback" if mapped["health"] in ("healthy", "starting") else "none",
+                    "counters": counters,
+                    "networkContact": "loopback" if detection.get("network_contact") == "loopback" or mapped["health"] in ("healthy", "starting") else "none",
                     "updatedAt": datetime.now().isoformat(),
                 }
             )
@@ -231,9 +377,12 @@ class DashboardControlService:
                     "health": mapped["health"],
                     "stage": mapped["stage"],
                     "durationSeconds": elapsed,
-                    "candidates": 0,
+                    "candidates": int(counters.get("candidates", 0)),
+                    "reportId": str(detection.get("report_id", "")) or None,
+                    "lastRunId": str(detection.get("run_id", "")) or None,
                     "localOnly": True,
                     "operation": operation.get("state", "idle") if operation else "idle",
+                    "detectionOperation": detection_state or "idle",
                     "openUrl": str(spec.health_url),
                     "message": dependency_message if not docker_ready else operation.get("message", ""),
                 }
@@ -248,7 +397,10 @@ class DashboardControlService:
             "stage": "本地靶场操作" if aggregate_state != "idle" else "未启动",
             "progress": 100 if aggregate_state == "completed" else (10 if aggregate_state in ("queued", "running") else 0),
             "elapsedSeconds": aggregate_elapsed,
-            "counters": {"endpoints": 0, "api": 0, "candidates": 0, "blocked": 0, "errors": sum(1 for item in tasks if item["state"] == "failed")},
+            "counters": {
+                key: sum(int(item["counters"].get(key, 0)) for item in tasks)
+                for key in ("endpoints", "api", "candidates", "blocked", "errors")
+            },
             "networkContact": "loopback" if any(item["networkContact"] == "loopback" for item in tasks) else "none",
             "updatedAt": datetime.now().isoformat(),
         }

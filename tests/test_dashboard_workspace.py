@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from src_auto.dashboard_workspace import DashboardWorkspace
+from src_auto.store import Store
 
 
 def draft():
@@ -59,6 +60,32 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(len(reports), 1)
         self.assertEqual(reports[0]['relativePath'], 'reports/local/juice-shop/validation.json')
         self.assertIn('nested-report-visible', reports[0]['content'])
+
+    def test_truncated_preview_has_a_complete_redacted_download(self):
+        (self.root / 'reports').mkdir()
+        tail = 'TAIL-MARKER-FOR-COMPLETE-DOWNLOAD'
+        secret = 'sk-' + 'a' * 24
+        (self.root / 'reports' / 'long.md').write_text('x' * 70000 + '\n' + secret + '\n' + tail, encoding='utf-8')
+
+        preview = self.workspace.artifacts()['reports'][0]
+        complete = self.workspace.read_report(preview['id'])
+
+        self.assertTrue(preview['truncated'])
+        self.assertNotIn(tail, preview['content'])
+        self.assertIn(tail, complete['content'])
+        self.assertNotIn(secret, complete['content'])
+
+    def test_artifact_summary_matches_the_visible_bounded_queues(self):
+        (self.root / 'reports').mkdir()
+        (self.root / 'reports' / 'one.md').write_text('one', encoding='utf-8')
+        store = Store(self.root / 'data' / 'src_auto.sqlite3')
+        try:
+            run_id = store.create_run('local', 'scope', 'local')
+            store.insert_finding({'run_id': run_id, 'title': 'candidate', 'url': 'http://127.0.0.1/', 'severity': 'low'})
+        finally:
+            store.close()
+
+        self.assertEqual(self.workspace.artifact_summary(), {'candidateCount': 1, 'reportCount': 1})
 
     def test_review_rejects_path_traversal(self):
         with self.assertRaises(ValueError): self.workspace.review_targets('../')
