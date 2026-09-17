@@ -13,7 +13,10 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
+
+from .dashboard_state import DashboardStateJournal, restored_state, was_interrupted
 
 
 _ACTIONS = frozenset({"start", "stop", "reset"})
@@ -58,6 +61,7 @@ class DashboardControlService:
         clock: Optional[Callable[[], float]] = None,
         dependency_check: Optional[Callable[[], Tuple[bool, str]]] = None,
         detection_runner: Optional[Callable[..., Mapping[str, Any]]] = None,
+        journal_path: Optional[Path] = None,
     ) -> None:
         self.manager = manager
         self._clock = clock or time.monotonic
@@ -69,6 +73,10 @@ class DashboardControlService:
         self._detections: Dict[str, Dict[str, Any]] = {}
         self._events = deque(maxlen=200)
         self._next_event_id = 1
+        self._journal = DashboardStateJournal(journal_path) if journal_path is not None else None
+        self._journal_error = ""
+        self._closing = False
+        self._restore_journal()
         if detection_runner is not None:
             self._detection_runner = detection_runner
         elif getattr(manager, "project_root", None) is not None:
@@ -84,12 +92,29 @@ class DashboardControlService:
 
     def close(self) -> None:
         with self._lock:
+            self._closing = True
             for operation in self._operations.values():
                 if operation['action'] != 'stop': operation['cancel'].set()
             for detection in self._detections.values():
                 detection['cancel'].set()
+            self._persist_locked()
         if self._owns_executor:
             self._executor.shutdown(wait=False)
+
+    def lifecycle(self):
+        with self._lock:
+            return {"activeWork": any(
+                item.get("state") in ("queued", "running", "cancelling", "paused")
+                for item in list(self._operations.values()) + list(self._detections.values())
+            ), "closing": self._closing}
+
+    def prepare_shutdown(self):
+        with self._lock:
+            if self.lifecycle()["activeWork"]:
+                return False
+            self._closing = True
+            self._persist_locked()
+            return True
 
     def _append_event(self, lab_id: str, level: str, stage: str, message: str) -> None:
         with self._lock:
@@ -106,6 +131,113 @@ class DashboardControlService:
                 }
             )
             self._next_event_id += 1
+            self._persist_locked()
+
+    def _persist_locked(self) -> None:
+        if self._journal is None:
+            return
+        try:
+            self._journal.save(
+                self._operations,
+                self._detections,
+                self._events,
+                self._next_event_id,
+                self._clock(),
+            )
+            self._journal_error = ""
+        except OSError:
+            self._journal_error = "任务状态保存失败，请检查项目目录权限和磁盘空间；本次状态可能无法恢复"
+
+    def _restore_journal(self) -> None:
+        if self._journal is None:
+            return
+        try:
+            document = self._journal.load()
+        except (OSError, ValueError, TypeError):
+            self._journal_error = "任务状态文件无法读取，已保留原文件；历史任务未恢复"
+            return
+        now = self._clock()
+        for event in document.get("events", []):
+            if isinstance(event, Mapping):
+                self._events.append(dict(event))
+        self._next_event_id = max(
+            int(document.get("nextEventId", 1) or 1),
+            max([int(event.get("id", 0)) for event in self._events] or [0]) + 1,
+        )
+        interrupted = []
+        for record in document.get("operations", []):
+            if not isinstance(record, Mapping):
+                continue
+            lab_id = str(record.get("labId", ""))
+            try:
+                lab_id = self.manager.spec(lab_id).lab_id
+            except ValueError:
+                continue
+            is_interrupted = was_interrupted(record)
+            operation = {
+                "lab_id": lab_id,
+                "action": str(record.get("action", "")),
+                "state": restored_state(record),
+                "started": now - max(0, int(record.get("elapsedSeconds", 0))),
+                "finished": now,
+                "message": "上次 Dashboard 服务意外中断，任务未自动恢复" if is_interrupted else str(record.get("message", ""))[:200],
+                "cancel": threading.Event(),
+                "done": threading.Event(),
+                "previous": None,
+            }
+            operation["done"].set()
+            self._operations[lab_id] = operation
+            if is_interrupted:
+                interrupted.append(lab_id)
+        for record in document.get("detections", []):
+            if not isinstance(record, Mapping):
+                continue
+            lab_id = str(record.get("labId", ""))
+            try:
+                lab_id = self.manager.spec(lab_id).lab_id
+            except ValueError:
+                continue
+            is_interrupted = was_interrupted(record)
+            counters = record.get("counters", {}) if isinstance(record.get("counters"), Mapping) else {}
+            detection = {
+                "lab_id": lab_id,
+                "action": "detect",
+                "state": restored_state(record),
+                "stage": "上次服务意外中断" if is_interrupted else str(record.get("stage", ""))[:80],
+                "progress": max(0, min(100, int(record.get("progress", 0)))),
+                "started": now - max(0, int(record.get("elapsedSeconds", 0))),
+                "finished": now,
+                "message": "任务未自动恢复，请人工检查后重新开始" if is_interrupted else str(record.get("message", ""))[:200],
+                "counters": {
+                    key: max(0, int(counters.get(key, 0)))
+                    for key in ("endpoints", "api", "candidates", "blocked", "errors")
+                },
+                "cancel": threading.Event(),
+                "done": threading.Event(),
+                "run_id": str(record.get("runId", ""))[:100],
+                "report_id": str(record.get("reportId", ""))[:500],
+                "network_contact": str(record.get("networkContact", "none"))[:20],
+            }
+            detection["done"].set()
+            self._detections[lab_id] = detection
+            if is_interrupted:
+                interrupted.append(lab_id)
+        for lab_id in sorted(set(interrupted)):
+            self._events.append(
+                {
+                    "id": self._next_event_id,
+                    "taskId": "run-lab-{}".format(lab_id),
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "level": "danger",
+                    "stage": "意外中断",
+                    "message": "检测到上次服务意外中断；任务没有自动恢复",
+                    "tool": "local-lab-controller",
+                    "redacted": True,
+                }
+            )
+            self._next_event_id += 1
+        if interrupted:
+            self._persist_locked()
 
     def _validate(self, lab_id: str, action: str) -> str:
         normalized_action = str(action or "").strip().lower()
@@ -118,6 +250,8 @@ class DashboardControlService:
         lab_id = self._validate(lab_id, action)
         action = str(action).strip().lower()
         with self._lock:
+            if self._closing:
+                raise RuntimeError("dashboard_closing")
             detection = self._detections.get(lab_id)
             if detection and detection.get("state") in ("queued", "running", "cancelling"):
                 raise RuntimeError("detection_in_progress")
@@ -170,6 +304,8 @@ class DashboardControlService:
         if str(status.get("status", "")) != "READY":
             raise RuntimeError("lab_not_ready")
         with self._lock:
+            if self._closing:
+                raise RuntimeError("dashboard_closing")
             lifecycle = self._operations.get(lab_id)
             if lifecycle and lifecycle.get("state") in ("queued", "running"):
                 raise RuntimeError("lab_operation_in_progress")
@@ -262,8 +398,11 @@ class DashboardControlService:
                 else:
                     operation.update(state="failed", stage="检测失败", message="检测未完成，请查看脱敏事件")
                     operation["counters"]["errors"] += 1
+                self._persist_locked()
             if status == "cancelled":
                 self._append_event(lab_id, "warning", "已取消", "检测已在安全检查点停止")
+            elif status == "completed":
+                self._append_event(lab_id, "success", "检测完成", "检测完成，候选等待人工复核")
             elif status != "completed":
                 self._append_event(lab_id, "danger", operation["stage"], operation["message"])
         except Exception as exc:
@@ -406,6 +545,11 @@ class DashboardControlService:
         }
         with self._lock:
             events = list(self._events)
+            if self._journal_error:
+                events.append({"id": self._next_event_id, "taskId": "run-local-001",
+                               "time": datetime.now().strftime("%H:%M:%S"), "level": "danger",
+                               "stage": "状态持久化异常", "message": self._journal_error,
+                               "tool": "local-lab-controller", "redacted": True})
         return {
             "source": "loopback",
             "dependency": {"executionServiceReady": True, "dockerReady": bool(docker_ready), "message": dependency_message},

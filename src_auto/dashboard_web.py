@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import json
 import mimetypes
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
 from urllib.parse import unquote, urlsplit
+
+from .dashboard_identity import project_identity
 
 
 _MAX_PROXY_REQUEST_BYTES = 32768
@@ -153,6 +157,18 @@ class DashboardStaticRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not self._preflight():
+            return
+        if self.path == '/health':
+            payload = json.dumps({"status": "ok", "service": "src-auto-dashboard-web",
+                                  "processId": os.getpid(), "projectId": project_identity(),
+                                  "apiPort": self.server.api_port}).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(payload)))
+            self.send_header('Cache-Control', 'no-store')
+            self._write_security_headers()
+            self.end_headers()
+            self.wfile.write(payload)
             return
         if urlsplit(self.path).path.startswith("/api/"):
             self._proxy_api()

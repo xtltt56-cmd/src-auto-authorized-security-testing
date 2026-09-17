@@ -98,11 +98,27 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("remoteAiSessionEnabled", content)
         self.assertIn("Test-DashboardHasActiveWork", content)
         self.assertIn("Get-VerifiedDashboardApiProcessId", content)
-        self.assertIn("src_auto\\.dashboard_server", content)
+        self.assertIn("src_auto.dashboard_server", content)
         self.assertIn("授权状态与本次选择不一致", content)
-        self.assertIn("Stop-Process -Id $existingApiProcessId", content)
+        self.assertIn("Stop-IdleDashboardApi -Port $ApiPort", content)
         self.assertIn("Test-DashboardWebReady", content)
         self.assertIn("只有人工在系统设置中再次确认后才会执行连接测试", content)
+
+    def test_dashboard_launcher_passes_the_selected_web_origin_to_the_api(self):
+        path = Path(__file__).parents[1] / "tools" / "start_dashboard.ps1"
+        content = path.read_text(encoding="utf-8-sig")
+        self.assertIn("--allowed-origin", content)
+        self.assertIn('"http://127.0.0.1:$Port"', content)
+
+    def test_release_contains_a_dedicated_dashboard_stop_entrypoint(self):
+        root = Path(__file__).parents[1]
+        self.assertTrue((root / "STOP_DASHBOARD.bat").is_file())
+        helper = (root / "tools" / "stop_dashboard.ps1").read_text(encoding="utf-8-sig")
+        shared = (root / "tools" / "dashboard_process.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("Get-CimInstance Win32_Process", shared)
+        self.assertIn("src_auto.dashboard_server", helper)
+        self.assertIn("src_auto.dashboard_web", helper)
+        self.assertIn("Stop-Process", helper)
 
     def test_launcher_loads_dpapi_key_only_after_affirmative_consent(self):
         path = Path(__file__).parents[1] / "START_SYSTEM.ps1"

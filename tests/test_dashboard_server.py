@@ -17,6 +17,13 @@ class FakeService:
 
     def __init__(self):
         self.calls = []
+        self.active = False
+
+    def lifecycle(self):
+        return {'activeWork': self.active, 'closing': False}
+
+    def prepare_shutdown(self):
+        return not self.active
 
     def snapshot(self):
         return {"source": "loopback", "dependency": {"dockerReady": True}, "tasks": [], "labs": [], "events": [], "findings": [], "reports": []}
@@ -59,6 +66,13 @@ class FakeProviderSettings:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_shutdown_is_authenticated_and_rejects_active_work(self):
+        self.assertEqual(self.request('/api/lifecycle')[0], 401)
+        self.assertEqual(self.request('/api/shutdown', method='POST', body={})[0], 401)
+        self.service.active = True
+        self.assertEqual(self.request('/api/shutdown', method='POST', token='test-session-token', body={})[0], 409)
+        self.assertEqual(self.request('/api/shutdown', method='POST', token='test-session-token', body={'force': True})[0], 400)
+
     def test_draft_api_persists_and_requires_authentication(self):
         from tests.test_dashboard_workspace import draft
         with tempfile.TemporaryDirectory() as temp:

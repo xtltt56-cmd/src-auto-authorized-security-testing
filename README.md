@@ -138,7 +138,7 @@ python -m src_auto findings --run-id <RUN_ID>
 python -m src_auto reports
 ```
 
-也可使用 `START.bat`、`STOP.bat`、`STATUS.bat`；它们不会创建开机自启动或后台任务。
+也可使用 `START.bat`、`STOP.bat`、`STOP_DASHBOARD.bat`、`STATUS.bat`；它们不会创建开机自启动或后台任务。`STOP_DASHBOARD.bat` 只会在确认 Dashboard 属于当前项目且没有活动任务时安全关闭控制台，不会删除靶场或报告。
 
 ## 本地靶场生命周期与最终验收（仅 loopback）
 

@@ -172,10 +172,15 @@ export const fixtureSnapshot: DashboardSnapshot = {
 
 export const safeDefaultSnapshot: DashboardSnapshot = {
   source: 'safe-placeholder',
+  dependency: {
+    executionServiceReady: false,
+    dockerReady: false,
+    message: '本地执行服务未连接，真实任务状态暂时未知',
+  },
   tasks: fixtureSnapshot.tasks.map((task) => ({
     ...task,
-    state: 'idle',
-    stage: '未启动',
+    state: 'blocked',
+    stage: '状态未知',
     progress: 0,
     elapsedSeconds: 0,
     counters: { endpoints: 0, api: 0, candidates: 0, blocked: 0, errors: 0 },
@@ -184,8 +189,8 @@ export const safeDefaultSnapshot: DashboardSnapshot = {
   })),
   labs: fixtureSnapshot.labs.map((lab) => ({
     ...lab,
-    health: 'stopped',
-    stage: '未启动',
+    health: 'unavailable',
+    stage: '状态未知',
     durationSeconds: 0,
     candidates: 0,
     reportId: undefined,

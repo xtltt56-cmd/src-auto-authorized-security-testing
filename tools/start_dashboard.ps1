@@ -35,6 +35,8 @@ if($remoteAIEnabled){
 }
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'dashboard_process.ps1')
+if($Port -eq $ApiPort){ throw 'Dashboard web and API ports must differ.' }
 $DashboardRoot = Join-Path $ProjectRoot 'dashboard'
 $DistIndex = Join-Path $DashboardRoot 'dist\index.html'
 $logDirectory = Join-Path $ProjectRoot 'validation\dashboard'
@@ -96,6 +98,7 @@ if($dockerExe){
 }
 
 $apiHealthUrl = "http://127.0.0.1:$ApiPort/health"
+$dashboardOrigin = "http://127.0.0.1:$Port"
 $apiStartedHere = $false
 $apiServer = $null
 function Get-DashboardApiHealth {
@@ -112,12 +115,12 @@ function Test-DashboardApiReady {
     return $null -ne (Get-DashboardApiHealth)
 }
 
-function Test-DashboardHasActiveWork {
-    $origin = "http://127.0.0.1:$Port"
+function Test-DashboardHasActiveWork([object]$Health) {
+    $origin = if($Health -and $Health.PSObject.Properties['allowedOrigin']){ [string]$Health.allowedOrigin } else { $dashboardOrigin }
     $session = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/session" -Headers @{ Origin = $origin } -TimeoutSec 2
     if([string]::IsNullOrWhiteSpace([string]$session.token)){ throw '旧 Dashboard API 没有返回会话令牌。' }
-    $snapshot = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/dashboard" -Headers @{ Origin = $origin; 'X-SRC-Auto-Token' = [string]$session.token } -TimeoutSec 3
-    return @($snapshot.tasks | Where-Object { $_.state -in @('queued','running','paused','cancelling') }).Count -gt 0
+    $lifecycle = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/lifecycle" -Headers @{ Origin = $origin; 'X-SRC-Auto-Token' = [string]$session.token } -TimeoutSec 3
+    return [bool]$lifecycle.activeWork
 }
 
 function Get-VerifiedDashboardApiProcessId([object]$Health){
@@ -141,11 +144,14 @@ function Get-VerifiedDashboardApiProcessId([object]$Health){
 
 $existingApiHealth = Get-DashboardApiHealth
 if($existingApiHealth){
+    $null = Get-VerifiedDashboardProcessId -Port $ApiPort -ModuleName 'src_auto.dashboard_server' -Health $existingApiHealth
     $consentProperty = $existingApiHealth.PSObject.Properties['remoteAiSessionEnabled']
     $consentMatches = $consentProperty -and ([bool]$consentProperty.Value -eq $remoteAIEnabled)
-    if(-not $consentMatches){
+    $originProperty = $existingApiHealth.PSObject.Properties['allowedOrigin']
+    $originMatches = $originProperty -and ([string]$originProperty.Value -eq $dashboardOrigin)
+    if(-not $consentMatches -or -not $originMatches){
         try {
-            if(Test-DashboardHasActiveWork){
+            if(Test-DashboardHasActiveWork $existingApiHealth){
                 Write-Host '已有 Dashboard 正在执行任务，且其云端 AI 授权与本次选择不一致。为保护任务和授权状态，本次启动已停止。请先在原 Dashboard 中停止任务后重试。' -ForegroundColor Red
                 exit 10
             }
@@ -159,7 +165,7 @@ if($existingApiHealth){
             exit 10
         }
         Write-Host '检测到旧 Dashboard API 的云端 AI 授权与本次选择不一致，正在安全重启本地控制接口……' -ForegroundColor Cyan
-        Stop-Process -Id $existingApiProcessId -ErrorAction Stop
+        Stop-IdleDashboardApi -Port $ApiPort -Health $existingApiHealth
         for($attempt = 0; $attempt -lt 20; $attempt++){
             Start-Sleep -Milliseconds 100
             if(-not (Test-DashboardApiReady)){ break }
@@ -178,7 +184,7 @@ if(-not $existingApiHealth){
     $apiStdoutLog = Join-Path $logDirectory 'dashboard-api.stdout.log'
     $apiStderrLog = Join-Path $logDirectory 'dashboard-api.stderr.log'
     try {
-        $apiArguments = @('-m', 'src_auto.dashboard_server', '--port', "$ApiPort")
+        $apiArguments = @('-m', 'src_auto.dashboard_server', '--port', "$ApiPort", '--allowed-origin', $dashboardOrigin)
         $apiServer = Start-Process -FilePath $pythonExe -ArgumentList $apiArguments -WorkingDirectory $ProjectRoot -RedirectStandardOutput $apiStdoutLog -RedirectStandardError $apiStderrLog -WindowStyle Hidden -PassThru
         $apiStartedHere = $true
     } catch {
@@ -203,6 +209,9 @@ $webArguments = @('-m', 'src_auto.dashboard_web', '--port', "$Port", '--api-port
 
 function Test-DashboardWebReady {
     try {
+        $health = Invoke-RestMethod -Uri ($baseUrl + 'health') -TimeoutSec 2
+        if($health.service -ne 'src-auto-dashboard-web' -or $health.projectId -ne (Get-DashboardProjectId) -or [int]$health.apiPort -ne $ApiPort){ return $false }
+        $null = Get-VerifiedDashboardProcessId -Port $Port -ModuleName 'src_auto.dashboard_web' -Health $health
         $session = Invoke-RestMethod -Uri ($baseUrl + 'api/session') -TimeoutSec 2
         return -not [string]::IsNullOrWhiteSpace([string]$session.token)
     } catch {

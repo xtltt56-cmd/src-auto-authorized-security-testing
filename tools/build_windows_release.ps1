@@ -51,7 +51,7 @@ New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
 
 $rootFiles = @(
     'VERSION', 'requirements-runtime.txt', 'pyproject.toml',
-    'START_SYSTEM.ps1', 'START.bat', 'START_DASHBOARD.bat', 'STOP.bat', 'STATUS.bat', 'CHECK_UPDATE.bat',
+    'START_SYSTEM.ps1', 'START.bat', 'START_DASHBOARD.bat', 'STOP.bat', 'STOP_DASHBOARD.bat', 'STATUS.bat', 'CHECK_UPDATE.bat',
     'README.md', 'USER_MANUAL.md', 'OPERATIONS.md', 'POLICY.md', 'ARCHITECTURE.md',
     'KNOWN_ISSUES.md', 'RELEASE_MANIFEST.md', 'tools.lock.yaml', 'docker-compose.local-labs.yml'
 )

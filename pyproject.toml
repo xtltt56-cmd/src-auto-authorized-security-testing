@@ -8,3 +8,12 @@ dependencies = []
 [tool.src-auto]
 default-language = "zh-CN"
 network-default = "loopback-only"
+
+[tool.coverage.run]
+branch = true
+source = ["src_auto"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 68

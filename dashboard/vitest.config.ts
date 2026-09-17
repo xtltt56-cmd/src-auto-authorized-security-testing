@@ -13,5 +13,15 @@ export default defineConfig({
     pool: 'threads',
     maxWorkers: 1,
     fileParallelism: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      thresholds: {
+        statements: 70,
+        branches: 60,
+        functions: 65,
+        lines: 70,
+      },
+    },
   },
 })

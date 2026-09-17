@@ -13,7 +13,9 @@ type OverviewPageProps = {
 }
 
 export function OverviewPage({ snapshot, onNavigate, onOpenTask, artifactSummary }: OverviewPageProps) {
-  const activeTask = snapshot.tasks.find((task) => task.state === 'running' || task.state === 'paused') ?? snapshot.tasks[0]
+  const activeTask = snapshot.source === 'safe-placeholder'
+    ? null
+    : snapshot.tasks.find((task) => task.state === 'running' || task.state === 'paused') ?? snapshot.tasks[0]
   const totalCandidates = snapshot.tasks.reduce((sum, task) => sum + task.counters.candidates, 0)
   const totalBlocked = snapshot.tasks.reduce((sum, task) => sum + task.counters.blocked, 0)
   const metrics = [
@@ -82,7 +84,7 @@ export function OverviewPage({ snapshot, onNavigate, onOpenTask, artifactSummary
           <div><div className="task-title-row"><strong>{activeTask.name}</strong><StatusBadge state={activeTask.state} /></div><span className="table-secondary">本地五靶场 · {activeTask.stage}</span></div>
           <ProgressBar value={activeTask.progress} label="总体进度" />
           <span className="network-note"><ShieldCheck size={14} aria-hidden="true" /> 网络接触：{activeTask.networkContact === 'loopback' ? '仅回环' : '无'}</span>
-        </div> : <div className="panel-body empty-state"><strong>尚无任务记录</strong><p>可从“进入本地靶场”启动回环环境，或先录入一份授权目标草稿。</p></div>}
+        </div> : <div className="panel-body empty-state"><strong>{snapshot.source === 'safe-placeholder' ? '等待本地执行服务' : '尚无任务记录'}</strong><p>{snapshot.source === 'safe-placeholder' ? '当前无法确认任务是否运行或已停止；请恢复本地控制服务后再操作。' : '可从“进入本地靶场”启动回环环境，或先录入一份授权目标草稿。'}</p></div>}
       </section>
     </>
   )

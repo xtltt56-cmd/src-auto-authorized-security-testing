@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
 
 permissions:
   contents: read
@@ -16,23 +15,31 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22.23.0"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Python tests
+      - name: Install development test dependencies
         shell: pwsh
-        run: python -m unittest discover -s tests -p "test_*.py"
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Python tests and coverage
+        shell: pwsh
+        run: |
+          python -m coverage run -m unittest discover -s tests -p "test_*.py"
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
+          python -m coverage report
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
 
       - name: PowerShell syntax
         shell: pwsh
@@ -54,9 +61,9 @@ jobs:
         shell: pwsh
         run: npm run lint --prefix dashboard
 
-      - name: Dashboard unit tests
+      - name: Dashboard unit tests and coverage
         shell: pwsh
-        run: npm run test --prefix dashboard
+        run: npm run test:coverage --prefix dashboard
 
       - name: Dashboard production build
         shell: pwsh

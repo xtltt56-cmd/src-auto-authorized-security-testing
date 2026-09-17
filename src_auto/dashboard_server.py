@@ -12,9 +12,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from .dashboard_control import DashboardControlService
+from .dashboard_identity import project_identity
 from .local_labs import LocalLabManager
 from .dashboard_workspace import DashboardWorkspace
 from .provider_settings import ProviderSettingsStore
@@ -31,6 +32,29 @@ _MAX_BODY_BYTES = 1024
 _settings_lock = threading.Lock()
 _settings_process = None
 _docker_desktop_process = None
+
+
+def validate_allowed_origin(value: str) -> str:
+    """Accept one explicit loopback HTTP origin with no path or credentials."""
+
+    parsed = urlsplit(str(value or "").strip())
+    try:
+        port = parsed.port
+    except ValueError:
+        raise argparse.ArgumentTypeError("allowed origin port is invalid")
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or port is None
+        or not 1024 <= port <= 65535
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise argparse.ArgumentTypeError("allowed origin must be http://127.0.0.1:<port>")
+    return "http://127.0.0.1:{}".format(port)
 
 
 def open_ai_provider_settings():
@@ -180,10 +204,16 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 "loopbackOnly": True,
                 "processId": os.getpid(),
                 "remoteAiSessionEnabled": self.server.remote_ai_session_enabled,
+                "allowedOrigin": self.server.allowed_origin,
+                "projectId": self.server.project_id,
             })
             return
         if self.path == "/api/session":
             self._write_json(200, {"token": self.server.session_token, "expires": "process"})
+            return
+        if self.path == "/api/lifecycle":
+            if self._authorized():
+                self._write_json(200, self.server.service.lifecycle())
             return
         if self.path == "/api/dashboard":
             if not self._authorized():
@@ -263,6 +293,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        if self.path == '/api/shutdown':
+            if document:
+                self._error(400, 'unexpected_fields', '关闭服务不接受额外参数')
+            elif not self.server.service.prepare_shutdown():
+                self._error(409, 'active_work', '请先停止运行中的任务，再关闭控制台服务')
+            else:
+                self._write_json(202, {'accepted': True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
         if self.path == '/api/drafts':
             try:
                 result = self.server.workspace.save_draft(document)
@@ -348,6 +387,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except RuntimeError as exc:
             reason = str(exc)
             messages = {
+                "dashboard_closing": "控制台正在关闭，请重新启动后操作",
                 "lab_operation_in_progress": "该靶场已有环境操作正在执行",
                 "detection_in_progress": "该靶场已有检测任务正在执行",
                 "detection_not_running": "该靶场当前没有可停止的检测任务",
@@ -373,23 +413,25 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
         remote_ai_enabled=remote_ai_enabled,
     )
     server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
+    server.project_id = project_identity(project_root)
     server.provider_settings = ProviderSettingsStore(project_root or Path(__file__).resolve().parents[1])
     return server
 
 
-def build_service(project_root: Path) -> DashboardControlService:
+def build_service(project_root: Path, port=4174) -> DashboardControlService:
     root = Path(project_root).resolve()
     manager = LocalLabManager(root, root / "config" / "labs" / "local_labs.json", root / "docker-compose.local-labs.yml")
-    return DashboardControlService(manager)
+    return DashboardControlService(manager, journal_path=root / "runtime" / "dashboard" / "task_state-{}.json".format(port))
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="SRC-Auto 本地靶场 Dashboard 回环控制服务")
     parser.add_argument("--port", type=int, default=4174)
+    parser.add_argument("--allowed-origin", type=validate_allowed_origin, default=_ALLOWED_ORIGIN)
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
-    service = build_service(root)
-    server = create_server(service, port=args.port)
+    service = build_service(root, port=args.port)
+    server = create_server(service, port=args.port, allowed_origin=args.allowed_origin)
     print("SRC-Auto 本地控制服务已启动：http://127.0.0.1:{}（仅回环）".format(args.port))
     try:
         server.serve_forever(poll_interval=0.5)

@@ -32,6 +32,19 @@ local-lab 流程并显示 Findings/报告；永远不会进入真实目标流程
 启动器使用 UTF-8 BOM 兼容 Windows PowerShell 5.1，并设置
 `$ProgressPreference = 'SilentlyContinue'`，避免 `Invoke-WebRequest` 的 `0......` 进度重绘覆盖中文文字。
 
+### 安全关闭 Dashboard 与任务状态恢复
+
+正常关闭可双击项目根目录的 `STOP_DASHBOARD.bat`，或执行：
+
+```powershell
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\stop_dashboard.ps1
+```
+
+关闭前脚本会向本地 API 请求一次“空闲检查 + 冻结提交”，因此仍在运行的靶场操作或检测任务会让关闭被拒绝；请先在页面停止任务并等待状态变为“已停止/已完成”。脚本会核对回环端口、项目身份和启动模块，只停止确认属于当前项目的 Dashboard，不会强制杀掉未知进程。Docker 容器、报告和靶场数据不会因此被删除。
+
+Dashboard 会在 `runtime\dashboard\task_state-<API端口>.json` 保存脱敏任务状态。重启时排队或运行中的记录会被标记为“意外中断”，不会自动继续执行；已经完成的检测会保留运行 ID、报告关联和候选计数。若状态文件损坏或无法写入，页面会显示“状态持久化异常”，并保留原文件供人工排查。
+
 ## 人工启用远程 AI 审阅
 
 DeepSeek V4 Flash 只审阅一个已经存在的 Finding，不参与自动发现或外部目标发现。桌面一键启动

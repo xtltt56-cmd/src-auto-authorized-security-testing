@@ -19,13 +19,10 @@ describe('dashboard pages', () => {
 
     expect(await screen.findByRole('status', { name: '数据来源状态' })).toHaveTextContent('未连接本地执行服务')
     expect(screen.queryByText('运行中')).not.toBeInTheDocument()
-    expect(screen.getAllByText('未启动').length).toBeGreaterThan(0)
-
-    await user.click(screen.getByRole('button', { name: '打开任务详情' }))
-    expect(await screen.findByRole('heading', { name: '本地五靶场回归 · 第 1 轮' })).toBeVisible()
-    expect(screen.getByText('0s', { exact: false })).toBeVisible()
-    expect(screen.getByRole('button', { name: '继续任务' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '停止任务' })).toBeDisabled()
+    expect(screen.getByText('等待本地执行服务')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '本地靶场' }))
+    expect(screen.getAllByText('状态未知').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: '启动 Juice Shop' })).toBeDisabled()
   })
 
   it('updates task detail through pause, resume and stop actions', async () => {

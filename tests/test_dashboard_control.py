@@ -1,7 +1,11 @@
 import threading
+import json
+import tempfile
 import unittest
 from concurrent.futures import Future
 from dataclasses import dataclass
+from pathlib import Path
+from unittest.mock import patch
 
 from src_auto.dashboard_control import DashboardControlService
 
@@ -56,6 +60,113 @@ class ImmediateExecutor:
 
 
 class DashboardControlServiceTests(unittest.TestCase):
+    def test_corrupt_journal_is_reported_and_preserved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            journal = Path(temp) / 'state.json'
+            for document in ('{broken', json.dumps({'version': 1, 'operations': None}),
+                             json.dumps({'version': 1, 'events': [{'id': 'bad'}]})):
+                journal.write_text(document, encoding='utf-8')
+                service = DashboardControlService(FakeManager(), executor=ImmediateExecutor(),
+                    journal_path=journal, dependency_check=lambda: (True, 'OK'))
+                self.assertTrue(any(e['stage'] == '状态持久化异常' for e in service.snapshot()['events']))
+                self.assertEqual(journal.read_text(encoding='utf-8'), document)
+
+    def test_write_failure_is_visible_in_events(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service = DashboardControlService(FakeManager(), executor=ImmediateExecutor(),
+                journal_path=Path(temp) / 'state.json', dependency_check=lambda: (True, 'OK'))
+            with patch.object(service._journal, 'save', side_effect=OSError('synthetic failure')):
+                service._append_event('dvwa', 'info', 'test', 'safe')
+            self.assertTrue(any('保存失败' in e['message'] for e in service.snapshot()['events']))
+
+    def test_shutdown_refuses_active_work_and_freezes_new_submissions(self):
+        class Queue:
+            def submit(self, *args): return None
+        service = DashboardControlService(FakeManager(), executor=Queue())
+        service.submit('dvwa', 'start')
+        self.assertTrue(service.lifecycle()['activeWork'])
+        self.assertFalse(service.prepare_shutdown())
+        service._operations['dvwa']['state'] = 'completed'
+        self.assertTrue(service.prepare_shutdown())
+        with self.assertRaisesRegex(RuntimeError, 'dashboard_closing'):
+            service.submit('dvwa', 'start')
+
+    def test_queued_task_is_restored_as_interrupted_and_never_resumed(self):
+        class Queue:
+            def __init__(self): self.jobs = []
+            def submit(self, fn, *args): self.jobs.append((fn, args))
+
+        with tempfile.TemporaryDirectory() as temp:
+            journal = Path(temp) / "dashboard-task-state.json"
+            manager = FakeManager()
+            first_queue = Queue()
+            first = DashboardControlService(
+                manager,
+                executor=first_queue,
+                dependency_check=lambda: (True, "Docker 可用"),
+                journal_path=journal,
+            )
+            first.submit("juice-shop", "start")
+
+            second_queue = Queue()
+            restored = DashboardControlService(
+                manager,
+                executor=second_queue,
+                dependency_check=lambda: (True, "Docker 可用"),
+                journal_path=journal,
+            )
+            snapshot = restored.snapshot()
+            task = next(item for item in snapshot["tasks"] if item["id"] == "run-lab-juice-shop")
+
+            self.assertEqual(task["state"], "failed")
+            self.assertIn("意外中断", task["stage"])
+            self.assertEqual(second_queue.jobs, [], "restoring state must never resume an operation")
+            self.assertTrue(any("意外中断" in event["message"] for event in snapshot["events"]))
+            first.close()
+            restored.close()
+
+    def test_completed_detection_report_survives_dashboard_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            journal = Path(temp) / "dashboard-task-state.json"
+            manager = FakeManager()
+            manager.states["juice-shop"] = "READY"
+
+            def detection(_lab_id, _cancel_event, _progress):
+                return {
+                    "status": "completed",
+                    "runId": "persisted-run",
+                    "reportId": "reports/persisted.md",
+                    "candidateCount": 3,
+                    "endpointCount": 4,
+                    "apiCount": 1,
+                    "blockedCount": 0,
+                    "networkContact": "loopback",
+                }
+
+            first = DashboardControlService(
+                manager,
+                executor=ImmediateExecutor(),
+                dependency_check=lambda: (True, "Docker 可用"),
+                detection_runner=detection,
+                journal_path=journal,
+            )
+            first.submit_detection("juice-shop")
+            restored = DashboardControlService(
+                manager,
+                executor=ImmediateExecutor(),
+                dependency_check=lambda: (True, "Docker 可用"),
+                detection_runner=detection,
+                journal_path=journal,
+            )
+            lab = next(item for item in restored.snapshot()["labs"] if item["id"] == "juice-shop")
+
+            self.assertEqual(lab["detectionOperation"], "completed")
+            self.assertEqual(lab["lastRunId"], "persisted-run")
+            self.assertEqual(lab["reportId"], "reports/persisted.md")
+            self.assertEqual(lab["candidates"], 3)
+            first.close()
+            restored.close()
+
     def test_detection_updates_real_task_counters_and_report_link(self):
         manager = FakeManager()
         manager.states["juice-shop"] = "READY"
