@@ -432,7 +432,10 @@ def main(argv=None) -> int:
     root = Path(__file__).resolve().parents[1]
     service = build_service(root, port=args.port)
     server = create_server(service, port=args.port, allowed_origin=args.allowed_origin)
-    print("SRC-Auto 本地控制服务已启动：http://127.0.0.1:{}（仅回环）".format(args.port))
+    # Keep the bootstrap probe ASCII-only: GitHub's English Windows runners can
+    # expose a cp1252 stdout when the process is redirected, where Chinese text
+    # would raise UnicodeEncodeError before serve_forever() starts.
+    print("SRC-Auto dashboard API ready: http://127.0.0.1:{} (loopback only)".format(args.port))
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

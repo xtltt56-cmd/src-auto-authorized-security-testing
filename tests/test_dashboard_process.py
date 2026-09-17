@@ -37,6 +37,7 @@ class DashboardProcessTests(unittest.TestCase):
     def start_api(self, port, origin):
         environment = os.environ.copy()
         environment["SRC_AUTO_REMOTE_AI_CONSENT"] = "disabled"
+        environment["PYTHONIOENCODING"] = "cp1252"
         process = subprocess.Popen(
             [
                 sys.executable,
