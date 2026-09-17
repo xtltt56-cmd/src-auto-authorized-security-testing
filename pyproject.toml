@@ -1,6 +1,6 @@
 [project]
 name = "src-auto-authorized-security-testing"
-version = "0.9.0"
+version = "0.11.2"
 description = "授权范围门控的安全测试编排与候选漏洞研判平台"
 requires-python = ">=3.8"
 dependencies = []
