@@ -7,6 +7,7 @@ import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TargetDraftPage } from './pages/TargetDraftPage'
 import { FindingsPage } from './pages/FindingsPage'
 import { AISettingsPage } from './pages/AISettingsPage'
+import { AgentPage } from './pages/AgentPage'
 import { OfflineReviewPage } from './pages/OfflineReviewPage'
 import { createLoopbackRepository, type TaskRepository } from './lib/taskRepository'
 import { safeDefaultSnapshot } from './lib/fixtures'
@@ -15,7 +16,7 @@ import type { ArtifactSummary, DashboardSnapshot, TargetDraftResult } from './li
 type AppProps = { repository?: TaskRepository }
 
 const defaultRepository = createLoopbackRepository('/api')
-const navKeys: NavKey[] = ['overview', 'labs', 'targets', 'review', 'findings', 'settings']
+const navKeys: NavKey[] = ['overview', 'labs', 'agent', 'targets', 'review', 'findings', 'settings']
 
 const initialNavKey = (): NavKey => {
   const requested = new URLSearchParams(window.location.search).get('page') as NavKey | null
@@ -29,6 +30,7 @@ const pageMeta: Record<NavKey, { title: string; description: string }> = {
   review: { title: '离线审阅', description: '解析项目文件，不产生网络请求' },
   findings: { title: '候选与报告', description: '人工复核候选证据，不自动提交' },
   settings: { title: '系统设置', description: '模型、密钥状态、依赖和 D 盘存储' },
+  agent: { title: '受控 Agent', description: '本地只读 · 有限动作 · 证据反馈 · 人工最终确认' },
 }
 
 export function App({ repository = defaultRepository }: AppProps) {
@@ -114,6 +116,8 @@ export function App({ repository = defaultRepository }: AppProps) {
     content = <TargetDraftPage savedResult={savedTargetResult} onSaved={setSavedTargetResult} repository={repository} />
   } else if (activeKey === 'settings') {
     content = <AISettingsPage repository={repository} />
+  } else if (activeKey === 'agent') {
+    content = <AgentPage repository={repository} snapshot={snapshot} onOpenReport={openTaskReport} />
   } else {
     content = <OfflineReviewPage repository={repository} />
   }

@@ -60,6 +60,7 @@ dashboard/dist/
 dashboard/playwright-report/
 dashboard/test-results/
 dashboard/storybook-static/
+.playwright-cli/
 artifacts/
 .coverage*
 htmlcov/

@@ -70,6 +70,7 @@ export type DependencyStatus = {
 
 export type Finding = {
   id: string
+  url?: string
   title: string
   severity: 'high' | 'medium' | 'low' | 'info'
   source: string
@@ -139,6 +140,17 @@ export type AIProviderSettings = {
 }
 
 export type AIConnectionResult = { ok: boolean; code: string }
+
+export type AgentStart = { labId: string; mode: 'candidate-review' | 'api-permissions'; provider: string; allowCloud: boolean; limits?: { max_steps: number }; resumeId?: string; candidateId?: string }
+export type AgentRun = {
+  id: string; labId: string; mode: AgentStart['mode']; provider: string; state: string; reason: string
+  steps: number; requests: number; modelCalls: number; tokens: number; usageEstimated: boolean
+  elapsedSeconds: number; candidates: number; reportId: string; createdAt: string; candidateId?: string
+  resourceCheck?: { known?: boolean; memory_gb?: number; max_memory_gb?: number; cpu_percent?: number }
+  trace: Array<{ index: number; result: string; reason?: string; observationId?: string; decision?: { action: string; reference: string; evidence: string[]; reason: string } }>
+  observations: Array<{ id: string; action: string; reference: string; summary: string; candidate?: boolean }>
+}
+export type AgentSnapshot = { enabled: boolean; remoteSessionEnabled: boolean; cloudAgentAvailable?: boolean; activeId: string | null; ownedActiveId?: string | null; runs: AgentRun[] }
 
 export type DashboardSnapshot = {
   source: 'local-fixture' | 'safe-placeholder' | 'loopback'

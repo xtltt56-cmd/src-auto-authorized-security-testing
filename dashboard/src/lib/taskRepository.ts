@@ -1,4 +1,5 @@
 import { fixtureSnapshot } from './fixtures'
+import type { AgentSnapshot, AgentStart } from './types'
 import type { AIConnectionResult, AIProviderSettings, ArtifactSummary, DashboardSnapshot, ReportFile, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
 
@@ -19,6 +20,10 @@ const eventFor = (task: TaskSummary, id: number, level: TaskEvent['level'], stag
 })
 
 export interface TaskRepository {
+  getAgent?(): Promise<AgentSnapshot>
+  enableAgent?(enabled: boolean): Promise<{ enabled: boolean }>
+  startAgent?(value: AgentStart): Promise<{ accepted: boolean; id: string }>
+  cancelAgent?(id: string): Promise<void>
   supportsPause?: boolean
   listDrafts(): Promise<TargetDraftResult[]>
   saveDraft(draft: TargetDraft): Promise<TargetDraftResult>
@@ -275,6 +280,10 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
 
   const action = (path: string): Promise<void> => request(path, { method: 'POST', body: '{}' }).then(() => undefined)
   return {
+    getAgent: () => request<AgentSnapshot>('/agent'),
+    enableAgent: (enabled) => request('/agent/enable', { method: 'POST', body: JSON.stringify({ enabled }) }),
+    startAgent: (value) => request('/agent/start', { method: 'POST', body: JSON.stringify(value) }),
+    cancelAgent: (id) => request('/agent/cancel', { method: 'POST', body: JSON.stringify({ id }) }).then(() => undefined),
     async listDrafts() { return (await request<{ drafts: TargetDraftResult[] }>('/drafts')).drafts },
     saveDraft: (draft) => request<TargetDraftResult>('/drafts', { method: 'POST', body: JSON.stringify(draft) }),
     async reviewTargets() { return (await request<{ entries: ReviewEntry[] }>('/review')).entries },

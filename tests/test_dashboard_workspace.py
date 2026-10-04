@@ -90,6 +90,14 @@ class WorkspaceTests(unittest.TestCase):
     def test_review_rejects_path_traversal(self):
         with self.assertRaises(ValueError): self.workspace.review_targets('../')
 
+    def test_candidate_scope_url_is_minimal_and_redacted(self):
+        store = Store(self.root / 'data' / 'src_auto.sqlite3')
+        try:
+            run_id = store.create_run('local', 'scope', 'local')
+            store.insert_finding({'run_id': run_id, 'title': 'candidate', 'url': 'http://user:password@127.0.0.1:8084/orders?token=secret', 'severity': 'low'})
+        finally: store.close()
+        self.assertEqual(self.workspace.artifacts()['findings'][0]['url'], 'http://127.0.0.1:8084/orders')
+
     def test_report_symlink_is_never_followed(self):
         outside = self.root / 'private.txt'
         outside.write_text('do-not-read', encoding='utf-8')

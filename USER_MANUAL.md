@@ -1,5 +1,7 @@
 # SRC-Auto 平台完整使用手册
 
+> **2026-10-04 开发分支说明：** 新增的「受控 Agent」用法见 [Agent 使用说明](docs/AGENT_USER_GUIDE.md)，实际验收与未完成部分见 [本轮进度报告](docs/AGENT_UPGRADE_PROGRESS.md)。正式发布基线仍是 v0.11.2；下方旧版手册和靶场恢复成绩仅供历史追溯，不证明本轮 Docker/Agent 已全部通过。
+
 > **2026-08-26 严格计划更新：** 当前实现以 `docs/THREE_PHASE_USER_MANUAL.md` 和
 > `docs/THREE_PHASE_UPGRADE_REPORT.md` 为准。本轮已加入第五个仅回环的 `business-api`
 > 靶场（`127.0.0.1:8084`）、业务 API 授权矩阵、蓝队被动日志分析和 Figma V2 控制台入口；

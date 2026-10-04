@@ -1,0 +1,9 @@
+{
+  "version": "synthetic-permissions-v1",
+  "owner": "buyer-a",
+  "peer": "buyer-b",
+  "anonymous": "anonymous",
+  "private_objects": ["case-01", "case-02", "case-03", "case-04", "case-05", "case-06", "case-07", "case-08", "case-09", "case-10", "case-11", "case-12", "case-13", "case-14", "case-15"],
+  "public_objects": ["case-16", "case-17", "case-18", "case-19", "case-20"],
+  "note": "这是批准的对象和访问规格，不含脆弱配置答案。仅限固定本地 business-api，GET 读取合成对象。"
+}

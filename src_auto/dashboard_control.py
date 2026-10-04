@@ -76,6 +76,7 @@ class DashboardControlService:
         self._journal = DashboardStateJournal(journal_path) if journal_path is not None else None
         self._journal_error = ""
         self._closing = False
+        self.agent = None
         self._restore_journal()
         if detection_runner is not None:
             self._detection_runner = detection_runner
@@ -98,12 +99,14 @@ class DashboardControlService:
             for detection in self._detections.values():
                 detection['cancel'].set()
             self._persist_locked()
+            if self.agent is not None:
+                self.agent.close()
         if self._owns_executor:
             self._executor.shutdown(wait=False)
 
     def lifecycle(self):
         with self._lock:
-            return {"activeWork": any(
+            return {"activeWork": bool(self.agent and self.agent.active) or any(
                 item.get("state") in ("queued", "running", "cancelling", "paused")
                 for item in list(self._operations.values()) + list(self._detections.values())
             ), "closing": self._closing}
@@ -252,6 +255,8 @@ class DashboardControlService:
         with self._lock:
             if self._closing:
                 raise RuntimeError("dashboard_closing")
+            if self.agent and self.agent.active:
+                raise RuntimeError("agent_operation_conflict")
             detection = self._detections.get(lab_id)
             if detection and detection.get("state") in ("queued", "running", "cancelling"):
                 raise RuntimeError("detection_in_progress")
@@ -306,6 +311,8 @@ class DashboardControlService:
         with self._lock:
             if self._closing:
                 raise RuntimeError("dashboard_closing")
+            if self.agent and self.agent.active:
+                raise RuntimeError("agent_operation_conflict")
             lifecycle = self._operations.get(lab_id)
             if lifecycle and lifecycle.get("state") in ("queued", "running"):
                 raise RuntimeError("lab_operation_in_progress")

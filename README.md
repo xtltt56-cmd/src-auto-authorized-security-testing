@@ -1,5 +1,7 @@
 # SRC-Auto
 
+> **Agent 升级开发状态（2026-10-04）：** `agent/controlled-upgrade` 分支正在实现有限本地 Agent，并新增 Dashboard「受控 Agent」页。它不是已通过全靶场验收的正式版：本机 Docker Engine 启动故障，30B 本地模型触发 balanced 内存门控，完整发布验收尚未完成。正式发布基线仍为 `v0.11.2`；阅读 [升级进度与限制](docs/AGENT_UPGRADE_PROGRESS.md) 和 [Agent 使用说明](docs/AGENT_USER_GUIDE.md)，不要把下方历史靶场成绩当作本轮结果。
+
 ## 下载最新正式版
 
 Windows 用户不需要安装 Git，也不需要切换开发分支。请从固定地址下载最近一次通过发布测试的正式分发包：
