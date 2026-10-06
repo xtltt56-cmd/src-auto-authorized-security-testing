@@ -13,6 +13,63 @@ from src_auto.agent_service import AgentService
 
 
 class LocalApplicationWorkflowTests(unittest.TestCase):
+    def test_arbitrary_tool_exception_text_is_not_persisted(self):
+        self.service.set_enabled(True)
+        preview = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)
+        with patch('src_auto.local_application_workflow.LocalWebActions.execute', side_effect=RuntimeError('PRIVATE_TOOL_STDERR')):
+            row = self.wait_run(self.service.local_app.start(dict(approvalId=preview['approvalId'], confirmStart=True), False)['id'])
+        self.assertEqual(row['reason'], 'tool_failed')
+        self.assertNotIn('PRIVATE_TOOL_STDERR', json.dumps(row))
+        self.assertNotIn('PRIVATE_TOOL_STDERR', (self.root / row['reportId']).read_text(encoding='utf-8'))
+
+    def test_agent_tool_resource_denial_is_not_hidden_as_generic_tool_failure(self):
+        from src_auto.local_application import LocalApplicationError
+        self.service.set_enabled(True)
+        preview = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)
+        with patch('src_auto.local_application_workflow.LocalWebActions.execute', side_effect=LocalApplicationError('resource_limit')):
+            row = self.wait_run(self.service.local_app.start(dict(approvalId=preview['approvalId'], confirmStart=True), False)['id'])
+        self.assertEqual(row['reason'], 'resource_limit')
+        self.assertEqual(row['trace'][-1]['reason'], 'resource_limit')
+        self.assertEqual(self.fixture.received, [])
+
+    def test_agent_resource_denial_records_the_actual_failed_sample(self):
+        self.service.set_enabled(True)
+        preview = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)
+        denied = {'allowed': False, 'known': True, 'cpu_percent': 89.0, 'memory_gb': 22.0}
+        with patch('src_auto.local_application_workflow.WindowsResources.check', return_value=denied):
+            row = self.wait_run(self.service.local_app.start(dict(approvalId=preview['approvalId'], confirmStart=True), False)['id'])
+        self.assertEqual(row['reason'], 'resource_limit')
+        self.assertEqual(row['resourceCheck'], denied)
+        self.assertEqual(self.fixture.received, [])
+        self.assertIn('89.0', (self.root / row['reportId']).read_text(encoding='utf-8'))
+
+    def test_agent_passive_recipe_is_required_before_finish(self):
+        self.doc['scope']['profile_id'] = 'bounded-passive-v1'
+        self.service.set_enabled(True)
+        for complete in (False, True):
+            proposals = [decision('inspect_local_route', reference='route-001'), decision('inspect_local_route', reference='route-002')]
+            if complete: proposals.append(decision('analyze_passive_capture', reference='entry'))
+            proposals.append(decision('finish', evidence=['o1', 'o2', 'o3'] if complete else ['o1', 'o2']))
+            self.service.model_factory = lambda *args: ScriptedModel(proposals)
+            with patch('src_auto.local_application_workflow.ZapOfflineScanner.prepare'), patch('src_auto.local_application_workflow.ZapOfflineScanner.run', return_value={'status': 'completed', 'findings': [], 'scanner_target_requests': 0}) as scanner:
+                approval = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)
+                row = self.wait_run(self.service.local_app.start(dict(approvalId=approval['approvalId'], confirmStart=True), False)['id'])
+                self.assertEqual(row['state'], 'completed' if complete else 'needs-human')
+                self.assertEqual(scanner.call_count, int(complete))
+                if not complete: self.assertEqual(row['reason'], 'local_web_coverage_incomplete')
+
+    def test_passive_recipe_is_required_and_persists_real_route_coverage(self):
+        self.doc['scope']['profile_id'] = 'bounded-passive-v1'
+        with patch('src_auto.local_application_workflow.ZapOfflineScanner.prepare'), patch('src_auto.local_application_workflow.ZapOfflineScanner.run', return_value={'status': 'completed', 'findings': [], 'scanner_target_requests': 0}) as scanner:
+            preview = self.service.local_app.preview(self.doc, False)
+            result = self.service.local_app.start({'approvalId': preview['approvalId'], 'confirmStart': True}, False)
+            row = self.wait_run(result['id'])
+        self.assertEqual(row['state'], 'completed')
+        self.assertEqual(row['observations'][-1]['action'], 'analyze_passive_capture')
+        self.assertEqual(row['passive']['scanner_target_requests'], 0)
+        self.assertEqual(row['requests'], 2)
+        scanner.assert_called_once()
+
     def setUp(self):
         self.fixture = fixture.LocalApplicationHTTPTests()
         self.fixture.setUp()

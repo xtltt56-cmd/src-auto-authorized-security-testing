@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "image": "ghcr.io/zaproxy/zaproxy@sha256:fe8fa5157a9601b2db26531340717923bda544f2f2081ec3edc779baed7321eb",
+  "image_id": "sha256:fe8fa5157a9601b2db26531340717923bda544f2f2081ec3edc779baed7321eb",
+  "docker_sha256": "46d8a5bd7523c575fb276a75296ab19abb9bf277d334169c665e521e46dbc2a4"
+}

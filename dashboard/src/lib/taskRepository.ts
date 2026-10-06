@@ -1,5 +1,6 @@
 import { fixtureSnapshot } from './fixtures'
-import type { AgentSnapshot, AgentStart, LocalApplicationDraft, LocalApplicationApproval } from './types'
+import type { SourceAuditDraft, SourceAuditApproval } from './types'
+import type { AgentSnapshot, AgentStart, LocalApplicationDraft, LocalApplicationApproval, LocalTarget, LocalTargetDraft } from './types'
 import type { AIConnectionResult, AIProviderSettings, ArtifactSummary, DashboardSnapshot, ReportFile, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
 
@@ -20,6 +21,12 @@ const eventFor = (task: TaskSummary, id: number, level: TaskEvent['level'], stag
 })
 
 export interface TaskRepository {
+  previewSourceAudit?(value: SourceAuditDraft): Promise<SourceAuditApproval>
+  startSourceAudit?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
+  listLocalTargets?(): Promise<{ targets: LocalTarget[] }>
+  saveLocalTarget?(value: LocalTargetDraft): Promise<LocalTarget>
+  duplicateLocalTarget?(id: string): Promise<LocalTarget>
+  deleteLocalTarget?(id: string): Promise<{ deleted: boolean }>
   previewLocalApplication?(value: LocalApplicationDraft): Promise<LocalApplicationApproval>
   startLocalApplication?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
   getAgent?(): Promise<AgentSnapshot>
@@ -284,6 +291,12 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
   return {
     getAgent: () => request<AgentSnapshot>('/agent'),
     previewLocalApplication: value => request('/local-app/preview', { method: 'POST', body: JSON.stringify(value) }),
+    listLocalTargets: () => request('/local-targets'),
+    previewSourceAudit: value => request('/source-audit/preview', { method: 'POST', body: JSON.stringify(value) }),
+    startSourceAudit: value => request('/source-audit/start', { method: 'POST', body: JSON.stringify(value) }),
+    saveLocalTarget: value => request('/local-targets/save', { method: 'POST', body: JSON.stringify(value) }),
+    duplicateLocalTarget: id => request('/local-targets/duplicate', { method: 'POST', body: JSON.stringify({ id }) }),
+    deleteLocalTarget: id => request('/local-targets/delete', { method: 'POST', body: JSON.stringify({ id }) }),
     startLocalApplication: value => request('/local-app/start', { method: 'POST', body: JSON.stringify(value) }),
     enableAgent: (enabled) => request('/agent/enable', { method: 'POST', body: JSON.stringify({ enabled }) }),
     startAgent: (value) => request('/agent/start', { method: 'POST', body: JSON.stringify(value) }),

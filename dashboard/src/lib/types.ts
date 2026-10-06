@@ -143,8 +143,11 @@ export type AIConnectionResult = { ok: boolean; code: string }
 
 export type AgentStart = { labId: string; mode: 'candidate-review' | 'api-permissions' | 'local-assessment'; provider: string; allowCloud: boolean; limits?: { max_steps: number }; resumeId?: string; candidateId?: string }
 export type AgentRun = {
-  id: string; labId: string; mode: AgentStart['mode'] | 'local-web-assessment' | 'local-web-standard'; provider: string; state: string; reason: string
+  id: string; labId: string; mode: AgentStart['mode'] | 'local-web-assessment' | 'local-web-standard' | 'source-audit'; provider: string; state: string; reason: string
   targetType?: string; origin?: string; standardRunId?: string
+  directory?: string
+  sourceAudit?: { findings: SourceFinding[]; complete: boolean; toolErrors: number; sourceFiles: number; sourceBytes: number }
+  passive?: { findings: Array<{ rule_id: string; title: string; path: string }>; scanner_target_requests: number; coverage?: { discovered_approved_paths: string[]; blocked_link_count: number } }
   steps: number; requests: number; modelCalls: number; tokens: number; usageEstimated: boolean
   elapsedSeconds: number; candidates: number; reportId: string; createdAt: string; candidateId?: string
   estimatedCostCny?: number; reservedCostCny?: number
@@ -153,6 +156,13 @@ export type AgentRun = {
   observations: Array<{ id: string; action: string; reference: string; summary: string; candidate?: boolean; path?: string; method?: string; status_code?: number; response_bytes_read?: number }>
 }
 export type AgentSnapshot = { enabled: boolean; remoteSessionEnabled: boolean; cloudAgentAvailable?: boolean; activeId: string | null; ownedActiveId?: string | null; runs: AgentRun[] }
+
+export type LocalTargetDraft = { id?: string; name: string; kind: 'custom_lab' | 'owned_app'; origin: string; paths: string[]; excluded: string[]; method: string; profile: string }
+export type LocalTarget = LocalTargetDraft & { id: string; revision: string; confirmed: false; allowCloud: false }
+
+export type SourceFinding = { scanner: string; rule_id: string; title: string; path: string; line: number; confirmed: false }
+export type SourceAuditDraft = { directory: string; languages: string[]; confirmRead: boolean; confirmSnapshot: boolean }
+export type SourceAuditApproval = { approvalId: string; digest: string; directory: string; languages: string[]; files: number; bytes: number; excluded: Record<string, number>; expiresAt: string; modelCalls: 0; networkContact: false }
 
 export type LocalApplicationDraft = {
   scope: { schema_version: 2; target_type: 'local_web'; target_id: string; origin: string;

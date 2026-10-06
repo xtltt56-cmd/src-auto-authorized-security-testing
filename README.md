@@ -1,6 +1,8 @@
 # SRC-Auto
 
-> **v0.12.0 发布范围（2026-10-06）：** 新增 Dashboard「受控 Agent」及「本机应用审查」，接通人工范围审批、原生有限只读执行、DeepSeek Agent 实际反馈和关联报告。Python 专项验收 460 项中 459 通过、1 跳过，Dashboard 51 项通过；发布另外受 CI、覆盖率、浏览器、凭据和打包门禁约束，只有全部通过才更新正式下载。真实云端对照及边界见 [专项进度与使用方法](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md) 和 [当前发布清单](RELEASE_MANIFEST.md)。真实量化应用、ZAP 本机出口、隔离业务验证和独立源码审查仍未验收。
+> **当前工作区新增（2026-10-06，尚未发布）：** 自定义本地目标库、L3 有界链接登记与断网 ZAP 响应头分析、独立目录授权的 Bandit / Semgrep 源码审查已接通真实后端。操作见 [统一使用说明](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)，准确验收及限制见 [本轮报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)。下方 v0.12.0 是已有发行范围，不代表最新下载包已经包含本轮改动；本轮没有推送 GitHub 或更新发行包。
+
+> **v0.12.0 发布范围（2026-10-06，历史基线）：** 新增 Dashboard「受控 Agent」及「本机应用审查」，接通人工范围审批、原生有限只读执行、DeepSeek Agent 实际反馈和关联报告。当时 Python 专项验收 460 项中 459 通过、1 跳过，Dashboard 51 项通过；发布另外受 CI、覆盖率、浏览器、凭据和打包门禁约束，只有全部通过才更新正式下载。真实云端对照及边界见 [专项进度与使用方法](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md) 和 [当前发布清单](RELEASE_MANIFEST.md)。该发行基线不包含本轮新加的 L3 与独立源码审查。
 
 > **当前安全边界：** DeepSeek API ID 为 `deepseek-flash`，Qwen3.5-9B 可人工选择；CPU 上限 70%、整机已用 RAM 上限 30 GiB。受控 Agent 默认不执行，须启动同意、页面启用和单任务同意。所有候选仍须人工复现和确认；真实目标 Agent 与自动提交保持关闭。旧版“等待确认”和靶场数字属于各自历史轮次，不覆盖新验收或构成漏洞命中率。
 

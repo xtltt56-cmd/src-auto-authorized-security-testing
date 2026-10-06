@@ -21,8 +21,15 @@ class AgentProviderTests(unittest.TestCase):
                        references=['entry'] + ['route-{:03d}'.format(i) for i in range(1, 7)],
                        permissions={'routeReferences': ['route-{:03d}'.format(i) for i in range(1, 7)], 'requiredRouteCount': 6},
                        observations=observations)
-        result = AgentModel(provider, local=False).decide(context)
-        self.assertFalse(result['usage_estimated'])
+        for passive in (False, True):
+            if passive:
+                context['permissions'].update(passiveRequired=True)
+                for row in observations:
+                    row['discovery'] = dict(approved_paths=['/api/route2'], blocked_counts={'path_excluded': 1}, link_limit_reached=False)
+                observations.append(dict(id='o7', action='analyze_passive_capture', reference='entry', status='ok', advisoryCount=1,
+                    coverage=dict(messages=6, raw_body_retained=False, body_rules_enabled=False, discovered_approved_paths=['/api/route2'], blocked_link_count=6)))
+            result = AgentModel(provider, local=False).decide(context)
+            self.assertFalse(result['usage_estimated'])
 
     def context(self):
         return {"references": ["entry"], "capabilities": ["inspect_headers", "finish"], "observations": []}

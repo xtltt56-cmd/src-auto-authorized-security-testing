@@ -248,7 +248,13 @@ class AgentRunner:
                 result = self.actions.execute(value)
             except Exception as exc:
                 entry["result"] = "failed"
-                code = str(exc) if str(exc) in {"request_limit", "scope_blocked", "cancelled", "response_too_large", "capability_unavailable"} else "tool_failed"
+                # Only known constant codes cross into persistent traces; never
+                # store arbitrary tool stderr or exception text containing data.
+                code = str(exc) if str(exc) in {"request_limit", "scope_blocked", "cancelled", "response_too_large", "capability_unavailable",
+                    "resource_limit", "blocked_disk", "task_timeout", "outside_test_window", "application_identity_changed",
+                    "application_identity_unavailable", "scanner_configuration_changed", "tool_timeout", "tool_output_limit",
+                    "tool_cleanup_failed", "passive_scanner_unavailable", "tool_isolation_invalid"} else "tool_failed"
+                entry["reason"] = code
                 save(state="cancelled" if code == "cancelled" else "needs-human", reason=code)
                 return False
             if cancel.is_set():

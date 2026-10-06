@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
-from .local_scope import LOCAL_WEB_TYPE, safe_local_path, strict_boolean
+from .local_scope import LOCAL_WEB_TYPE, PASSIVE_PROFILE, safe_local_path, strict_boolean
 from .scope import ScopeGuard, ScopePolicy
 
 
@@ -131,7 +131,7 @@ class LocalApplicationHTTP:
 
     def __init__(self, scope_guard: ScopeGuard, plan: LocalReadOnlyPlan, cancel: threading.Event,
                  stop: Optional[Callable[[], bool]] = None, now_fn: Optional[Callable[[], datetime]] = None,
-                 before_request: Optional[Callable[[], str]] = None):
+                 before_request: Optional[Callable[[], str]] = None, response_observer=None):
         scope = scope_guard.policy
         if scope.target_type != LOCAL_WEB_TYPE or scope.local_web is None or scope.digest() != plan.scope_digest:
             raise LocalApplicationError("scope_digest_mismatch")
@@ -147,6 +147,9 @@ class LocalApplicationHTTP:
         self.cancel, self.stop = cancel, stop or (lambda: False)
         self.now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self.before_request = before_request or (lambda: "")
+        if response_observer is not None and scope.local_web.profile_id != PASSIVE_PROFILE:
+            raise LocalApplicationError("passive_profile_required")
+        self.response_observer = response_observer
         self.limits = self.guard.policy.local_web.limits
         self.deadline = time.monotonic() + self.limits.task_timeout_seconds
         self.request_count = 0
@@ -251,6 +254,9 @@ class LocalApplicationHTTP:
                           "header_presence": {name: name in names for name in (
                               "content-security-policy", "x-content-type-options", "x-frame-options",
                               "referrer-policy", "permissions-policy", "strict-transport-security")}}
+                if self.response_observer is not None:
+                    result.update(self.response_observer(url, request.method, response.status, response.getheaders(),
+                                                       data, result['body_truncated']))
                 data = b""
                 size = len(json.dumps(result, sort_keys=True).encode("utf-8"))
                 if self.output_bytes + size > self.limits.output_limit_bytes:

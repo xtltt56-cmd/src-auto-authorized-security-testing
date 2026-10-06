@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 LOCAL_WEB_TYPE = "local_web"
 READONLY_PROFILE = "readonly-baseline-v1"
+PASSIVE_PROFILE = "bounded-passive-v1"
 _FIELDS = {
     "schema_version", "target_type", "target_id", "origin", "confirmed", "allow_network_contact",
     "automation_allowed", "allowed_paths", "excluded_paths", "allowed_methods", "window_start",
@@ -114,12 +115,12 @@ class LocalWebScope:
         note = value["authorization_note"]
         if not isinstance(note, str) or not note.strip() or len(note) > 2000 or any(ord(c) < 32 for c in note):
             raise ValueError("local_authorization_note_required")
-        if value["profile_id"] != READONLY_PROFILE:
+        if value["profile_id"] not in (READONLY_PROFILE, PASSIVE_PROFILE):
             raise ValueError("local_profile_unsupported")
         return cls(origin, strict_boolean(value["automation_allowed"], "automation_allowed"),
                    _paths(value["allowed_paths"], "allowed_paths", True),
                    _paths(value["excluded_paths"], "excluded_paths", False), tuple(sorted(set(methods))),
-                   start, end, note.strip(), READONLY_PROFILE, LocalRequestLimits.from_mapping(value["limits"]))
+                   start, end, note.strip(), value["profile_id"], LocalRequestLimits.from_mapping(value["limits"]))
 
     def canonical(self) -> Mapping[str, Any]:
         return {"origin": self.origin, "automation_allowed": self.automation_allowed,

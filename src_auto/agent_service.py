@@ -25,6 +25,10 @@ class AgentService:
         self.cancel = threading.Event()
         from .local_application_workflow import LocalApplicationCoordinator
         self.local_app = LocalApplicationCoordinator(self)
+        from .local_targets import LocalTargetLibrary
+        self.local_targets = LocalTargetLibrary(self.root)
+        from .source_audit import SourceAuditCoordinator
+        self.source_audit = SourceAuditCoordinator(self)
 
     @property
     def active(self):

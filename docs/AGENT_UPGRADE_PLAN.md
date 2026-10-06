@@ -348,7 +348,7 @@ M4 可增加经过验证的 ZAP 被动分析配置；初版目录不包含任意
 
 ## 12. 本机 Web 应用审查专项补充（2026-10-05）
 
-将本机应用扫描方案及复审补充纳入后续升级，具体执行与验收要求见 [本机 Web 应用审查升级计划](LOCAL_APPLICATION_SCAN_UPGRADE_PLAN.md)。2026-10-06 已开始实施并验证 L1 首批后端基础，整体专项仍未完成，最新状态见 [本机应用实施进度](LOCAL_APPLICATION_SCAN_PROGRESS.md)；已有五靶场 Agent 的运行记录不代表这一能力已完成。
+将本机应用扫描方案及复审补充纳入后续升级，具体执行与验收要求见 [本机 Web 应用审查升级计划](LOCAL_APPLICATION_SCAN_UPGRADE_PLAN.md)。2026-10-06 工作区已实现 L1/L2、自定义本地目标、L3 断网 ZAP 和可选独立源码审查；L4 隔离业务验证与完整发布仍未完成，准确成绩见 [统一验收报告](CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)，历史记录见 [本机应用实施进度](LOCAL_APPLICATION_SCAN_PROGRESS.md)。既有五靶场 Agent 的成绩不替代这些新能力的验收。
 
 专项沿用本计划的单 Agent、成熟工具复用、程序侧权限校验与人工最终裁决，实施顺序为：范围/执行器 L1 → 最小只读真实闭环 L2 → 受控工具与 AI L3 → 隔离受控验证及发布 L4。
 

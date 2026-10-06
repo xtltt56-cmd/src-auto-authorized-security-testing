@@ -9,6 +9,7 @@ import { FindingsPage } from './pages/FindingsPage'
 import { AISettingsPage } from './pages/AISettingsPage'
 import { AgentPage } from './pages/AgentPage'
 import { LocalApplicationPage } from './pages/LocalApplicationPage'
+import { SourceAuditPage } from './pages/SourceAuditPage'
 import { OfflineReviewPage } from './pages/OfflineReviewPage'
 import { createLoopbackRepository, type TaskRepository } from './lib/taskRepository'
 import { safeDefaultSnapshot } from './lib/fixtures'
@@ -17,7 +18,7 @@ import type { ArtifactSummary, DashboardSnapshot, TargetDraftResult } from './li
 type AppProps = { repository?: TaskRepository }
 
 const defaultRepository = createLoopbackRepository('/api')
-const navKeys: NavKey[] = ['overview', 'labs', 'agent', 'local-app', 'targets', 'review', 'findings', 'settings']
+const navKeys: NavKey[] = ['overview', 'labs', 'agent', 'local-app', 'source-audit', 'targets', 'review', 'findings', 'settings']
 
 const initialNavKey = (): NavKey => {
   const requested = new URLSearchParams(window.location.search).get('page') as NavKey | null
@@ -33,6 +34,7 @@ const pageMeta: Record<NavKey, { title: string; description: string }> = {
   settings: { title: '系统设置', description: '模型、密钥状态、依赖和 D 盘存储' },
   agent: { title: '受控 Agent', description: '本地只读 · 有限动作 · 证据反馈 · 人工最终确认' },
   'local-app': { title: '本机应用审查', description: '精确路由 · 人工审批 · 真实只读检查 · 覆盖与报告' },
+  'source-audit': { title: '源码安全审查', description: '独立目录授权 · 断网静态分析 · 文件与行号 · 人工复核' },
 }
 
 export function App({ repository = defaultRepository }: AppProps) {
@@ -122,6 +124,8 @@ export function App({ repository = defaultRepository }: AppProps) {
     content = <AgentPage repository={repository} snapshot={snapshot} onOpenReport={openTaskReport} />
   } else if (activeKey === 'local-app') {
     content = <LocalApplicationPage repository={repository} onOpenReport={openTaskReport} />
+  } else if (activeKey === 'source-audit') {
+    content = <SourceAuditPage repository={repository} onOpenReport={openTaskReport} />
   } else {
     content = <OfflineReviewPage repository={repository} />
   }
@@ -139,7 +143,7 @@ export function App({ repository = defaultRepository }: AppProps) {
           <Info size={16} aria-hidden="true" />
           <span><strong>未连接本地执行服务</strong> · {connectionMessage || '当前任务状态未知；页面不会把失联误判为已停止。'}</span>
         </div>
-      ) : activeKey !== 'local-app' && snapshot.source === 'loopback' && snapshot.dependency && !snapshot.dependency.dockerReady ? (
+      ) : activeKey !== 'local-app' && activeKey !== 'source-audit' && snapshot.source === 'loopback' && snapshot.dependency && !snapshot.dependency.dockerReady ? (
         <div className="inline-notice data-source-notice" role="status" aria-label="依赖状态">
           <Info size={16} aria-hidden="true" />
           <span><strong>Docker 尚未就绪</strong> · {snapshot.dependency.message}</span>

@@ -30,8 +30,9 @@ export function AgentPage({ repository, snapshot, onOpenReport }: { repository: 
   const refresh = useCallback(async () => {
     if (!repository.getAgent) throw new Error('agent_unavailable')
     const next = await repository.getAgent()
-    setData({ ...next, runs: next.runs.filter(x => x.targetType !== 'local_web') })
-    setSelectedId(current => current ?? next.activeId ?? next.runs[0]?.id ?? null)
+    const runs = next.runs.filter(x => x.targetType !== 'local_web' && x.targetType !== 'source_audit')
+    setData({ ...next, runs })
+    setSelectedId(current => current ?? runs.find(x => x.id === next.activeId)?.id ?? runs[0]?.id ?? null)
   }, [repository])
   useEffect(() => {
     let active = true
@@ -42,8 +43,9 @@ export function AgentPage({ repository, snapshot, onOpenReport }: { repository: 
       try {
         const next = await repository.getAgent()
         if (active) {
-          setData({ ...next, runs: next.runs.filter(x => x.targetType !== 'local_web') })
-          setSelectedId(current => current ?? next.activeId ?? next.runs[0]?.id ?? null)
+          const runs = next.runs.filter(x => x.targetType !== 'local_web' && x.targetType !== 'source_audit')
+          setData({ ...next, runs })
+          setSelectedId(current => current ?? runs.find(x => x.id === next.activeId)?.id ?? runs[0]?.id ?? null)
         }
       } catch {
         if (active) { setData(null); setMessage('Agent 执行服务不可用；当前任务状态未知，请重启新版控制台后核对。') }
@@ -71,7 +73,7 @@ export function AgentPage({ repository, snapshot, onOpenReport }: { repository: 
   }
   const start = async (resume?: AgentRun) => {
     if (!repository.startAgent) return
-    if (resume?.targetType === 'local_web' || resume?.mode === 'local-web-assessment' || resume?.mode === 'local-web-standard') return
+    if (resume?.targetType === 'local_web' || resume?.mode === 'local-web-assessment' || resume?.mode === 'local-web-standard' || resume?.mode === 'source-audit') return
     const value: AgentStart = { labId: resume?.labId ?? labId, mode: resume?.mode ?? mode, provider: resume?.provider ?? provider, allowCloud }
     if (resume) { value.resumeId = resume.id; if (resume.candidateId) value.candidateId = resume.candidateId }
     else { value.limits = { max_steps: steps }; if (candidateId && mode === 'candidate-review') value.candidateId = candidateId }

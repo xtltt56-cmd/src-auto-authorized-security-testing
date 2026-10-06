@@ -66,6 +66,18 @@ class FakeProviderSettings:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_expired_local_window_has_a_specific_public_error(self):
+        from types import SimpleNamespace
+        def expired(*args): raise ValueError('outside_test_window')
+        self.service.agent = SimpleNamespace(local_app=SimpleNamespace(preview=expired))
+        status, _, payload = self.request('/api/local-app/preview', method='POST', token='test-session-token', body={})
+        self.assertEqual(status, 400)
+        self.assertEqual(payload['error'], 'outside_test_window')
+
+    def test_new_source_and_target_operations_require_session_before_body(self):
+        for path in ('/api/source-audit/preview', '/api/source-audit/start', '/api/local-targets/save', '/api/local-targets/delete'):
+            self.assertEqual(self.request(path, method='POST', body={})[0], 401)
+        self.assertEqual(self.request('/api/local-targets')[0], 401)
     def test_rejected_slow_post_does_not_wait_for_declared_body(self):
         import http.client
         import time

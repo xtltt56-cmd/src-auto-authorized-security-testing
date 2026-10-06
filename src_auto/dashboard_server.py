@@ -255,6 +255,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             else:
                 self._write_json(200, agent.snapshot(self.server.remote_ai_session_enabled))
             return
+        if self.path == '/api/local-targets':
+            if not self._authorized(): return
+            try:
+                self._write_json(200, {'targets': self.server.service.agent.local_targets.list()})
+            except Exception:
+                self._error(503, 'local_targets_unavailable', '本机目标草稿库不可用')
+            return
         if self.path == "/api/dashboard":
             if not self._authorized():
                 return
@@ -316,7 +323,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error(400, "invalid_content_length", "请求长度无效")
             return
-        limit = 32768 if self.path == '/api/drafts' else _MAX_BODY_BYTES
+        limit = 32768 if self.path in ('/api/drafts', '/api/local-targets/save', '/api/local-app/preview') else _MAX_BODY_BYTES
         if length < 0 or length > limit:
             self._error(413, "request_too_large", "请求体超过本地控制接口限制")
             return
@@ -352,6 +359,41 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                             LOCAL_ERRORS.get(code, '请核对本机入口、精确路由、时间窗与确认开关'))
             except Exception:
                 self._error(503, 'local_application_unavailable', '本机应用执行配置暂时不可用；没有输出异常原文')
+            return
+        if self.path in {'/api/local-targets/save', '/api/local-targets/duplicate', '/api/local-targets/delete'}:
+            # Draft storage does not authorize a source or network operation.
+            try:
+                library = self.server.service.agent.local_targets
+                if self.path.endswith('/save'):
+                    result = library.save(document)
+                elif set(document) != {'id'}:
+                    raise ValueError('invalid_local_target')
+                else:
+                    result = library.duplicate(document['id']) if self.path.endswith('/duplicate') else library.delete(document['id'])
+                self._write_json(200, result)
+            except ValueError:
+                self._error(400, 'invalid_local_target', '请填写名称、精确回环入口与无副作用路由；保存不会授予执行权限')
+            except Exception:
+                self._error(503, 'local_targets_unavailable', '本机目标草稿库不可用')
+            return
+        if self.path in {'/api/source-audit/preview', '/api/source-audit/start'}:
+            from .local_application import LocalApplicationError
+            try:
+                coordinator = self.server.service.agent.source_audit
+                result = coordinator.preview(document) if self.path.endswith('/preview') else coordinator.start(document)
+                self._write_json(200 if self.path.endswith('/preview') else 202, result)
+            except (ValueError, RuntimeError, LocalApplicationError) as exc:
+                code = getattr(exc, 'reason', str(exc))
+                allowed = {'source_authorization_required', 'source_directory_invalid', 'source_directory_too_broad',
+                    'source_languages_invalid', 'source_link_not_allowed', 'source_total_limit', 'source_file_limit',
+                    'source_enumeration_limit', 'source_no_supported_files', 'source_scanner_unavailable',
+                    'passive_scanner_unavailable', 'source_changed_after_approval', 'source_configuration_changed', 'source_approval_expired',
+                    'approval_already_used', 'manual_execution_confirmation_required', 'agent_operation_conflict',
+                    'dashboard_closing', 'resource_limit', 'blocked_disk', 'cancelled', 'task_timeout'}
+                self._error(409 if isinstance(exc, RuntimeError) else 400, code if code in allowed else 'source_request_invalid',
+                            '源码审查未启动：请核对独立目录授权、固定工具、文件额度与审批摘要')
+            except Exception:
+                self._error(503, 'source_audit_unavailable', '源码审查执行器不可用；没有输出异常原文')
             return
         if self.path in {'/api/agent/start', '/api/agent/enable', '/api/agent/cancel'}:
             agent = getattr(self.server.service, 'agent', None)

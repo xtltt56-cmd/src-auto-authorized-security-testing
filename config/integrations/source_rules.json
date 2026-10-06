@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {"id":"src-auto.js-dynamic-eval","languages":["javascript","typescript"],"message":"Dynamic eval needs human review","severity":"WARNING","pattern":"eval($X)"},
+    {"id":"src-auto.js-function-constructor","languages":["javascript","typescript"],"message":"Dynamic function construction needs human review","severity":"WARNING","pattern":"new Function(...)"},
+    {"id":"src-auto.js-shell-exec","languages":["javascript","typescript"],"message":"Shell command construction needs human review","severity":"WARNING","pattern-either":[{"pattern":"require('child_process').exec(...)"},{"patterns":[{"pattern-inside":"const $CP = require('child_process'); ..."},{"pattern":"$CP.exec(...)"}]}]},
+    {"id":"src-auto.js-html-sink","languages":["javascript","typescript"],"message":"HTML insertion needs human review","severity":"WARNING","pattern":"$EL.innerHTML = $DATA"}
+  ]
+}

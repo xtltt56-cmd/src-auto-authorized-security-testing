@@ -3,6 +3,8 @@
 **发布标识：** `v0.12.0`
 
 **发布日期：** 2026-10-06（Asia/Shanghai）
+
+**工作区与发行的区别：** 本轮新增的自定义目标库、L3 断网 ZAP 和独立源码审查尚未发布，不纳入下方 v0.12.0 既有清单。开发验收见 [统一报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)；不能把未提交工作区或本地构建称作 GitHub 最新下载包。
 **适用分支：** `main`，仅在 GitHub Actions 发布门禁全部通过后创建标签和发行包。
 
 固定最新版下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。每次正式版均提供版本化 ZIP、固定名 ZIP、`SHA256SUMS.txt` 和机器可读 `release-manifest.json`。机器清单中的提交 SHA 是分发源码的准确标识；发布是否完成以 GitHub Releases 和 Actions 实际结果为准。

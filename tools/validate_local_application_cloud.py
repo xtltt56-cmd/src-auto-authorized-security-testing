@@ -27,16 +27,18 @@ from src_auto.dashboard_workspace import DashboardWorkspace
 
 
 class SyntheticApplication:
-    def __init__(self):
+    def __init__(self, passive=False):
         self.received = []
         received = self.received
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 received.append([self.command, self.path])
                 body = b'{"token":"SYNTHETIC_PRIVATE_BODY","account":"SYNTHETIC_PRIVATE_ACCOUNT"}'
+                if passive:
+                    body = b'<html><a href="/api/health">ok</a><a href="/api/reset">excluded</a><a href="https://outside.test/?token=SYNTHETIC_PRIVATE_TOKEN">blocked</a>SYNTHETIC_PRIVATE_BODY</html>'
                 self.send_response(500 if self.path == '/failure' else 200)
                 self.send_header('Set-Cookie', 'token=SYNTHETIC_PRIVATE_COOKIE')
-                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Type', 'text/html' if passive else 'application/json')
                 self.send_header('Content-Length', str(len(body)))
                 self.end_headers()
                 if self.command != 'HEAD': self.wfile.write(body)
@@ -107,6 +109,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute-cloud', action='store_true')
     parser.add_argument('--serve-browser', action='store_true')
+    parser.add_argument('--passive', action='store_true', help='Also require the fixed offline ZAP recipe, using synthetic HTML only')
     args = parser.parse_args()
     if not args.execute_cloud:
         print('No network/model test started. Explicit --execute-cloud is required.')
@@ -115,6 +118,11 @@ def main():
     (output / 'config').mkdir(parents=True, exist_ok=False)
     for name in ('models.yaml', 'policy.yaml'):
         shutil.copyfile(str(ROOT / 'config' / name), str(output / 'config' / name))
+    if args.passive:
+        for relative in ('config/integrations/passive_scanners.json', 'vendor/bin/docker.exe'):
+            destination = output / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(str(ROOT / relative), str(destination))
     os.environ['SRC_AUTO_REMOTE_AI_CONSENT'] = 'yes'
     os.environ['SRC_AUTO_DEEPSEEK_CONSENT'] = 'yes'
     records, factory_calls = [], []
@@ -122,7 +130,7 @@ def main():
         factory_calls.append(provider)
         # Saved DPAPI key stays in its original protected file; never copy it.
         return MeteredModel(configured_model(ROOT, provider, remote, allow), records)
-    app, control = SyntheticApplication(), SyntheticControl(output)
+    app, control = SyntheticApplication(args.passive), SyntheticControl(output)
     service = AgentService(output, control, model_factory=factory)
     control.agent = service
     # Charge validation reservations against the real shared project ledger.
@@ -133,10 +141,16 @@ def main():
         try: service.local_app.preview(document(app.origin, 'agent'), False)
         except ValueError as exc: blocked = str(exc) == 'remote_ai_disabled_for_session'
         gate_calls = len(factory_calls)
-        standard = run(service, document(app.origin))
+        def approved(mode='standard'):
+            value = document(app.origin, mode)
+            if args.passive:
+                value['scope']['profile_id'] = 'bounded-passive-v1'
+                value['scope']['limits']['output_limit_bytes'] = 1048576
+            return value
+        standard = run(service, approved())
         standard_received = list(app.received)
         service.set_enabled(True)
-        agent = run(service, document(app.origin, 'agent'))
+        agent = run(service, approved('agent'))
         agent_received = app.received[len(standard_received):]
         report_text = '\n'.join(p.read_text(encoding='utf-8') for p in (output / 'reports').rglob('*.md'))
         database_secret = any(b'SYNTHETIC_PRIVATE' in p.read_bytes() for p in (output / 'data').glob('*') if p.is_file())
@@ -152,6 +166,10 @@ def main():
                   'secret_not_retained': 'SYNTHETIC_PRIVATE' not in report_text and not database_secret,
                   'reports_linked_and_readable': bool(linked), 'actual_usage_reported': bool(records) and all(not r['usageEstimated'] for r in records),
                   'no_extra_target_requests': len(app.received) == 6}
+        if args.passive:
+            checks.update(offline_scanner_completed_in_both_modes=all((row.get('passive') or {}).get('status') == 'completed' for row in (standard, agent)),
+                          scanner_network_disabled=all((row.get('passive') or {}).get('network_mode') == 'none' and (row.get('passive') or {}).get('scanner_target_requests') == 0 for row in (standard, agent)),
+                          model_selected_passive_action=any(x['action'] == 'analyze_passive_capture' for x in agent['observations']))
         resource = WindowsResources(load_mapping(output / 'config/policy.yaml')).check()
         summary = {'success': all(checks.values()), 'checks': checks, 'resourcesMocked': False, 'resourceCheck': resource,
                    'apiModel': load_mapping(ROOT / 'config/models.yaml')['remote_providers']['deepseek']['model'],
@@ -162,7 +180,8 @@ def main():
         (output / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps({'success': summary['success'], 'checks': checks, 'reportPath': summary['reportPath'],
                           'syntheticOrigin': app.origin, 'standardSeconds': standard['elapsedSeconds'], 'agentSeconds': agent['elapsedSeconds'],
-                          'modelCalls': agent['modelCalls'], 'tokens': agent['tokens'], 'estimatedCostCny': agent.get('estimatedCostCny')}, ensure_ascii=False), flush=True)
+                          'modelCalls': agent['modelCalls'], 'tokens': agent['tokens'], 'estimatedCostCny': agent.get('estimatedCostCny'),
+                          'standardState': standard['state'], 'standardReason': standard['reason'], 'agentState': agent['state'], 'agentReason': agent['reason']}, ensure_ascii=False), flush=True)
         if args.serve_browser:
             server = create_server(control, port=4174, project_root=output, remote_ai_enabled=True)
             print('Foreground synthetic Dashboard API ready on 127.0.0.1:4174', flush=True)

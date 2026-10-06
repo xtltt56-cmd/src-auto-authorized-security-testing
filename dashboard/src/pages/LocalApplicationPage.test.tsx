@@ -13,6 +13,31 @@ const setup = (remote = false) => {
   return repository
 }
 
+it('new blank draft clears target fields and all previous approvals', async () => {
+  setup()
+  await userEvent.type(screen.getByLabelText('本机服务入口'), 'http://127.0.0.1:8765')
+  await userEvent.click(screen.getByRole('checkbox', { name: /确认拥有本机应用/ }))
+  await userEvent.click(screen.getByRole('button', { name: '核对审批摘要' }))
+  await screen.findByText(/尚未发送目标请求/)
+  await userEvent.click(screen.getByRole('button', { name: '新建空白草稿' }))
+  expect(screen.getByLabelText('本机服务入口')).toHaveValue('')
+  expect(screen.getByRole('checkbox', { name: /确认拥有本机应用/ })).not.toBeChecked()
+  expect(screen.queryByRole('button', { name: '开始本机审查' })).toBeNull()
+})
+
+
+it('has an in-platform draft library and loading does not enable authorization', async () => {
+  const repository = createFixtureRepository()
+  repository.getAgent = vi.fn().mockResolvedValue({ enabled: false, remoteSessionEnabled: false, activeId: null, runs: [] })
+  repository.listLocalTargets = vi.fn().mockResolvedValue({ targets: [{ id: 'custom-synthetic', name: '合成靶场', kind: 'custom_lab', origin: 'http://127.0.0.1:8765', paths: ['/health'], excluded: ['/reset'], method: 'GET', profile: 'readonly-baseline-v1', revision: '1', confirmed: false, allowCloud: false }] })
+  repository.previewLocalApplication = vi.fn()
+  render(<LocalApplicationPage repository={repository} onOpenReport={() => undefined} />)
+  await userEvent.click(await screen.findByRole('button', { name: '载入 合成靶场' }))
+  expect(screen.getByLabelText('本机服务入口')).toHaveValue('http://127.0.0.1:8765')
+  expect(screen.getByRole('checkbox', { name: /确认拥有本机应用/ })).not.toBeChecked()
+  expect(repository.previewLocalApplication).not.toHaveBeenCalled()
+})
+
 it('never probes or starts on mount, and binds preview to explicit authorization', async () => {
   const repository = setup()
   await screen.findByRole('button', { name: '核对审批摘要' })

@@ -26,6 +26,7 @@ INSTRUCTIONS = (
     "这些固定配方只作用于已选择的本地靶场；拒绝任何外部地址、自由参数、命令或未定义载荷。"
     "local-web-assessment 是另外批准的本机应用只读观察。inspect_local_route 的 reference 必须来自 routeReferences。"
     "该模式逐一执行全部批准 routeReferences，不能重复；finish 需引用全部路由的观察ID。"
+    "若permissions.passiveRequired为true，路由检查完成后必须调用analyze_passive_capture，reference为entry；finish还需引用其观察ID。"
 )
 
 
@@ -35,6 +36,14 @@ class AgentModel:
         self.local = local
 
     def decide(self, context):
+        if context.get('mode') == 'local-web-assessment':
+            # Keep real evidence IDs, route outcomes and passive coverage. The
+            # full audit record remains local; duplicated storage/privacy flags
+            # need not consume the bounded decision prompt on every round.
+            fields = {'id', 'action', 'reference', 'path', 'method', 'status_code', 'status',
+                      'header_presence', 'candidate', 'confirmed', 'advisoryCount', 'discovery', 'coverage'}
+            context = dict(context, observations=[{key: value for key, value in row.items() if key in fields}
+                                                   for row in context.get('observations', [])])
         text = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
         prompt = INSTRUCTIONS + "\n" + text
         if len(prompt.encode("utf-8")) > 6000:

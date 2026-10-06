@@ -6,6 +6,17 @@ from src_auto.controls import ResourceGuard
 
 
 class AgentResourceTests(unittest.TestCase):
+    def test_cpu_counter_sampling_does_not_reset_on_rapid_tool_gates(self):
+        resources = WindowsResources({})
+        resources._sample_cpu(0, 0, 10.0)
+        self.assertAlmostEqual(resources._sample_cpu(95, 100, 10.25), 5)
+        # A 10 ms quantized counter burst must not replace the measured interval.
+        self.assertAlmostEqual(resources._sample_cpu(95, 110, 10.26), 5)
+        # Once a complete interval really exceeds the unchanged CPU limit, block.
+        cpu = resources._sample_cpu(110, 200, 10.50)
+        self.assertGreater(cpu, 70)
+        self.assertFalse(ResourceGuard(metrics_fn=lambda: (cpu, 20)).check()['allowed'])
+
     def test_default_memory_boundary_preserves_cpu_and_explicit_limits(self):
         for factory in (lambda cpu, memory: ResourceGuard(metrics_fn=lambda: (cpu, memory)),
                         lambda cpu, memory: WindowsResources({}).guard):
