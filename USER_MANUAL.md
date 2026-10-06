@@ -1,6 +1,6 @@
 # SRC-Auto 平台完整使用手册
 
-> **最新工作区使用说明（2026-10-06，未发布）：** 自定义本地靶场 / 应用目标库、L3 断网 ZAP 与独立源码审查优先阅读 [统一操作指南](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)。本轮真实验收及限制见 [验收报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)。下方发行和历史成绩保留用于追溯，不代表本轮已同步下载包。
+> **v0.13.0 使用说明（2026-10-06）：** 自定义本地靶场 / 应用目标库、L3 断网 ZAP 与独立源码审查优先阅读 [统一操作指南](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)。本轮真实验收及限制见 [验收报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)，分发内容以 [当前发布清单](RELEASE_MANIFEST.md) 为准。源码中的版本、下载包 VERSION 和 release-manifest.json 应一致；下方旧版成绩保留用于追溯。
 
 > **v0.12.0 使用说明：** 新增「受控 Agent」与「本机应用审查」，用法见 [Agent 使用说明](docs/AGENT_USER_GUIDE.md) 与 [本机应用进度](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)。分发范围以 [当前发布清单](RELEASE_MANIFEST.md) 为准；下方旧版手册和历史靶场成绩不代表完整漏洞发现率。下载用户须自行填写密钥，不会获得原操作者的密钥或会话。
 

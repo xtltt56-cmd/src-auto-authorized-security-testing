@@ -1,6 +1,6 @@
 # SRC-Auto
 
-> **当前工作区新增（2026-10-06，尚未发布）：** 自定义本地目标库、L3 有界链接登记与断网 ZAP 响应头分析、独立目录授权的 Bandit / Semgrep 源码审查已接通真实后端。操作见 [统一使用说明](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)，准确验收及限制见 [本轮报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)。下方 v0.12.0 是已有发行范围，不代表最新下载包已经包含本轮改动；本轮没有推送 GitHub 或更新发行包。
+> **v0.13.0 统一版本（2026-10-06）：** 在既有受控 Agent 和本机应用审查之上，加入自定义本地目标库、L3 有界链接登记与断网 ZAP 响应头分析，以及独立目录授权的 Bandit / Semgrep 源码审查。操作见 [统一使用说明](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)，准确验收及限制见 [本轮报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)。源码、版本标签和 Windows 下载包由同一提交生成，实际发行完成状态以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。
 
 > **v0.12.0 发布范围（2026-10-06，历史基线）：** 新增 Dashboard「受控 Agent」及「本机应用审查」，接通人工范围审批、原生有限只读执行、DeepSeek Agent 实际反馈和关联报告。当时 Python 专项验收 460 项中 459 通过、1 跳过，Dashboard 51 项通过；发布另外受 CI、覆盖率、浏览器、凭据和打包门禁约束，只有全部通过才更新正式下载。真实云端对照及边界见 [专项进度与使用方法](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md) 和 [当前发布清单](RELEASE_MANIFEST.md)。该发行基线不包含本轮新加的 L3 与独立源码审查。
 
@@ -22,7 +22,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前版本读取规则：** 当前源码版本为 `v0.12.0`，实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
+> **当前版本读取规则：** 当前源码版本为 `v0.13.0`，实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

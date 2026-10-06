@@ -1,6 +1,6 @@
 # 自定义本地目标、受控 L3 与源码审查使用说明
 
-更新时间：2026-10-06。适用于本轮升级后的源码工作区；正式发行状态另见 [发布清单](../RELEASE_MANIFEST.md)。本轮没有自动上传 GitHub 或更新下载包。
+更新时间：2026-10-06。适用于 v0.13.0 的源码和 Windows 分发包；正式发行状态另见 [发布清单](../RELEASE_MANIFEST.md)。下载包不携带 Docker、固定扫描器镜像或模型权重，L3 / 源码审查需先完成下方工具准备。
 
 ## 1. 选哪个入口
 
@@ -27,6 +27,9 @@ Set-Location 'D:\网络安全文件夹\SRC-Auto'
 L2 原生只读基线不需要 Docker。L3 与源码审查需要本机 Docker Desktop 已正常启动，并提前准备固定工具：
 
 ```powershell
+# Windows 分发包使用自带 Python：
+.\runtime\python\python.exe -X utf8 tools\install_controlled_scanners.py
+# 源码工作区使用已安装的 Python：
 python -X utf8 tools\install_controlled_scanners.py
 ```
 
