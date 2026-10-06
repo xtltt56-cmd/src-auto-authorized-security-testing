@@ -9,6 +9,7 @@ import secrets
 import os
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -165,7 +166,37 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _error(self, status: int, code: str, message: str) -> None:
+        if self.command == 'POST':
+            self._discard_unread_body()
         self._write_json(status, {"ok": False, "error": code, "message": message})
+
+    def _discard_unread_body(self) -> None:
+        # Closing a Windows socket with unread POST bytes can reset even a
+        # successfully written 401/413 response. Discard, never parse or log,
+        # a bounded amount; slow/oversized clients cannot prolong rejection.
+        if getattr(self, '_body_read', False):
+            return
+        try:
+            remaining = min(max(int(self.headers.get('Content-Length', '0')), 0), 65536)
+        except (ValueError, OverflowError):
+            return
+        previous = self.connection.gettimeout()
+        deadline = time.monotonic() + .1
+        try:
+            while remaining:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    break
+                self.connection.settimeout(timeout)
+                data = self.rfile.read1(min(remaining, 8192))
+                if not data:
+                    break
+                remaining -= len(data)
+        except (OSError, ValueError):
+            # Connection rejection still follows a timeout or peer disconnect.
+            pass
+        finally:
+            self.connection.settimeout(previous)
 
     def _preflight(self) -> bool:
         if not self._host_allowed():
@@ -295,13 +326,33 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._error(415, "json_required", "仅接受 JSON 请求")
                 return
             try:
-                document = json.loads(self.rfile.read(length).decode("utf-8"))
+                raw = self.rfile.read(length)
+                self._body_read = True
+                document = json.loads(raw.decode("utf-8"))
             except (UnicodeDecodeError, ValueError):
                 self._error(400, "invalid_json", "JSON 请求无效")
                 return
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        if self.path in {'/api/local-app/preview', '/api/local-app/start'}:
+            agent = getattr(self.server.service, 'agent', None)
+            if agent is None:
+                self._error(503, 'agent_unavailable', '本机应用执行器不可用，请重新启动新版控制台')
+                return
+            try:
+                operation = agent.local_app.preview if self.path.endswith('/preview') else agent.local_app.start
+                result = operation(document, self.server.remote_ai_session_enabled)
+                self._write_json(200 if self.path.endswith('/preview') else 202, result)
+            except (ValueError, RuntimeError) as exc:
+                from .local_application_workflow import LOCAL_ERRORS
+                code = str(exc)
+                status = 403 if code == 'remote_ai_disabled_for_session' else 409 if isinstance(exc, RuntimeError) else 400
+                self._error(status, code if code in LOCAL_ERRORS else 'invalid_local_application_request',
+                            LOCAL_ERRORS.get(code, '请核对本机入口、精确路由、时间窗与确认开关'))
+            except Exception:
+                self._error(503, 'local_application_unavailable', '本机应用执行配置暂时不可用；没有输出异常原文')
+            return
         if self.path in {'/api/agent/start', '/api/agent/enable', '/api/agent/cancel'}:
             agent = getattr(self.server.service, 'agent', None)
             if agent is None:

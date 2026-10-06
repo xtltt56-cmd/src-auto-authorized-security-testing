@@ -1,6 +1,8 @@
 # SRC-Auto
 
-> **Agent 升级开发状态（2026-10-04）：** `agent/controlled-upgrade` 分支正在实现有限本地 Agent，并新增 Dashboard「受控 Agent」页。它不是已通过全靶场验收的正式版：本机 Docker Engine 启动故障，30B 本地模型触发 balanced 内存门控，完整发布验收尚未完成。正式发布基线仍为 `v0.11.2`；阅读 [升级进度与限制](docs/AGENT_UPGRADE_PROGRESS.md) 和 [Agent 使用说明](docs/AGENT_USER_GUIDE.md)，不要把下方历史靶场成绩当作本轮结果。
+> **v0.12.0 发布范围（2026-10-06）：** 新增 Dashboard「受控 Agent」及「本机应用审查」，接通人工范围审批、原生有限只读执行、DeepSeek Agent 实际反馈和关联报告。Python 专项验收 460 项中 459 通过、1 跳过，Dashboard 51 项通过；发布另外受 CI、覆盖率、浏览器、凭据和打包门禁约束，只有全部通过才更新正式下载。真实云端对照及边界见 [专项进度与使用方法](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md) 和 [当前发布清单](RELEASE_MANIFEST.md)。真实量化应用、ZAP 本机出口、隔离业务验证和独立源码审查仍未验收。
+
+> **当前安全边界：** DeepSeek API ID 为 `deepseek-flash`，Qwen3.5-9B 可人工选择；CPU 上限 70%、整机已用 RAM 上限 30 GiB。受控 Agent 默认不执行，须启动同意、页面启用和单任务同意。所有候选仍须人工复现和确认；真实目标 Agent 与自动提交保持关闭。旧版“等待确认”和靶场数字属于各自历史轮次，不覆盖新验收或构成漏洞命中率。
 
 ## 下载最新正式版
 
@@ -18,7 +20,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前发布基线（2026-09-17）：** 请先阅读 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 与 [TEST_REPORT.md](TEST_REPORT.md) 顶部的本轮验收。当前版本为 `v0.11.2`；本仓库中更早且标注为“历史”的说明仅供追溯，不覆盖当前功能或测试结论。Dashboard 启动时会询问是否允许云端 AI；选择“否”后，本次会话的服务端硬门会拒绝所有远程连接测试。重复启动时不会复用与本次选择不一致的旧授权状态。
+> **当前版本读取规则：** 当前源码版本为 `v0.12.0`，实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

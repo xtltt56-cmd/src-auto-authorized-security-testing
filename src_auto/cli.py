@@ -19,6 +19,7 @@ from .controls import BudgetGovernor
 from .defense import DefenseAsset, build_defense_plan, compare_defense_snapshots
 from .i18n import human_summary, with_zh_fields
 from .live_plan import LivePlanError, validate_live_plan
+from .local_application import LocalReadOnlyPlan
 from .pipeline import PipelineRunner
 from .remote_ai import (
     DeepSeekProvider,
@@ -357,6 +358,13 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--scope", required=True, help="项目根目录内的 Scope 文件")
     review.add_argument("--plan", required=True, help="项目根目录内的人工计划")
     review.add_argument("--confirm-selection", action="store_true", help="确认人工选择；仍不会执行网络请求")
+    for command in ("local-app-review", "local-app-run"):
+        local = sub.add_parser(command, help="预览本机 Web 只读计划（不联网）" if command.endswith("review") else "明确启动本机 Web 只读观察（不调用 AI）")
+        local.add_argument("--scope", required=True, help="项目内的版本 2 本机 Web 范围文件")
+        local.add_argument("--plan", required=True, help="项目内的类型化只读请求计划")
+        if command.endswith("run"):
+            local.add_argument("--run-id", required=True)
+            local.add_argument("--execute-local", action="store_true", help="人工审阅后明确启动；缺少此项不联网")
     status = sub.add_parser("status", help="查看运行记录")
     status.add_argument("--run-id")
     findings = sub.add_parser("findings", help="查看 Findings")
@@ -492,6 +500,54 @@ def main(argv=None) -> int:
     _CURRENT_COMMAND = str(args.command)
     store = Store(DB_PATH)
     try:
+        if args.command in ("local-app-review", "local-app-run"):
+            try:
+                paths = {}
+                for field in ("scope", "plan"):
+                    path = Path(getattr(args, field)).resolve()
+                    try:
+                        path.relative_to(PROJECT_ROOT.resolve())
+                    except ValueError:
+                        _json({"status": "blocked_plan", "reason": field + "_outside_project_root", "network_contact": False})
+                        return 3
+                    if not path.is_file() or path.stat().st_size > 262144:
+                        raise ValueError("local_configuration_file_invalid")
+                    paths[field] = path
+                guard = _scope(str(paths["scope"]))
+                plan = LocalReadOnlyPlan.from_mapping(load_mapping(paths["plan"]), guard.policy)
+            except Exception as exc:
+                # Parser errors may contain raw YAML, file paths or secrets. Expose only stable codes.
+                reason = str(exc)
+                if not reason or len(reason) > 100 or any(c not in "abcdefghijklmnopqrstuvwxyz_" for c in reason):
+                    reason = "local_configuration_invalid"
+                _json({"status": "blocked_plan", "reason": reason, "error_type": type(exc).__name__, "network_contact": False})
+                return 3
+            decisions = [guard.decide(guard.policy.local_web.origin + request.path, method=request.method) for request in plan.requests]
+            denied = next((decision.reason for decision in decisions if not decision.allowed), "")
+            summary = {"status": "local_plan_reviewed", "network_contact": False, "model_calls": 0,
+                       "scope_digest": plan.scope_digest, "plan_digest": plan.digest(),
+                       "target_type": "local_web", "origin": guard.policy.local_web.origin,
+                       "requests": [{"path": request.path, "method": request.method} for request in plan.requests]}
+            if denied:
+                summary.update(status="blocked_scope", reason=denied)
+                _json(summary)
+                return 3
+            if args.command == "local-app-review":
+                _json(summary)
+                return 0
+            if not args.execute_local:
+                summary.update(status="awaiting_manual_execution", reason="execute_local_required")
+                _json(summary)
+                return 0
+            from .agent_resources import WindowsResources
+            from .controls import DiskGuard
+            policy = load_mapping(POLICY_PATH)
+            runner = PipelineRunner(store, guard, PROJECT_ROOT,
+                                    resource_guard=WindowsResources(policy),
+                                    disk_guard=DiskGuard(PROJECT_ROOT, policy.get("disk_warning_gb", 80), policy.get("disk_hard_limit_gb", 90)))
+            result = runner.run_local_application(args.run_id, plan)
+            _json(result)
+            return 0 if result["status"] == "completed_observation" else 4
         if args.command == "new":
             guard = _scope(args.scope)
             run_id = store.create_run(args.target_id, guard.policy.digest(), args.mode)

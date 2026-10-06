@@ -1,0 +1,10 @@
+# Reproducible local profile. Download the upstream tag before creating this alias.
+# ollama pull qwen3.5:9b-q4_K_M
+# ollama create qwen3.5-local:9b-q4_k_m -f config/Modelfile.local
+FROM qwen3.5:9b-q4_K_M
+PARAMETER num_ctx 16384
+PARAMETER num_thread 6
+PARAMETER temperature 0.7
+PARAMETER top_p 0.95
+PARAMETER repeat_penalty 1.05
+PARAMETER num_predict 4096

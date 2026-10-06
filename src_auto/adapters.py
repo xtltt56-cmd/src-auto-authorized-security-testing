@@ -86,6 +86,10 @@ class SafeToolAdapter:
         timeout: int = 120,
         cwd: Optional[Path] = None,
     ) -> ToolResult:
+        # Legacy argv adapters cannot prove internal route/method/egress control.
+        # An approved local Web scope is NOT authorization to use this lane.
+        if scope_guard.policy.target_type == "local_web":
+            return ToolResult(self.name, "blocked", detail="local_scope_requires_guarded_adapter")
         for url in target_urls or []:
             decision = scope_guard.decide(url)
             if not decision.allowed:

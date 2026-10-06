@@ -6,7 +6,7 @@ from typing import Any, Iterable, List, Mapping, Tuple
 from urllib.parse import urlsplit
 
 from .config import load_mapping
-from .scope import normalize_host
+from .scope import normalize_host, strict_boolean
 
 
 def _hosts(values: Iterable[Any]) -> Tuple[str, ...]:
@@ -38,8 +38,8 @@ class RuntimePolicy:
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "RuntimePolicy":
         ai_provider = str(value.get("AI_PROVIDER", value.get("ai_provider", "local"))).strip().lower()
-        local_llm_only = bool(value.get("LOCAL_LLM_ONLY", value.get("local_llm_only", True)))
-        allow_remote_llm = bool(value.get("ALLOW_REMOTE_LLM", value.get("allow_remote_llm", False)))
+        local_llm_only = strict_boolean(value.get("LOCAL_LLM_ONLY", value.get("local_llm_only", True)), "LOCAL_LLM_ONLY")
+        allow_remote_llm = strict_boolean(value.get("ALLOW_REMOTE_LLM", value.get("allow_remote_llm", False)), "ALLOW_REMOTE_LLM")
         if ai_provider not in {"local", "remote"}:
             raise ValueError("AI_PROVIDER must be local or remote")
         if local_llm_only and ai_provider != "local":

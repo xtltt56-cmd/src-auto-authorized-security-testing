@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src_auto.agent_contracts import Decision, Limits
 from src_auto.agent_runner import AgentRunner, AgentHistory, project_path
 from src_auto.agent_actions import GuardedHTTP, LocalActions
+from src_auto.agent_cloud_budget import DeepSeekAgentBudget
 
 
 def decision(action, reference="entry", evidence=None):
@@ -30,10 +31,25 @@ class FakeActions:
     scope_hash = "fixed-scope"
     config_hash = "fixed-config"
     references = ["entry", "case-01"]
-    requests = 0
+
+    def __init__(self, results=None):
+        self.requests = 0
+        self.results = results or {}
 
     def execute(self, value):
         self.requests += 1
+        if value.action in self.results:
+            return dict(self.results[value.action])
+        if value.action == "run_local_regression":
+            return {"status": "ok", "profileStatus": "COMPLETED", "caseCount": 1,
+                    "passedCount": 1, "failedCount": 0, "blockedCount": 0,
+                    "summary": "固定回归通过", "candidate": False}
+        if value.action == "validate_controlled_inputs":
+            return {"status": "ok", "profileStatus": "COMPLETED", "requestCount": 4,
+                    "summary": "固定受控输入完成", "candidate": False}
+        if value.action == "compare_object_authorization_matrix":
+            return {"status": "ok", "profileStatus": "COMPLETED", "objectsTested": 20,
+                    "requests": 60, "summary": "矩阵完成", "candidate": True, "candidateCount": 10}
         return {"status": "ok", "summary": "只读合成观察", "candidate": value.action == "compare_object_authorization"}
 
 
@@ -59,12 +75,39 @@ class ContractTests(unittest.TestCase):
         for key in ("max_steps", "max_requests", "max_model_calls", "max_seconds", "max_tokens"):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 Limits.from_mapping({key: 0})
-        for key, value in (("max_requests", 31), ("max_seconds", 901), ("max_tokens", 20001)):
+        for key, value in (("max_requests", 101), ("max_seconds", 901), ("max_tokens", 20001)):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 Limits.from_mapping({key: value})
 
 
 class HTTPGateTests(unittest.TestCase):
+    def test_large_responses_require_an_explicit_bounded_truncation(self):
+        class Response:
+            headers = {"Content-Type": "text/javascript"}
+            def __init__(self, body): self.body, self.closed = body, False
+            def getcode(self): return 200
+            def read(self, size): return self.body[:size]
+            def close(self): self.closed = True
+        class Opener:
+            def __init__(self, body): self.response = Response(body)
+            def open(self, *args, **kwargs): return self.response
+
+        body = b"x" * (600 * 1024)
+        opener = Opener(body)
+        client = GuardedHTTP("http://127.0.0.1:8084/health", Limits(), threading.Event(), opener=opener)
+        with self.assertRaisesRegex(RuntimeError, "response_too_large"):
+            client.fetch(client.entry)
+        self.assertTrue(opener.response.closed)
+
+        opener = Opener(body)
+        client = GuardedHTTP("http://127.0.0.1:8084/health", Limits(), threading.Event(), opener=opener)
+        result = client.fetch(client.entry, max_response_bytes=512 * 1024, truncate_response=True)
+        self.assertEqual(len(result["body"].encode("utf-8")), 512 * 1024)
+        self.assertTrue(result["truncated"])
+        self.assertTrue(opener.response.closed)
+        with self.assertRaisesRegex(ValueError, "invalid_response_limit"):
+            client.fetch(client.entry, max_response_bytes=1024 * 1024, truncate_response=True)
+
     def test_foreign_origin_and_credentials_never_reach_opener(self):
         calls = []
         class Opener:
@@ -139,6 +182,32 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result["state"], "cancelled")
         self.assertEqual(result["modelCalls"], 0)
 
+    def test_cloud_budget_blocks_next_model_call_and_remains_reserved_after_error(self):
+        from tests.test_agent_cloud_budget import CONFIG, PROVIDER
+        budget = DeepSeekAgentBudget(self.root, CONFIG, PROVIDER,
+                                     {"daily_ai_budget_yuan": .1, "monthly_ai_budget_yuan": 100})
+        runner = self.runner([decision("inspect_headers"), decision("finish", evidence=["o1"])])
+        runner.cloud_budget = budget
+        row = runner.run("business-api", "candidate-review", threading.Event())
+        self.assertEqual((row["state"], row["reason"], row["modelCalls"], row["steps"]),
+                         ("paused", "cloud_budget_limit", 1, 1))
+        self.assertAlmostEqual(row["reservedCostCny"], .064)
+        # Resuming keeps the durable reservation; no call reaches the model again.
+        resumed = runner.run("business-api", "candidate-review", threading.Event(), resume_id=row["id"])
+        self.assertEqual(resumed["modelCalls"], 1)
+        self.assertEqual(len(runner.model.contexts), 1)
+
+    def test_cloud_timeout_is_reserved_not_free_and_is_not_retried(self):
+        from tests.test_agent_cloud_budget import CONFIG, PROVIDER
+        runner = self.runner([])
+        runner.cloud_budget = DeepSeekAgentBudget(self.root, CONFIG, PROVIDER, {})
+        row = runner.run("business-api", "candidate-review", threading.Event())
+        self.assertEqual((row["state"], row["reason"], row["modelCalls"], row["steps"]),
+                         ("paused", "model_unavailable", 1, 0))
+        self.assertEqual(row["tokens"], 8000)
+        self.assertAlmostEqual(row["estimatedCostCny"], .064)
+        self.assertAlmostEqual(row["reservedCostCny"], .064)
+
     def test_cancel_before_model(self):
         cancel = threading.Event(); cancel.set()
         result = self.runner([]).run("business-api", "candidate-review", cancel)
@@ -196,6 +265,50 @@ class RunnerTests(unittest.TestCase):
         result = self.runner([decision("inspect_headers"), decision("compare_object_authorization", "case-01"), decision("finish", evidence=["o1"])]).run("business-api", "api-permissions", threading.Event())
         self.assertEqual(result["state"], "needs-human")
         self.assertEqual(result["reason"], "permission_check_incomplete")
+
+    def test_local_assessment_runs_required_recipe_before_model(self):
+        runner = self.runner([decision("finish", evidence=["o1"])])
+        result = runner.run("juice-shop", "local-assessment", threading.Event())
+        self.assertEqual(result["state"], "completed")
+        self.assertEqual(result["trace"][0]["source"], "required-local-recipe")
+        self.assertEqual(result["observations"][0]["action"], "run_local_regression")
+        self.assertEqual(runner.model.contexts[0]["completedRequiredActions"], ["run_local_regression"])
+
+    def test_local_assessment_requires_dvwa_controlled_checks(self):
+        result = self.runner([decision("finish", evidence=["o1", "o2"])])\
+            .run("dvwa", "local-assessment", threading.Event())
+        self.assertEqual(result["state"], "completed")
+        self.assertEqual([x["action"] for x in result["observations"]],
+                         ["run_local_regression", "validate_controlled_inputs"])
+
+    def test_business_local_assessment_requires_full_matrix(self):
+        result = self.runner([decision("finish", evidence=["o1", "o2"])])\
+            .run("business-api", "local-assessment", threading.Event())
+        self.assertEqual(result["state"], "completed")
+        self.assertEqual(result["candidates"], 10)
+
+    def test_local_assessment_does_not_complete_when_fixed_recipe_is_partial(self):
+        actions = FakeActions({"run_local_regression": {
+            "status": "ok", "profileStatus": "PARTIAL", "caseCount": 1,
+            "passedCount": 0, "failedCount": 1, "blockedCount": 0,
+            "summary": "固定回归未通过", "candidate": False,
+        }})
+        runner = self.runner([], actions=actions)
+        result = runner.run("juice-shop", "local-assessment", threading.Event())
+        self.assertEqual((result["state"], result["reason"], result["modelCalls"]),
+                         ("needs-human", "local_assessment_incomplete", 0))
+
+    def test_local_assessment_requires_model_to_reference_every_completed_recipe(self):
+        result = self.runner([decision("finish", evidence=["o1"])])\
+            .run("dvwa", "local-assessment", threading.Event())
+        self.assertEqual((result["state"], result["reason"]),
+                         ("needs-human", "local_assessment_incomplete"))
+
+    def test_local_assessment_step_limit_blocks_partial_preflight_without_model_call(self):
+        runner = self.runner([], limits=Limits(max_steps=1))
+        result = runner.run("dvwa", "local-assessment", threading.Event())
+        self.assertEqual((result["state"], result["reason"], result["steps"], result["modelCalls"]),
+                         ("needs-human", "budget_limit", 1, 0))
 
     def test_changed_scope_cannot_resume(self):
         result = self.runner([]).run("business-api", "candidate-review", threading.Event())

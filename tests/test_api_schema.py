@@ -17,8 +17,20 @@ class ApiSchemaSmokeTests(unittest.TestCase):
         self.assertIn("--phases examples", text)
         self.assertIn("--max-examples 1", text)
         self.assertIn("--rate-limit 20/m", text)
+        self.assertIn("--exclude-path /createdb", text)
         self.assertNotIn("POST", text)
         self.assertNotIn("DELETE", text)
+
+    def test_vampi_createdb_get_is_explicitly_excluded(self):
+        from src_auto.api_schema import build_local_schema_smoke_command
+
+        root = Path(r"D:\网络安全文件夹\SRC-Auto")
+        command = build_local_schema_smoke_command(
+            root,
+            "http://127.0.0.1:8083/openapi.json",
+            root / "validation" / "vampi" / "schema",
+        )
+        self.assertEqual(command[command.index("--exclude-path") + 1], "/createdb")
 
     def test_schema_result_treats_contract_failures_as_candidate_not_crash(self):
         from src_auto.api_schema import classify_schema_smoke_result

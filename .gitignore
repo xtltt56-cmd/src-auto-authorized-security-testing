@@ -1,6 +1,7 @@
 # Local state and potentially sensitive material
 data/*.sqlite3
 data/*.sqlite3-*
+data/model-migration-*/
 runs/*
 logs/*
 evidence/*
@@ -14,6 +15,7 @@ reports/*
 config/secrets/
 config/sessions/
 config/targets/dashboard-*/
+config/targets/local-web-*/
 .venv/
 .worktrees/
 STOP

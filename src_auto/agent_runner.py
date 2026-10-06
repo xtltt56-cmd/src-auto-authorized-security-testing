@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .agent_contracts import CATALOG_VERSION, Decision, Limits
 from .controls import DiskGuard, StopController
+from .agent_cloud_budget import CALL_TOKEN_RESERVATION, DeepSeekAgentBudget
 
 ACTIVE = {"queued", "running", "cancelling"}
 
@@ -160,10 +161,12 @@ class AgentHistory:
 
 
 class AgentRunner:
-    def __init__(self, root, history, model, actions, limits=None, provider="local", resource_check=None):
+    def __init__(self, root, history, model, actions, limits=None, provider="local", resource_check=None, cloud_budget=None):
         self.root, self.history, self.model, self.actions = Path(root), history, model, actions
         self.limits, self.provider = limits or Limits(), provider
         self.resource_check = resource_check or (lambda: {"allowed": False, "known": False, "reason": "resource_metrics_unavailable"})
+        if provider not in {"local", "deepseek"}: raise ValueError("cloud_agent_not_validated")
+        self.cloud_budget = cloud_budget or (DeepSeekAgentBudget.configured(self.root) if provider == "deepseek" else None)
 
     def run(self, lab, mode, cancel, resume_id=None, run_id=None):
         if resume_id:
@@ -194,6 +197,10 @@ class AgentRunner:
                 return "cancelled", "operator_stop"
             if previous_elapsed + time.monotonic() - started >= self.limits.max_seconds:
                 return "needs-human", "time_limit"
+            if mode == 'local-web-assessment':
+                denial = self.actions.permission_gate()
+                if denial:
+                    return 'cancelled' if denial == 'cancelled' else 'needs-human', denial
             if before_model and (row["modelCalls"] >= self.limits.max_model_calls or row["tokens"] >= self.limits.max_tokens):
                 return "needs-human", "budget_limit"
             if shutil.disk_usage(str(self.root)).free < 1024 ** 3:
@@ -204,21 +211,144 @@ class AgentRunner:
                 return "paused", "resource_limit"
             return None
 
+        def required_local_actions():
+            if mode != "local-assessment":
+                return []
+            required = ["run_local_regression"]
+            if lab == "dvwa":
+                required.append("validate_controlled_inputs")
+            elif lab == "business-api":
+                required.append("compare_object_authorization_matrix")
+            return required
+
+        def recipe_completed(action, observation):
+            if action == "run_local_regression":
+                return (observation.get("profileStatus") == "COMPLETED"
+                        and type(observation.get("caseCount")) is int
+                        and observation.get("caseCount", 0) > 0
+                        and observation.get("passedCount") == observation.get("caseCount")
+                        and observation.get("failedCount") == 0
+                        and observation.get("blockedCount") == 0)
+            if action == "validate_controlled_inputs":
+                return (observation.get("profileStatus") == "COMPLETED"
+                        and type(observation.get("requestCount")) is int
+                        and observation.get("requestCount", 0) >= 4)
+            if action == "compare_object_authorization_matrix":
+                return (observation.get("profileStatus") == "COMPLETED"
+                        and observation.get("objectsTested") == 20
+                        and observation.get("requests") == 60)
+            return False
+
+        def perform_action(value, entry):
+            """Execute a model or scheduled action through the same durable path."""
+            entry["result"] = "executing"
+            row["steps"] += 1
+            save(reason="tool_executing")
+            try:
+                result = self.actions.execute(value)
+            except Exception as exc:
+                entry["result"] = "failed"
+                code = str(exc) if str(exc) in {"request_limit", "scope_blocked", "cancelled", "response_too_large", "capability_unavailable"} else "tool_failed"
+                save(state="cancelled" if code == "cancelled" else "needs-human", reason=code)
+                return False
+            if cancel.is_set():
+                entry["result"] = "cancelled"
+                save(state="cancelled", reason="operator_stop")
+                return False
+            observation = dict(result, id="o{}".format(len(observations) + 1), action=value.action, reference=value.reference)
+            # Executor output, not arbitrary model text, is the trusted observation boundary.
+            if len(json.dumps(observation, ensure_ascii=False).encode("utf-8")) > 2500:
+                entry["result"] = "failed"
+                save(state="needs-human", reason="observation_too_large")
+                return False
+            observations.append(observation)
+            if result.get("candidate"):
+                if hasattr(self.actions, "persist_candidates"):
+                    observation["findingIds"] = self.actions.persist_candidates(row["id"], value, observation)
+                elif hasattr(self.actions, "persist_candidate"):
+                    observation["findingId"] = self.actions.persist_candidate(row["id"], value, observation)
+            entry.update(result="ok", observationId=observation["id"])
+            used.add((value.action, value.reference))
+            candidate_count = result.get("candidateCount", int(bool(result.get("candidate"))))
+            row["candidates"] += candidate_count if type(candidate_count) is int and candidate_count >= 0 else int(bool(result.get("candidate")))
+            save(reason="observation_saved")
+            if value.action in required_local_actions() and not recipe_completed(value.action, observation):
+                save(state="needs-human", reason="local_assessment_incomplete")
+                return False
+            return True
+
         try:
             DiskGuard(self.root).assert_allowed()
             while True:
-                stop = gate()
+                # Fixed local-assessment recipes are deterministic executor work,
+                # not an LLM-controlled choice. They run first so a model cannot
+                # accidentally declare completion after only observing a landing page.
+                stop = gate(before_model=False)
                 if stop:
                     save(state=stop[0], reason=stop[1]); break
-                context = {"mode": mode, "lab": lab, "references": self.actions.references,
+                required_actions = required_local_actions()
+                completed_actions = {x.get("action") for x in observations
+                                     if x.get("action") in required_actions and recipe_completed(x.get("action"), x)}
+                incomplete_actions = {x.get("action") for x in observations
+                                      if x.get("action") in required_actions and not recipe_completed(x.get("action"), x)}
+                if incomplete_actions:
+                    save(state="needs-human", reason="local_assessment_incomplete")
+                    break
+                pending_action = next((x for x in required_actions if x not in completed_actions), None)
+                if pending_action:
+                    if row["steps"] >= self.limits.max_steps:
+                        save(state="needs-human", reason="budget_limit")
+                        break
+                    # Never replay an action whose intent was saved but whose
+                    # result was not durably recorded (for example after a crash).
+                    if any(x.get("result") == "executing" for x in trace):
+                        save(state="needs-human", reason="inflight_action_uncertain")
+                        break
+                    value = Decision(pending_action, "entry", (), "按固定本地验收配方执行")
+                    entry = {"index": len(trace) + 1, "decision": value.to_mapping(), "result": "proposed", "source": "required-local-recipe"}
+                    trace.append(entry)
+                    if not perform_action(value, entry):
+                        break
+                    continue
+                # Required fixtures have now completed. Spend model and cloud
+                # budget only for interpretation/optional follow-up decisions.
+                if row["modelCalls"] >= self.limits.max_model_calls or row["tokens"] >= self.limits.max_tokens:
+                    save(state="needs-human", reason="budget_limit")
+                    break
+                terminal_actions = {"finish", "request_human_review"}
+                capabilities = []
+                for name in getattr(self.actions, "capabilities", []):
+                    if name in terminal_actions:
+                        capabilities.append(name)
+                        continue
+                    if name == "compare_object_authorization":
+                        action_references = [x for x in self.actions.references if x.startswith("case-")]
+                    elif name == "review_candidate":
+                        action_references = ["candidate"] if "candidate" in self.actions.references else []
+                    elif name == "inspect_local_route":
+                        action_references = [x for x in self.actions.references if x.startswith("route-")]
+                    else:
+                        action_references = ["entry"]
+                    if any((name, reference) not in used for reference in action_references):
+                        capabilities.append(name)
+                context = {"mode": mode, "lab": lab, "requiredActions": required_actions,
+                           "completedRequiredActions": [x for x in required_actions if x in completed_actions],
+                           "references": self.actions.references,
                            "permissions": getattr(self.actions, "permissions", None),
-                           "capabilities": (["finish", "request_human_review"] if row["steps"] >= self.limits.max_steps else getattr(self.actions, "capabilities", [])),
+                           "capabilities": (["finish", "request_human_review"] if row["steps"] >= self.limits.max_steps else capabilities),
                            "observations": observations[-8:], "used": [list(x) for x in sorted(used)],
                            "steps_remaining": self.limits.max_steps - row["steps"],
                            "repair": "上次格式不合法；请仅返回四字段JSON" if repaired else ""}
                 # Reserve a conservative input + output bound before starting inference.
-                if row["tokens"] + 6800 > self.limits.max_tokens:
+                token_reservation = CALL_TOKEN_RESERVATION if self.cloud_budget else 6800
+                if row["tokens"] + token_reservation > self.limits.max_tokens:
                     save(state="needs-human", reason="token_reservation_limit"); break
+                if self.cloud_budget:
+                    try: reserved = self.cloud_budget.reserve(row["id"])
+                    except Exception as exc:
+                        code = "cloud_budget_limit" if str(exc) == "cloud_budget_limit" else "cloud_budget_unavailable"
+                        save(state="paused", reason=code); break
+                    row["reservedCostCny"] = round(row.get("reservedCostCny", 0) + reserved, 8)
                 row["modelCalls"] += 1
                 save(reason="model_deciding")
                 try:
@@ -229,12 +359,19 @@ class AgentRunner:
                     usage = [answer.get("input_tokens"), answer.get("output_tokens")]
                     if any(type(x) is not int or x < 0 for x in usage):
                         raise ValueError("invalid_model_usage")
+                    if self.cloud_budget:
+                        cost = self.cloud_budget.estimate(*usage, bool(answer.get("usage_estimated")))
+                        if sum(usage) > token_reservation or cost > reserved:
+                            raise ValueError("invalid_model_usage")
+                        row["estimatedCostCny"] = round(row.get("estimatedCostCny", 0) + cost, 8)
                     row["tokens"] += sum(usage)
                     row["usageEstimated"] = row["usageEstimated"] or bool(answer.get("usage_estimated"))
                 except Exception:
                     # A timed-out remote request may still be billed; reserve the cap, do not retry it.
-                    row["tokens"] += 6800
+                    row["tokens"] += token_reservation
                     row["usageEstimated"] = True
+                    if self.cloud_budget:
+                        row["estimatedCostCny"] = round(row.get("estimatedCostCny", 0) + reserved, 8)
                     save(state="paused", reason="model_unavailable"); break
                 stop = gate(before_model=False)
                 if stop:
@@ -257,9 +394,19 @@ class AgentRunner:
                         entry["result"] = "rejected"
                         save(state="needs-human", reason="insufficient_evidence"); break
                     evidence = [x for x in observations if x["id"] in value.evidence]
+                    if value.action == "finish" and mode == "local-web-assessment" and not self.actions.completion_ready(evidence):
+                        entry["result"] = "rejected"
+                        save(state="needs-human", reason="local_web_coverage_incomplete"); break
                     if value.action == "finish" and mode == "api-permissions" and not any(x["action"] == "compare_object_authorization" for x in evidence):
                         entry["result"] = "rejected"
                         save(state="needs-human", reason="permission_check_incomplete"); break
+                    if value.action == "finish" and mode == "local-assessment":
+                        required = set(required_local_actions())
+                        complete_evidence = {x["action"] for x in evidence
+                                             if x["action"] in required and recipe_completed(x["action"], x)}
+                        if not required <= complete_evidence:
+                            entry["result"] = "rejected"
+                            save(state="needs-human", reason="local_assessment_incomplete"); break
                     if value.action == "finish" and mode == "candidate-review" and "candidate" in self.actions.references and not any(x["action"] == "review_candidate" for x in evidence):
                         entry["result"] = "rejected"
                         save(state="needs-human", reason="candidate_review_incomplete"); break
@@ -275,40 +422,30 @@ class AgentRunner:
                 if any(x.get("result") == "executing" for x in trace[:-1]):
                     entry["result"] = "rejected"
                     save(state="needs-human", reason="inflight_action_uncertain"); break
-                entry["result"] = "executing"
-                row["steps"] += 1
-                save(reason="tool_executing")
-                try:
-                    result = self.actions.execute(value)
-                except Exception as exc:
-                    entry["result"] = "failed"
-                    code = str(exc) if str(exc) in {"request_limit", "scope_blocked", "cancelled", "response_too_large", "capability_unavailable"} else "tool_failed"
-                    save(state="cancelled" if code == "cancelled" else "needs-human", reason=code); break
-                if cancel.is_set():
-                    entry["result"] = "cancelled"
-                    save(state="cancelled", reason="operator_stop"); break
-                observation = dict(result, id="o{}".format(len(observations) + 1), action=value.action, reference=value.reference)
-                # Executor output, not arbitrary model text, is the trusted observation boundary.
-                if len(json.dumps(observation, ensure_ascii=False).encode("utf-8")) > 2500:
-                    entry["result"] = "failed"
-                    save(state="needs-human", reason="observation_too_large"); break
-                observations.append(observation)
-                if result.get("candidate") and hasattr(self.actions, "persist_candidate"):
-                    observation["findingId"] = self.actions.persist_candidate(row["id"], value, observation)
-                entry.update(result="ok", observationId=observation["id"])
-                used.add(action)
-                row["candidates"] += int(bool(result.get("candidate")))
-                save(reason="observation_saved")
+                if not perform_action(value, entry): break
         except Exception:
             save(state="failed", reason="execution_failed")
+        # The coordinator owns the single task-linked, coverage-aware report.
+        if mode == "local-web-assessment":
+            return self.history.get(row["id"])
         path = project_path(self.root, "reports", "agent", row["id"] + ".md")
         path.parent.mkdir(parents=True, exist_ok=True)
-        report = ["# 受控 Agent 执行记录（人工复核草稿）", "", "仅本地只读检查；候选未确认，不会自动提交。模型简述不是事实裁决；结果以工具观察及人工复核为准。", "",
+        scope_notes = {
+            "juice-shop": "仅运行 Juice Shop 固定首页可达性基线；这不是漏洞扫描。",
+            "dvwa": "仅运行 DVWA 固定登录边界、默认本地测试账号、GET 布尔对照和惰性 HTML 标记；不执行脚本。",
+            "webgoat": "仅运行 WebGoat 登录边界与会话基线；会创建随机本地合成测试账号。",
+            "vampi": "仅读取 VAmPI 本地 OpenAPI 页面；不调用其业务路由，不访问已知有副作用的 /createdb。",
+            "business-api": "仅检查合成 Business API；固定 20 项对象权限矩阵使用 60 次 GET。",
+        }
+        scope_note = (scope_notes.get(lab, "仅运行固定本地靶场配方。")
+                      if mode == "local-assessment" else "仅本地只读观察；候选未确认，不会自动提交。")
+        report = ["# 受控 Agent 执行记录（人工复核草稿）", "", scope_note + " 所有候选均未确认，不会自动提交。模型简述不是事实裁决；结果以工具观察及人工复核为准。", "",
                   "任务：{} / {} / {}".format(lab, mode, self.provider), "状态：{}；原因：{}".format(row["state"], row["reason"]),
                   "动作 {}；HTTP 请求 {}；模型调用 {}；Token {}{}".format(row["steps"], row["requests"], row["modelCalls"], row["tokens"], "（含保守估算）" if row["usageEstimated"] else ""), "",
                   "范围摘要：{}；配置摘要：{}；动作版本：{}".format(row["scopeHash"], row["configHash"], CATALOG_VERSION), "",
                   "```json", json.dumps({"resourceCheck": row.get("resourceCheck"), "trace": trace, "observations": observations}, ensure_ascii=False, indent=2), "```", "",
-                  "云端费用未计价，请核对服务商账单。候选和报告只用于人工研判，不代表漏洞已经确认。"]
+                  "模型费用按峰值价保守估算 {} 元；累计预算预留 {} 元（超时/取消不退回预算预留，并非真实账单）。最终费用以服务商账单为准。".format(row.get("estimatedCostCny", 0), row.get("reservedCostCny", 0)) if self.cloud_budget else "本任务仅使用本地模型，未调用云端 API。",
+                  "候选和报告只用于人工研判，不代表漏洞已经确认。"]
         path.write_text("\n".join(report) + "\n", encoding="utf-8")
         if hasattr(self.actions, "link_report"):
             self.actions.link_report(row["id"], path)

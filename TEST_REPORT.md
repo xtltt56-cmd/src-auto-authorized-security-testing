@@ -1,8 +1,8 @@
 # 测试报告
 
-日期：2026-09-17（Asia/Shanghai）
+最新版本：v0.12.0（2026-10-06，Asia/Shanghai）。
 
-> **当前开发验收基线：** 本报告顶部的“v0.11.2 工作区稳定性升级验收（2026-09-17）”是当前工作区的最新结论；正式发布范围仍以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 为准。下方所有较早日期的段落均为历史追溯，不覆盖本轮功能、测试数量或运行结论。旧 ZAP 会话、扫描缓存和机器工件继续从 Git 发布内容中排除。
+> **当前验收读取规则：** v0.12.0 的范围、发布门禁与限制见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)，真实本机应用/DeepSeek 验收见 [专项进度](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)，五固定靶场 Agent 的独立轮次见 [Agent 进度](docs/AGENT_UPGRADE_PROGRESS.md)。本页下方 v0.11.2 及更早的成绩均为历史记录，不覆盖新版本，也不证明全部安全升级已完成。运行工件、密钥和私有数据始终排除。
 
 ## v0.11.2 工作区稳定性升级验收（2026-09-17）
 

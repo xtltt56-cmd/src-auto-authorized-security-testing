@@ -1,6 +1,6 @@
 # SRC-Auto 平台完整使用手册
 
-> **2026-10-04 开发分支说明：** 新增的「受控 Agent」用法见 [Agent 使用说明](docs/AGENT_USER_GUIDE.md)，实际验收与未完成部分见 [本轮进度报告](docs/AGENT_UPGRADE_PROGRESS.md)。正式发布基线仍是 v0.11.2；下方旧版手册和靶场恢复成绩仅供历史追溯，不证明本轮 Docker/Agent 已全部通过。
+> **v0.12.0 使用说明：** 新增「受控 Agent」与「本机应用审查」，用法见 [Agent 使用说明](docs/AGENT_USER_GUIDE.md) 与 [本机应用进度](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)。分发范围以 [当前发布清单](RELEASE_MANIFEST.md) 为准；下方旧版手册和历史靶场成绩不代表完整漏洞发现率。下载用户须自行填写密钥，不会获得原操作者的密钥或会话。
 
 > **2026-08-26 严格计划更新：** 当前实现以 `docs/THREE_PHASE_USER_MANUAL.md` 和
 > `docs/THREE_PHASE_UPGRADE_REPORT.md` 为准。本轮已加入第五个仅回环的 `business-api`
@@ -10,6 +10,16 @@
 > 控制台必须显示依赖阻断，不能把历史成绩冒充当前容器运行成绩。
 
 > 当前三期升级后的简体中文主手册请优先阅读 [`docs/THREE_PHASE_USER_MANUAL.md`](docs/THREE_PHASE_USER_MANUAL.md)，最终验收摘要见 [`docs/THREE_PHASE_UPGRADE_REPORT.md`](docs/THREE_PHASE_UPGRADE_REPORT.md)。本文件保留历史命令与兼容入口，旧的“三靶场/159 项”数字不覆盖 2026-08-24 的最新验收结果；本机生成的验证报告位于被 Git 忽略的 `validation/` 目录。
+
+### 2026-10-06 新增：本机应用审查
+
+当前专项说明优先阅读 [本机应用审查进度与操作步骤](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)。这不是固定靶场入口：先自行启动自有 Web 应用，再点击 Dashboard 左侧 **本机应用审查**，填写精确回环 IP 和显式端口、允许/排除路由及时间窗，确认授权，核对审批摘要，最后再次确认启动。修改输入必须重新审批。
+
+标准只读模式不调用 AI。云端 Agent 需要启动会话允许、Agent 已启用以及本任务同意三个条件；复用系统设置保存的 DeepSeek 密钥，不要求把密钥填进目标 URL。只保存实际请求和脱敏响应元数据，报告可直接查看及导出。原生本机检查不要求 Docker，不能因此把靶场健康状态显示为就绪。
+
+首版只支持有限 GET/HEAD 精确路由，Agent 最多 6 条；不爬取、不访问交易/撤单/重置/账户数据，不自动续跑或提交补天。500 响应是待复核功能异常，缺少响应头是配置建议，不冒充已确认漏洞。真实量化应用、ZAP 本机出口、隔离业务验证和源码审查尚未验收。
+
+以下版本号及早期命令是历史兼容说明，不覆盖上方最新专项状态。
 
 版本：V0.6.0（WSL2/Docker + 五回环靶场 + 非破坏性安全回归版）
 项目路径：D:\网络安全文件夹\SRC-Auto  
@@ -564,12 +574,11 @@ External Targets Contacted；完整 Juice Shop Ground Truth 未执行时 Precisi
 
 当前默认配置：
 
-    primary: qwen-agent-stable:30b
-    expert: qwen3-coder:30b
+    bulk / primary / expert: qwen3.5-local:9b-q4_k_m
     fallback: deterministic local heuristic
     endpoint: http://127.0.0.1:11434
 
-选择 qwen-agent-stable:30b 作为 primary，是因为它在当前 Ollama 版本上真实返回了可解析结果；codex-balanced:20b 在当前模板下曾返回空 response，因此不作为默认自动分诊模型，但仍可在配置中手动切换。
+2026-10-05 的本地模型配置统一为 Qwen3.5-9B Q4_K_M。它替代原先的 30B/20B 配置，详细选型、安装、实测与恢复步骤见 [本地模型说明](docs/LOCAL_MODEL.md)。普通使用无需再次下载模型；重新安装时按该说明恢复模型。标准 Finding 分诊仍保留启发式回退；受控 Agent 的模型请求失败则暂停，不静默改用规则模型或云端 API。
 
 Ollama Provider 的数据边界：
 
@@ -735,7 +744,7 @@ Evidence 只保留：
     project disk warning: 80 GiB
     project disk hard stop: 90 GiB
     CPU target: <=70%
-    memory target: <=20 GiB
+    memory target: <=30 GiB (whole-system used memory; updated 2026-10-05)
 
 本地 Ollama 成本按 ¥0 计。远程 DeepSeek 审阅按本项目约定不设置金额上限或调用次数上限；仅执行每次请求的输入/输出 token 限制，并把服务返回的 token 与估算成本写入 `ai_reviews` 供事后查看。远程请求始终需要人工预览、摘要确认和 `--confirm-external`，不会自动回退、自动重试或自动扩大范围。
 

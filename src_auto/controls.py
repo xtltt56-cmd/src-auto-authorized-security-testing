@@ -1,5 +1,7 @@
 import datetime as _dt
+import os
 import shutil
+import stat
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -62,21 +64,30 @@ class DiskGuard:
     def _measure_used_gb(root: Path) -> float:
         # The project limit is for this workspace, not all unrelated data on the D: volume.
         total = 0
-        if not root.exists():
-            return 0.0
-        for path in root.rglob("*"):
-            try:
-                if path.is_file():
-                    total += path.stat().st_size
-            except OSError:
-                continue
+        pending = [str(root)]
+        while pending:
+            # On Windows DirEntry.stat reuses directory-enumeration metadata.
+            # Path.is_file + Path.stat did redundant per-file system calls and
+            # consumed the local request task deadline on this workspace.
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    metadata = entry.stat(follow_symlinks=False)
+                    if getattr(metadata, "st_file_attributes", 0) & 0x400:
+                        continue  # Windows junction/symlink must not count another project.
+                    if stat.S_ISDIR(metadata.st_mode):
+                        pending.append(entry.path)
+                    elif stat.S_ISREG(metadata.st_mode):
+                        total += metadata.st_size
         return total / (1024 ** 3)
 
     def check(self) -> Dict[str, object]:
-        used = float(self.used_gb_fn(self.root))
+        try:
+            used = float(self.used_gb_fn(self.root))
+        except OSError:
+            return {"allowed": False, "known": False, "reason": "disk_measurement_unavailable", "root": str(self.root)}
         warning = used >= self.warn_used_gb
         allowed = used < self.hard_used_gb
-        return {"allowed": allowed, "warning": warning, "used_gb": round(used, 3), "root": str(self.root)}
+        return {"allowed": allowed, "known": True, "warning": warning, "used_gb": round(used, 3), "root": str(self.root)}
 
     def assert_allowed(self) -> None:
         result = self.check()
@@ -103,7 +114,7 @@ class StopController:
 class ResourceGuard:
     """Soft CPU/RAM gate; no psutil dependency is required for the local control layer."""
 
-    def __init__(self, max_cpu_percent: float = 70.0, max_memory_gb: float = 20.0, metrics_fn=None):
+    def __init__(self, max_cpu_percent: float = 70.0, max_memory_gb: float = 30.0, metrics_fn=None):
         self.max_cpu_percent = float(max_cpu_percent)
         self.max_memory_gb = float(max_memory_gb)
         self.metrics_fn = metrics_fn

@@ -78,11 +78,17 @@ jobs:
         shell: pwsh
         run: |
           npm ci --prefix dashboard
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           npm run lint --prefix dashboard
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           npm run test:coverage --prefix dashboard
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           npm run build --prefix dashboard
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           npx --prefix dashboard playwright install chromium
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
           npm run e2e --prefix dashboard
+          if($LASTEXITCODE -ne 0){ exit $LASTEXITCODE }
 
       - name: Tracked secret signature check
         shell: pwsh

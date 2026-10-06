@@ -1,4 +1,5 @@
 from pathlib import Path
+import threading
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from .ai import AITriage
@@ -7,6 +8,7 @@ from .models import ScopeDecision
 from .reporting import ButianReportGenerator, EvidencePackager
 from .scope import ScopeGuard
 from .store import Store
+from .local_application import LocalApplicationError, LocalApplicationHTTP, LocalReadOnlyPlan
 
 
 STAGES = [
@@ -120,6 +122,54 @@ class PipelineRunner:
             self.store.record_event(run_id, "error", "pipeline_failed", {"error": str(exc), "stage": completed[-1] if completed else ""})
             raise
 
+    def run_local_application(self, run_id: str, plan: LocalReadOnlyPlan,
+                              cancel_event: Optional[threading.Event] = None) -> Dict[str, Any]:
+        """L1 observation executor only: no AI, discovery, active scan or report claim."""
+        scope = self.scope_guard.policy
+        if scope.target_type != "local_web" or scope.local_web is None or scope.digest() != plan.scope_digest:
+            return {"status": "blocked_scope", "reason": "scope_digest_mismatch", "requests": 0}
+        try:
+            lease = self.store.claim_local_application(run_id, scope.digest(), scope.target_id, scope.local_web.origin)
+        except ValueError:
+            return {"status": "blocked_run", "reason": "local_run_not_startable", "requests": 0}
+        except RuntimeError:
+            return {"status": "blocked_conflict", "reason": "local_application_conflict", "requests": 0}
+        cancel = cancel_event or threading.Event()
+        observations, client = [], None
+
+        def before_request():
+            blocked = self._guard(run_id)
+            return str(blocked["status"]) if blocked else ""
+
+        result: Dict[str, Any] = {"status": "running", "run_id": run_id, "scope_digest": plan.scope_digest,
+                                  "plan_digest": plan.digest(), "model_calls": 0, "report_generated": False}
+        try:
+            client = LocalApplicationHTTP(self.scope_guard, plan, cancel, stop=self.stop_controller.requested,
+                                          before_request=before_request)
+            for request in plan.requests:
+                observation = dict(client.fetch(request))
+                observations.append(observation)
+                self.store.record_event(run_id, "info", "local_application_observation", observation)
+            result.update(status="completed_observation", reason="readonly_recipes_completed")
+        except LocalApplicationError as exc:
+            status = "cancelled" if exc.reason == "cancelled" else "partial_observation" if observations else "blocked_observation"
+            result.update(status=status, reason=exc.reason)
+            self.store.record_event(run_id, "warning", "local_application_stopped", {"reason": exc.reason})
+        except KeyboardInterrupt:
+            result.update(status="cancelled", reason="manual_interrupt")
+        except Exception as exc:
+            result.update(status="failed", reason="local_application_internal_error")
+            self.store.record_event(run_id, "error", "local_application_failed", {"error_type": type(exc).__name__})
+        finally:
+            result.update(requests=client.request_count if client else 0, observations=observations,
+                          network_contact=bool(client and client.request_count), raw_bodies_retained=False)
+            try:
+                self.store.save_checkpoint(run_id, "local_application_observations", result)
+                self.store.set_run_status(run_id, result["status"])
+            finally:
+                self.store.release_local_application(run_id, lease)
+        return result
+
     def run_external(
         self,
         run_id: str,
@@ -134,6 +184,9 @@ class PipelineRunner:
         The CLI deliberately leaves ``execute`` false. A future operator can inject
         SafeToolAdapter instances after reviewing the current platform rules.
         """
+        if self.scope_guard.policy.target_type == "local_web":
+            self.store.set_run_status(run_id, "blocked_adapter")
+            return {"status": "blocked_adapter", "reason": "local_scope_requires_guarded_adapter", "stages": []}
         if not self.scope_guard.policy.confirmed or not self.scope_guard.policy.allow_network_contact:
             self.store.set_run_status(run_id, "blocked_scope")
             return {"status": "blocked_scope", "stages": []}

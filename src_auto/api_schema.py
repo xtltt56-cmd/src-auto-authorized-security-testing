@@ -32,7 +32,7 @@ def build_local_schema_smoke_command(project_root: Path, schema_url: str, output
         raise ApiSchemaError("schema_url_invalid")
     safe_output = _project_path(project_root, output_dir)
     wrapper = _project_path(project_root, Path(project_root) / "vendor" / "bin" / "schemathesis.cmd")
-    return [
+    command = [
         str(wrapper),
         "run",
         str(schema_url),
@@ -65,6 +65,13 @@ def build_local_schema_smoke_command(project_root: Path, schema_url: str, output
         str(safe_output / "schemathesis.junit.xml"),
         "--no-color",
     ]
+    # The pinned VAmPI OpenAPI document declares `/createdb` as GET even
+    # though that operation initializes/resets its database. HTTP method
+    # alone is not a sufficient side-effect guarantee; keep this known
+    # mutating operation out of the GET/examples smoke profile.
+    if parsed.port == 8083:
+        command.extend(["--exclude-path", "/createdb"])
+    return command
 
 
 def classify_schema_smoke_result(returncode: int, report_exists: bool) -> Dict[str, Any]:
@@ -101,6 +108,10 @@ def run_local_schema_smoke(project_root: Path, schema_url: str, output_dir: Path
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["TERM"] = "dumb"
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        environment.pop(key, None)
+    environment["NO_PROXY"] = "127.0.0.1,localhost"
+    environment["no_proxy"] = environment["NO_PROXY"]
     wrapper = command[0]
     invocation = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", wrapper] + command[1:]
     try:

@@ -4,10 +4,12 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, List, Mapping, Optional
-from urllib.parse import SplitResult, urlsplit
+from datetime import datetime
+from urllib.parse import SplitResult, urljoin, urlsplit
 
 from .config import load_mapping
 from .models import ScopeDecision
+from .local_scope import LOCAL_WEB_TYPE, LocalWebScope, strict_boolean
 
 
 def normalize_host(value: str) -> str:
@@ -34,11 +36,29 @@ class ScopePolicy:
     confirmed: bool = False
     allow_network_contact: bool = False
     source: str = ""
+    schema_version: int = 1
+    target_type: str = "legacy"
+    local_web: Optional[LocalWebScope] = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any], source: str = "") -> "ScopePolicy":
+        if not isinstance(value, Mapping):
+            raise ValueError("scope root must be a mapping")
+        confirmed = strict_boolean(value.get("confirmed", False), "confirmed")
+        contact = strict_boolean(value.get("allow_network_contact", False), "allow_network_contact")
+        version, kind = value.get("schema_version", 1), value.get("target_type", "legacy")
+        if kind == LOCAL_WEB_TYPE:
+            local = LocalWebScope.from_mapping(value)
+            parsed = urlsplit(local.origin)
+            return cls(target_id=value["target_id"], allowed_hosts=[parsed.hostname], allowed_ports=[parsed.port],
+                       confirmed=confirmed, allow_network_contact=contact, source=source,
+                       schema_version=2, target_type=LOCAL_WEB_TYPE, local_web=local)
+        if type(version) is not int or version != 1 or kind != "legacy":
+            raise ValueError("scope_version_or_target_type_unsupported")
         ports = []
         for raw in value.get("allowed_ports", []):
+            if type(raw) is not int and not (isinstance(raw, str) and raw.isdigit()):
+                raise ValueError("allowed_ports must contain integers")
             try:
                 port = int(raw)
             except (TypeError, ValueError):
@@ -52,8 +72,8 @@ class ScopePolicy:
             allowed_hosts=_as_hosts(value.get("allowed_hosts", [])),
             excluded_hosts=_as_hosts(value.get("excluded_hosts", [])),
             allowed_ports=sorted(set(ports)),
-            confirmed=bool(value.get("confirmed", False)),
-            allow_network_contact=bool(value.get("allow_network_contact", False)),
+            confirmed=confirmed,
+            allow_network_contact=contact,
             source=source,
         )
 
@@ -62,6 +82,10 @@ class ScopePolicy:
         return cls.from_mapping(load_mapping(path), str(path))
 
     def canonical(self) -> Mapping[str, Any]:
+        if self.target_type == LOCAL_WEB_TYPE and self.local_web is not None:
+            return dict(self.local_web.canonical(), schema_version=2, target_type=LOCAL_WEB_TYPE,
+                        target_id=self.target_id, confirmed=self.confirmed,
+                        allow_network_contact=self.allow_network_contact)
         return {
             "target_id": self.target_id,
             "root_domains": self.root_domains,
@@ -96,41 +120,60 @@ class ScopeGuard:
         return False
 
     def _split(self, url: str) -> Optional[SplitResult]:
+        if not isinstance(url, str) or any(ord(char) < 32 or ord(char) == 127 for char in url) or "\\" in url:
+            return None
         try:
             parsed = urlsplit(url)
         except ValueError:
             return None
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             return None
-        if parsed.username or parsed.password:
+        if parsed.username is not None or parsed.password is not None:
             return None
         return parsed
 
-    def decide(self, url: str) -> ScopeDecision:
+    def decide(self, url: str, method: str = "GET", now: Optional[datetime] = None) -> ScopeDecision:
         parsed = self._split(url)
         if parsed is None:
             return ScopeDecision(False, "invalid_or_unsupported_url", url=url)
         host = normalize_host(parsed.hostname or "")
         try:
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            port = parsed.port
+            if port is None:
+                port = 443 if parsed.scheme == "https" else 80
+            if not 1 <= port <= 65535:
+                raise ValueError("invalid_port")
         except ValueError:
             return ScopeDecision(False, "invalid_port", url=url, host=host)
-        if not self.policy.confirmed or not self.policy.allow_network_contact:
+        if self.policy.confirmed is not True or self.policy.allow_network_contact is not True:
             return ScopeDecision(False, "scope_not_confirmed", url=url, host=host, port=port)
+        if self.policy.target_type == LOCAL_WEB_TYPE:
+            if self.policy.local_web is None:
+                return ScopeDecision(False, "local_scope_missing", url=url, host=host, port=port)
+            reason = self.policy.local_web.denial_reason(url, method, now)
+            return ScopeDecision(not reason, reason or "allowed", url=url, host=host, port=port)
+        if self.policy.target_type != "legacy":
+            return ScopeDecision(False, "unsupported_target_type", url=url, host=host, port=port)
         if not self._host_allowed(host):
             return ScopeDecision(False, "host_not_in_scope", url=url, host=host, port=port)
-        if self.policy.allowed_ports and port not in self.policy.allowed_ports:
+        if port not in self.policy.allowed_ports:
             return ScopeDecision(False, "port_not_in_scope", url=url, host=host, port=port)
         return ScopeDecision(True, "allowed", url=url, host=host, port=port)
 
-    def check_redirect(self, original_url: str, location: str) -> ScopeDecision:
-        original = self.decide(original_url)
+    def check_redirect(self, original_url: str, location: str, method: str = "GET", now: Optional[datetime] = None) -> ScopeDecision:
+        original = self.decide(original_url, method=method, now=now)
         if not original.allowed:
             return ScopeDecision(False, "original_not_in_scope", url=location)
-        return self.decide(location)
+        if not isinstance(location, str) or any(ord(c) < 32 or ord(c) == 127 for c in location) or "\\" in location:
+            return ScopeDecision(False, "invalid_redirect", url="")
+        try:
+            destination = urljoin(original_url, location)
+        except ValueError:
+            return ScopeDecision(False, "invalid_redirect", url="")
+        return self.decide(destination, method=method, now=now)
 
-    def assert_allowed(self, url: str) -> None:
-        decision = self.decide(url)
+    def assert_allowed(self, url: str, method: str = "GET", now: Optional[datetime] = None) -> None:
+        decision = self.decide(url, method=method, now=now)
         if not decision.allowed:
             raise PermissionError("scope guard denied {}: {}".format(url, decision.reason))
 

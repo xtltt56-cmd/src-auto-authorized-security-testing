@@ -5,10 +5,11 @@ from typing import Mapping
 
 from .ai import _redact
 
-CATALOG_VERSION = "local-readonly-v1"
-ACTIONS = frozenset({"inspect_headers", "discover_surface", "inspect_api_schema",
-                     "compare_object_authorization", "review_candidate", "read_observation",
-                     "finish", "request_human_review"})
+CATALOG_VERSION = "local-readonly-v2"
+ACTIONS = frozenset({"inspect_headers", "inspect_local_route", "discover_surface", "inspect_api_schema",
+                     "compare_object_authorization", "run_local_regression",
+                     "validate_controlled_inputs", "compare_object_authorization_matrix",
+                     "review_candidate", "read_observation", "finish", "request_human_review"})
 
 
 def _unique(pairs):
@@ -38,7 +39,9 @@ class Decision:
             raise ValueError("unknown_action")
         if not isinstance(value["reference"], str) or value["reference"] not in references:
             raise ValueError("foreign_reference")
-        if value["action"] in {"inspect_headers", "discover_surface", "inspect_api_schema", "finish", "request_human_review"} and value["reference"] != "entry":
+        if value["action"] in {"inspect_headers", "discover_surface", "inspect_api_schema", "run_local_regression",
+                                "validate_controlled_inputs", "compare_object_authorization_matrix",
+                                "finish", "request_human_review"} and value["reference"] != "entry":
             raise ValueError("action_reference_mismatch")
         if value["action"] == "review_candidate" and value["reference"] != "candidate":
             raise ValueError("action_reference_mismatch")
@@ -57,7 +60,7 @@ class Decision:
 @dataclass(frozen=True)
 class Limits:
     max_steps: int = 8
-    max_requests: int = 30
+    max_requests: int = 100
     max_model_calls: int = 12
     max_seconds: int = 900
     max_tokens: int = 20000

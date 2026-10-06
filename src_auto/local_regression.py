@@ -15,11 +15,12 @@ import re
 import secrets
 from dataclasses import dataclass
 from http.cookiejar import CookieJar
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
-from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPCookieProcessor, ProxyHandler, Request, build_opener
 
 from .local_labs import LabSpec, LocalLabManager
 from .runtime_policy import RuntimePolicy
@@ -269,14 +270,18 @@ def _evidence_location(requested_url: str, value: str) -> str:
 class LocalHTTPClient:
     """HTTP client with no redirects and a RuntimePolicy preflight."""
 
-    def __init__(self, policy: RuntimePolicy, base_url: str, cookie_jar: Optional[CookieJar] = None):
+    def __init__(self, policy: RuntimePolicy, base_url: str, cookie_jar: Optional[CookieJar] = None,
+                 before_request=None):
         self.policy = policy
         self.base_url = str(base_url).rstrip("/") + "/"
+        self.before_request = before_request
+        self.request_count = 0
         allowed, reason = policy.decide_url(self.base_url)
         if not allowed:
             raise RegressionScopeError("base_url_not_allowlisted: {}".format(reason))
         self.cookie_jar = cookie_jar or CookieJar()
-        self.opener = build_opener(HTTPCookieProcessor(self.cookie_jar), _NoRedirect())
+        # Local regression traffic must not inherit a machine-wide proxy.
+        self.opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(self.cookie_jar), _NoRedirect())
 
     def request(
         self,
@@ -296,6 +301,9 @@ class LocalHTTPClient:
         allowed, reason = self.policy.decide_url(url)
         if not allowed:
             raise RegressionScopeError("request_not_allowlisted: {}".format(reason))
+        if self.before_request is not None:
+            self.before_request()
+        self.request_count += 1
         body = None
         headers = {
             "User-Agent": "SRC-Auto/local-regression",
@@ -445,8 +453,9 @@ def _hidden_value(body: str, name: str) -> str:
     return match.group(1) if match else ""
 
 
-def _dvwa_login(policy: RuntimePolicy, base_url: str) -> Tuple[LocalHTTPClient, Dict[str, Any]]:
-    client = LocalHTTPClient(policy, base_url)
+def _dvwa_login(policy: RuntimePolicy, base_url: str, allow_setup: bool = True,
+                before_request=None) -> Tuple[LocalHTTPClient, Dict[str, Any]]:
+    client = LocalHTTPClient(policy, base_url, before_request=before_request)
     login_page = client.request("/login.php")
     token = _hidden_value(str(login_page.get("body", "")), "user_token")
     if not token:
@@ -459,6 +468,8 @@ def _dvwa_login(policy: RuntimePolicy, base_url: str) -> Tuple[LocalHTTPClient, 
     location = str(login.get("location", "")).lower()
     body = str(login.get("body", ""))
     if "setup.php" in location or "database setup" in body.lower():
+        if not allow_setup:
+            raise RegressionError("dvwa_setup_required_manual_initialization")
         setup = client.request("/setup.php")
         setup_token = _hidden_value(str(setup.get("body", "")), "user_token")
         if not setup_token:
@@ -487,8 +498,8 @@ def _dvwa_login(policy: RuntimePolicy, base_url: str) -> Tuple[LocalHTTPClient, 
     return client, {"status": "READY", "fixture": "dvwa-local-default", "network_contact": True}
 
 
-def _webgoat_login(policy: RuntimePolicy, base_url: str) -> Tuple[LocalHTTPClient, Dict[str, Any]]:
-    client = LocalHTTPClient(policy, base_url)
+def _webgoat_login(policy: RuntimePolicy, base_url: str, before_request=None) -> Tuple[LocalHTTPClient, Dict[str, Any]]:
+    client = LocalHTTPClient(policy, base_url, before_request=before_request)
     register_page = client.request("/WebGoat/register.mvc")
     username = "codex-" + secrets.token_hex(4)
     password = "A1b2c3!"
@@ -535,17 +546,20 @@ def _write_text(path: Path, value: str, project_root: Path) -> None:
     target.write_text(str(value), encoding="utf-8")
 
 
-def _run_one_case(case: RegressionCase, manager: LocalLabManager, policy: RuntimePolicy) -> Dict[str, Any]:
+def _run_one_case(case: RegressionCase, manager: LocalLabManager, policy: RuntimePolicy,
+                  before_request=None, allow_lab_initialization: bool = True) -> Dict[str, Any]:
     spec = manager.spec(case.lab_id)
     base_url = _base_url(spec)
     fixture: Dict[str, Any] = {"status": "NOT_REQUIRED", "fixture": "none", "network_contact": False}
+    client = None
     try:
         if case.auth == "dvwa-default":
-            client, fixture = _dvwa_login(policy, base_url)
+            client, fixture = _dvwa_login(policy, base_url, allow_setup=allow_lab_initialization,
+                                          before_request=before_request)
         elif case.auth == "webgoat-synthetic":
-            client, fixture = _webgoat_login(policy, base_url)
+            client, fixture = _webgoat_login(policy, base_url, before_request=before_request)
         else:
-            client = LocalHTTPClient(policy, base_url)
+            client = LocalHTTPClient(policy, base_url, before_request=before_request)
         response = client.request(case.path, method=case.method, query=case.query)
         result = evaluate_expectations(case, response)
         result["fixture"] = fixture.get("fixture", "none")
@@ -553,8 +567,13 @@ def _run_one_case(case: RegressionCase, manager: LocalLabManager, policy: Runtim
         result["fixture_network_contact"] = bool(fixture.get("network_contact", False))
         result["description"] = case.description
         result["path"] = case.path
+        result["request_count"] = client.request_count
         return result
-    except (RegressionError, OSError, ValueError, TypeError) as exc:
+    except RuntimeError as exc:
+        # Cancellation and Agent request-budget failures are control signals;
+        # do not turn them into a normal blocked test case or partial success.
+        if str(exc) in {"cancelled", "request_limit", "scope_blocked"}:
+            raise
         return {
             "case_id": case.case_id,
             "lab_id": case.lab_id,
@@ -567,8 +586,203 @@ def _run_one_case(case: RegressionCase, manager: LocalLabManager, policy: Runtim
             "fixture_network_contact": bool(fixture.get("network_contact", False)),
             "description": case.description,
             "path": case.path,
+            "request_count": client.request_count if client is not None else 0,
             "network_contact": bool(fixture.get("network_contact", False)),
         }
+    except (OSError, ValueError, TypeError) as exc:
+        return {
+            "case_id": case.case_id,
+            "lab_id": case.lab_id,
+            "kind": case.kind,
+            "auth": case.auth,
+            "status": "BLOCKED_DEPENDENCY",
+            "reason": _safe_error(exc),
+            "fixture": fixture.get("fixture", "none"),
+            "fixture_status": "FAILED",
+            "fixture_network_contact": bool(fixture.get("network_contact", False)),
+            "description": case.description,
+            "path": case.path,
+            "request_count": client.request_count if client is not None else 0,
+            "network_contact": bool(fixture.get("network_contact", False)),
+        }
+
+
+def run_agent_regression(project_root: Path, lab_id: str, manager: LocalLabManager,
+                         before_request=None) -> Dict[str, Any]:
+    """Run the fixed regression cases for one already-running local lab.
+
+    Unlike the operator CLI runner, this Agent recipe never starts, resets, or
+    recreates a lab. It also refuses to initialize the DVWA database. All test
+    paths, methods, credentials and harmless inputs come from the pinned case
+    inventory; the model cannot change them.
+    """
+
+    root = Path(project_root).resolve()
+    lab = _safe_id(lab_id, "lab_id")
+    policy = RuntimePolicy.from_file(root / "config" / "validation" / "local_only.json")
+    cases = [case for case in load_regression_cases(root / "config" / "validation" / "local_regression_cases.json")
+             if case.lab_id == lab]
+    if not cases:
+        raise ValueError("no_regression_cases_selected")
+    spec = manager.spec(lab)
+    if not spec.is_loopback_only or not policy.decide_url(_base_url(spec))[0]:
+        raise RegressionScopeError("target_not_allowlisted")
+
+    records = []
+    for case in cases:
+        if case.destructive:
+            raise ValueError("destructive_cases_forbidden")
+        record = _run_one_case(case, manager, policy, before_request=before_request,
+                               allow_lab_initialization=False)
+        records.append(record)
+
+    passed = sum(1 for item in records if item.get("status") == "PASS")
+    failed = sum(1 for item in records if item.get("status") == "FAIL")
+    blocked = sum(1 for item in records if item.get("status") == "BLOCKED_DEPENDENCY")
+    status = "COMPLETED" if passed == len(records) else ("BLOCKED_DEPENDENCY" if blocked and not failed else "PARTIAL")
+    artifact_dir = root / "validation" / "agent-local-tests" / secrets.token_hex(8)
+    artifact = artifact_dir / (lab + ".json")
+    _write_json(artifact, {
+        "status": status,
+        "mode": "local-only",
+        "lab_id": lab,
+        "target": _base_url(spec),
+        "case_count": len(records),
+        "passed_count": passed,
+        "failed_count": failed,
+        "blocked_count": blocked,
+        "request_count": sum(int(item.get("request_count", 0)) for item in records),
+        "records": records,
+        "candidate_count": 0,
+        "manual_review_required": True,
+        "limitations": [
+            "用例验证可达性、认证边界与无害标记，不等于已确认漏洞。",
+            "DVWA 未初始化时只报告阻断，不自动初始化或重置数据库。",
+            "WebGoat 的合成会话用例会在本地靶场创建一个随机合成测试账号。",
+        ],
+    }, root)
+    return {
+        "status": "ok",
+        "summary": "固定本地回归 {}/{} 通过；失败 {}，阻断 {}。只验证基线与边界，不代表漏洞结论。".format(
+            passed, len(records), failed, blocked),
+        "profileStatus": status,
+        "caseCount": len(records),
+        "passedCount": passed,
+        "failedCount": failed,
+        "blockedCount": blocked,
+        "requestCount": sum(int(item.get("request_count", 0)) for item in records),
+        "cases": [{"id": item.get("case_id"), "status": item.get("status"),
+                   "http": item.get("response_status"), "matched": item.get("matched_assertions"),
+                   "total": item.get("total_assertions"), "reason": item.get("reason", "")}
+                  for item in records],
+        "artifact": artifact.relative_to(root).as_posix(),
+        "candidate": False,
+        "confirmed": False,
+        "manualReviewRequired": True,
+    }
+
+
+def run_agent_dvwa_controls(project_root: Path, manager: LocalLabManager,
+                            before_request=None) -> Dict[str, Any]:
+    """Run fixed, non-destructive SQLi/XSS indicator checks against local DVWA.
+
+    SQLi uses one baseline and a true/false boolean pair through the lab's
+    authenticated GET-only lesson. XSS uses an inert custom-element marker;
+    no script, event handler, external resource, or stored payload is sent.
+    The result is a review candidate only; it does not prove exploitability.
+    """
+
+    root = Path(project_root).resolve()
+    spec = manager.spec("dvwa")
+    policy = RuntimePolicy.from_file(root / "config" / "validation" / "local_only.json")
+    base_url = _base_url(spec)
+    if not spec.is_loopback_only or not policy.decide_url(base_url)[0]:
+        raise RegressionScopeError("target_not_allowlisted")
+    client, _ = _dvwa_login(policy, base_url, allow_setup=False, before_request=before_request)
+
+    row_pattern = re.compile(
+        r"First name:\s*([^<]*)<br\s*/?>\s*Surname:\s*([^<]*)(?:<br\s*/?>|</pre>)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    sql_probes = (
+        ("baseline", "1"),
+        ("true_control", "1' AND '1'='1"),
+        ("false_control", "1' AND '1'='2"),
+    )
+    sql_observations = []
+    for name, value in sql_probes:
+        response = client.request("/vulnerabilities/sqli/", query={"id": value, "Submit": "Submit"})
+        rows = row_pattern.findall(str(response.get("body", "")))
+        sql_observations.append({
+            "probe": name,
+            "status": int(response.get("status", 0)),
+            "row_count": len(rows),
+            "result_fingerprint": hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode("utf-8")).hexdigest(),
+        })
+    sql_candidate = (
+        all(item["status"] == 200 for item in sql_observations)
+        and sql_observations[0]["row_count"] > 0
+        and sql_observations[1]["row_count"] == sql_observations[0]["row_count"]
+        and sql_observations[1]["result_fingerprint"] == sql_observations[0]["result_fingerprint"]
+        and sql_observations[2]["row_count"] == 0
+    )
+
+    marker = "<x-src-auto-marker>"
+    xss_response = client.request("/vulnerabilities/xss_r/", query={"name": marker, "Submit": "Submit"})
+
+    class _InertMarkerParser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.found = False
+
+        def handle_starttag(self, tag, attrs):
+            if tag.lower() == "x-src-auto-marker":
+                self.found = True
+
+    parser = _InertMarkerParser()
+    parser.feed(str(xss_response.get("body", "")))
+    xss_candidate = int(xss_response.get("status", 0)) == 200 and parser.found
+    result = {
+        "status": "COMPLETED" if all(item["status"] == 200 for item in sql_observations)
+                  and int(xss_response.get("status", 0)) == 200 else "PARTIAL",
+        "lab_id": "dvwa",
+        "target": base_url,
+        "request_count": client.request_count,
+        "checks": {
+            "boolean_sqli": {"candidate": sql_candidate, "observations": sql_observations},
+            "inert_reflection": {
+                "candidate": xss_candidate,
+                "http_status": int(xss_response.get("status", 0)),
+                "raw_inert_element_parsed": parser.found,
+                "body_sha256": str(xss_response.get("body_sha256", "")),
+            },
+        },
+        "candidate_count": int(sql_candidate) + int(xss_candidate),
+        "confirmed": False,
+        "submission_ready": False,
+        "limitations": [
+            "Boolean differential is a local manual-review candidate; it is not a general SQLi proof.",
+            "The custom HTML element is inert; script execution and browser impact were not tested.",
+            "Only the pinned DVWA lesson and its local default test account were used.",
+        ],
+    }
+    artifact = root / "validation" / "agent-local-tests" / secrets.token_hex(8) / "dvwa-controlled-inputs.json"
+    _write_json(artifact, result, root)
+    return {
+        "status": "ok",
+        "profileStatus": result["status"],
+        "summary": "DVWA 固定受控输入检查完成：SQL 布尔差异候选 {}，惰性 HTML 反射候选 {}；均未确认。".format(
+            "有" if sql_candidate else "无", "有" if xss_candidate else "无"),
+        "requestCount": client.request_count,
+        "candidate": result["candidate_count"] > 0,
+        "candidateCount": result["candidate_count"],
+        "candidateKinds": [name for name, found in (("boolean-sqli-differential", sql_candidate),
+                                                        ("inert-html-reflection", xss_candidate)) if found],
+        "confirmed": False,
+        "submissionReady": False,
+        "manualReviewRequired": True,
+        "artifact": artifact.relative_to(root).as_posix(),
+    }
 
 
 def run_regression(

@@ -1,61 +1,56 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.11.2`
+**发布标识：** `v0.12.0`
 
-**发布日期：** 2026-09-17（Asia/Shanghai）
-**适用分支：** `main`
+**发布日期：** 2026-10-06（Asia/Shanghai）
+**适用分支：** `main`，仅在 GitHub Actions 发布门禁全部通过后创建标签和发行包。
 
-**分发方式：** GitHub Actions 在正式发布门禁通过后生成 `SRC-Auto-Windows-x64.zip`、版本化 ZIP、`SHA256SUMS.txt` 和机器可读发布清单。固定最新版下载地址为：
-
-`https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip`
+固定最新版下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。每次正式版均提供版本化 ZIP、固定名 ZIP、`SHA256SUMS.txt` 和机器可读 `release-manifest.json`。机器清单中的提交 SHA 是分发源码的准确标识；发布是否完成以 GitHub Releases 和 Actions 实际结果为准。
 
 ## 本发布包含什么
 
-这是 SRC-Auto 的当前可运行发布基线：一个只监听本机回环地址的安全测试控制台和五靶场可视化控制层。当前 Dashboard 的前端固定为 `127.0.0.1:4173`，控制 API 固定为 `127.0.0.1:4174`；API 只接受预定义的五个靶场和固定的生命周期、检测动作，不接受任意 URL、容器名、命令或文件路径。Dashboard 启动时会先锁定本次会话的云端 AI 授权；拒绝时服务端硬拒绝远程连接测试，页面上的单次联网勾选也不能越过这道门。重复启动时只有授权状态一致的 API 才会被复用；旧状态或不一致状态只会在确认无运行任务且进程身份属于本项目后安全重启。
+SRC-Auto 定位为**授权安全测试编排与候选漏洞研判平台**，不是自动确认漏洞或自动领取赏金的工具。
 
-本发布的标准入口是：
+- 保留五固定回环靶场、真实后端任务、授权草稿与离线范围审阅、候选和关联报告、中文系统设置。
+- 新增受控 Agent：有限动作、真实工具观察反馈、覆盖检查、停止、脱敏检查点、共享云端预算与资源守卫。主决策提供商配置为 DeepSeek，API ID 为 `deepseek-flash`；本地 Qwen3.5-9B 可人工选择。展示名称不能替代接口 ID。
+- 新增「本机应用审查」：人工录入精确回环 IP、端口、有限 GET/HEAD 路由、排除路径和时间窗，核对监听实例及审批摘要后再次确认执行。标准模式不调用模型；受控 Agent 只能选择批准的路由编号，不能创造 URL、命令、请求头或载荷。
+- 本机原生检查不依赖 Docker。任务详情展示真实步骤、请求、模型用量与候选，报告可直接查看和完整导出；中断后重新审批，不自动重放。
+- 云端仍有启动会话、Agent 启用、单任务确认三层门控。拒绝启动授权时不会调用远程 AI。资源配置为 CPU 70%、整机已用 RAM 30 GiB；未知资源状态不放行。
+- 发布流程逐条检查前端命令退出码，任何失败都阻止打包和发布。
+
+## 启动与使用
+
+下载解压后双击 `START_DASHBOARD.bat`。分发包携带预构建页面和便携 Python，不要求安装 Git、Node.js 或 Python。默认页面 `127.0.0.1:4173`，控制 API `127.0.0.1:4174`，不监听公网。
+
+源码工作区入口：
 
 ```powershell
-Set-Location 'D:\\网络安全文件夹\\SRC-Auto'
-.\\tools\\start_dashboard.ps1
+Set-Location 'D:\网络安全文件夹\SRC-Auto'
+.\tools\start_dashboard.ps1
+# 或
+.\START_SYSTEM.ps1 -Dashboard
 ```
 
-或使用统一入口：
+Docker Desktop、靶场镜像、外部扫描器和 Ollama 模型权重不随 ZIP 分发。运行固定容器靶场需另行准备 Docker；本机应用必须由操作者自行启动。云端用户需在「系统设置」重新填写自己的 API 密钥。详见 [USER_MANUAL.md](USER_MANUAL.md)、[Agent 使用说明](docs/AGENT_USER_GUIDE.md) 和 [本机应用专项进度](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)。
 
-```powershell
-.\\START_SYSTEM.ps1 -Dashboard
-```
+## 验证证据与发布门禁
 
-无参数的 `START_SYSTEM.ps1` 仍打开兼容的 WinForms 菜单；它不会自动访问真实目标。真实目标录入、授权确认、人工复现和补天提交始终由操作者负责，当前发布不会自动执行这些动作。
+2026-10-06 专项开发验收：Python 460 项，459 通过、1 个符号链接权限用例跳过；Dashboard 51 项通过。合成本机应用真实 DeepSeek 对照：3 次 HTTP、4 次模型调用、3,418 Token，22.41 秒；标准模式同范围 3 次 HTTP、0 模型调用、0.19 秒。生产页面实际点击、任务关联和完整报告导出已验证，1440/390 像素页面无乱码或控制台错误。原始证据只保存在操作者本机，不随发行包上传。
 
-## 已验证范围
+这证明受控决策与工具反馈真实落地，**不证明更快、更高漏洞发现率或赏金收益**。测试用 500 响应是功能异常，不是已确认漏洞。2026-10-05 五固定靶场实际 Agent 配方为 5/5 完成、83 次 HTTP、5 次 DeepSeek 调用，是独立历史轮次；本次发布检查不冒充重新运行了五靶场云端扫描。
 
-| 验证项 | 当前证据 |
-|---|---|
-| Python 回归 | `327` 项执行；本机 `1` 项、GitHub Runner `3` 项按环境条件跳过，其余通过，`0` 失败；覆盖率 `70%`（门槛 `68%`） |
-| 回环 API / 控制服务 | 已纳入 Python 全量回归并通过 |
-| Dashboard 前端单元测试 | `41/41` 通过 |
-| Chromium 浏览器验收 | `8/8` 通过 |
-| TypeScript、Lint、生产构建 | 均通过 |
-| Windows 分发包隔离启动 | 便携 Python、静态页面、构建资源、API 与同源代理均通过 |
-| 五靶场控制闭环 | 全部健康；Juice Shop 已完成真实“停止 → 启动”点击回归 |
-| 外部目标、远程 AI、自动提交 | `0 / 0 / 0` |
+发布必须重新通过 Python 测试和分支覆盖率 ≥68%、PowerShell 解析、前端测试和覆盖率门槛（语句/分支/函数/行 70/60/65/70）、Lint、TypeScript/生产构建、既有 Chromium 交互测试、跟踪文件凭据扫描、Windows ZIP 与隔离 Python 启动。CI 会记录其自身环境的条件跳过，不能计作通过。
 
-完整说明见 [TEST_REPORT.md](TEST_REPORT.md)、[USER_MANUAL.md](USER_MANUAL.md) 和 [docs/THREE_PHASE_USER_MANUAL.md](docs/THREE_PHASE_USER_MANUAL.md)。
+本次发布准备的本机新鲜回归：Python 460 项、459 通过、1 跳过，行与分支合计覆盖率 70.51%（控制台显示 71%）；Dashboard 51/51，覆盖率语句 75%、分支 70.58%、函数 69.97%、行 81.13%；22 个 PowerShell 脚本解析、Lint、TypeScript 与生产构建通过；原有 8 个 Chromium 交互测试全部通过。浏览器使用隔离的 4273/4274 端口及合成存储，不关闭正式控制台，不访问真实外部目标或调用云端 AI。云端 Runner 的结果以该提交的 Actions 为准。
 
-## 有意不包含的内容
+## 不包含的私有信息
 
-本发布不把以下本机运行期文件提交到 Git：工具二进制、ZAP 会话、扫描缓存、SQLite 数据库、UUID 证据、报告原件、Python 虚拟环境与字节码、Hypothesis 缓存、工具运行数据、DPAPI 密文、API 密钥、会话资料或任何原始响应内容。`vendor/bin` 下五个小型 `.cmd` 包装脚本例外，它们是工具配置需要的项目源码，不包含工具本体或运行数据。其余文件可能仍保留在操作者的本机目录中以便排障，但不是发布内容，也不应作为当前版本结论的来源。
+Git 与分发包均排除 API 密钥、DPAPI 密文、Cookie/账号会话、生成的目标配置、SQLite 状态、日志、报告原件、私有源码、扫描缓存和模型权重。工具本体不上传；`vendor/bin` 的五个项目 `.cmd` 包装脚本是例外源码。仓库只保留原有两张非敏感静态 Dashboard 图片，不上传本轮运行工件。
 
-仓库仅保留两张不含敏感内容的静态验收截图：
+## 未完成与边界
 
-- `validation/dashboard/live-lab-controls.png`
-- `validation/dashboard/live-click-regression.png`
+本机专项 L2 可用，不代表全计划完成。真实量化应用审查、第三方扫描器的本机出口约束、有界发现/ZAP 被动分析、隔离账号的业务 IDOR/XSS/SQLi 验证和独立源码审查仍待后续。可信本地 HTTPS、IPv6 实际传输未完成端到端验收。连接/TLS 阶段取消受超时限制。真实目标 Agent 与自动提交保持关闭，所有候选仍需人工复现、确认和补天提交。
 
-## 文档读取规则
+## 文档与回退
 
-2026-09-17 的本清单是 `v0.11.2` 分发版本的当前验收摘要。`TEST_REPORT.md` 及日期更早、标题标注为“历史”或“归档”的内容只用于追溯，不覆盖本清单记录的版本号、测试数量或分发结论。
-
-## 回退方式
-
-本发布的 Git 标签为 `v0.11.2`。上一份可用回退基线保留为 `v0.11.1`；如后续升级出现问题，可从相应标签创建恢复分支，无需删除 GitHub 历史记录。
+本清单及对应日期的专项进度描述 v0.12.0；旧文档中的等待确认、未发布、30B、20 GiB 和旧测试数字均为当时快照，不能覆盖当前配置。上一份正式版本 `v0.11.2` 的不可变标签和发行包保留，可从该标签恢复，不强制覆盖或删除历史。检查更新是人工动作，不会静默下载或替换程序。

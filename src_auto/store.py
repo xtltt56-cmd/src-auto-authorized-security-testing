@@ -171,6 +171,36 @@ class Store:
         self.conn.execute("UPDATE runs SET status=?,updated_at=? WHERE run_id=?", (status, utc_now(), run_id))
         self.conn.commit()
 
+    def claim_local_application(self, run_id: str, scope_hash: str, target_id: str, origin: str) -> str:
+        """Additive, atomic per-origin lease; uncertain owners remain blocking."""
+        from .agent_runner import current_owner, owner_is_alive
+
+        token = uuid.uuid4().hex
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute("CREATE TABLE IF NOT EXISTS local_application_claims ("
+                              "origin TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, lease TEXT NOT NULL, owner_json TEXT NOT NULL)")
+            run = self.get_run(run_id)
+            if (not run or run["status"] != "created" or run["scope_hash"] != scope_hash
+                    or run["target_id"] != target_id or run["mode"] != "local"):
+                raise ValueError("local_run_not_startable")
+            active = self.conn.execute("SELECT run_id,owner_json FROM local_application_claims WHERE origin=?", (origin,)).fetchone()
+            if active:
+                if owner_is_alive(json.loads(active["owner_json"])) is not False:
+                    raise RuntimeError("local_application_conflict")
+                # Recovery only changes bookkeeping. Never replay a dead owner's requests.
+                self.conn.execute("UPDATE runs SET status='interrupted',updated_at=? WHERE run_id=? AND status='running'",
+                                  (utc_now(), active["run_id"]))
+                self.conn.execute("DELETE FROM local_application_claims WHERE origin=?", (origin,))
+            self.conn.execute("INSERT INTO local_application_claims VALUES (?,?,?,?)",
+                              (origin, run_id, token, json.dumps(current_owner(), sort_keys=True)))
+            self.conn.execute("UPDATE runs SET status='running',updated_at=? WHERE run_id=?", (utc_now(), run_id))
+        return token
+
+    def release_local_application(self, run_id: str, lease: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM local_application_claims WHERE run_id=? AND lease=?", (run_id, lease))
+
     def save_checkpoint(self, run_id: str, stage: str, payload: Dict[str, Any]) -> None:
         self.conn.execute(
             "INSERT INTO checkpoints(run_id,stage,payload_json,updated_at) VALUES(?,?,?,?) "

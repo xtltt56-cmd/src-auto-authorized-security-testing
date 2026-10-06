@@ -23,7 +23,7 @@ it('blocks cloud selection when startup gate is off', async () => {
   repository.getAgent = vi.fn().mockResolvedValue({ enabled: true, remoteSessionEnabled: false, activeId: null, runs: [] })
   render(<AgentPage repository={repository} snapshot={fixtureSnapshot} onOpenReport={() => undefined} />)
   await screen.findByRole('button', { name: '开始受控任务' })
-  expect(screen.getByRole('option', { name: 'DeepSeek（云端）' })).toBeDisabled()
+  expect(screen.getByRole('option', { name: /DeepSeek V4.1 Flash/ })).toBeDisabled()
   expect(screen.getByText(/本次启动禁止云端 AI/)).toBeVisible()
 })
 
@@ -31,8 +31,26 @@ it('keeps the new cloud loop disabled even with session consent', async () => {
   const repository = createFixtureRepository()
   repository.getAgent = vi.fn().mockResolvedValue({ enabled: true, remoteSessionEnabled: true, cloudAgentAvailable: false, activeId: null, runs: [] })
   render(<AgentPage repository={repository} snapshot={fixtureSnapshot} onOpenReport={() => undefined} />)
-  await screen.findByText(/云端 Agent 尚未完成费用治理/)
-  expect(screen.getByRole('option', { name: 'DeepSeek（云端）' })).toBeDisabled()
+  await screen.findByText(/DeepSeek Agent 配置或计价未就绪/)
+  expect(screen.getByRole('option', { name: /DeepSeek V4.1 Flash/ })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '开始受控任务' })).toBeDisabled()
+})
+
+it('defaults to DeepSeek but requires per-task cloud consent without automatic calls', async () => {
+  const repository = createFixtureRepository()
+  repository.getAgent = vi.fn().mockResolvedValue({ enabled: true, remoteSessionEnabled: true, cloudAgentAvailable: true, activeId: null, runs: [] })
+  repository.startAgent = vi.fn().mockResolvedValue({ accepted: true, id: 'cloud-one' })
+  render(<AgentPage repository={repository} snapshot={fixtureSnapshot} onOpenReport={() => undefined} />)
+  await screen.findByText(/每次调用前持久化预留预算/)
+  expect(screen.getByRole('combobox', { name: '决策模型' })).toHaveValue('deepseek')
+  expect(repository.startAgent).not.toHaveBeenCalled()
+  const start = screen.getByRole('button', { name: '开始受控任务' })
+  expect(start).toBeDisabled()
+  await userEvent.click(screen.getByRole('checkbox', { name: /同意本任务向所选云端模型/ }))
+  expect(start).toBeEnabled()
+  await userEvent.click(start)
+  expect(repository.startAgent).toHaveBeenCalledWith(expect.objectContaining({ mode: 'local-assessment', provider: 'deepseek', allowCloud: true }))
+  expect(screen.getByRole('checkbox', { name: /同意本任务向所选云端模型/ })).not.toBeChecked()
 })
 
 it('shows resource pause and blocks resuming an unavailable lab', async () => {

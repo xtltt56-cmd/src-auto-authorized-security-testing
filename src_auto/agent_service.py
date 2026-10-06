@@ -11,6 +11,7 @@ from .agent_runner import ACTIVE, AgentHistory, AgentRunner
 from .store import Store
 from .config import load_mapping
 from .agent_resources import WindowsResources
+from .agent_cloud_budget import DeepSeekAgentBudget
 
 
 class AgentService:
@@ -22,6 +23,8 @@ class AgentService:
         self.enabled = False  # Deliberately session-only; opening/restarting never enables it.
         self.current_id = None
         self.cancel = threading.Event()
+        from .local_application_workflow import LocalApplicationCoordinator
+        self.local_app = LocalApplicationCoordinator(self)
 
     @property
     def active(self):
@@ -42,8 +45,13 @@ class AgentService:
         with self.control._lock:
             runs = self.history.list()
             active_id = self.current_id or next((x["id"] for x in runs if x["state"] in ACTIVE), None)
+            try:
+                DeepSeekAgentBudget.configured(self.root)
+                cloud_available = True
+            except (OSError, ValueError, KeyError):
+                cloud_available = False
             return {"enabled": self.enabled, "remoteSessionEnabled": remote_session_enabled,
-                    "cloudAgentAvailable": False,
+                    "cloudAgentAvailable": cloud_available, "defaultProvider": "deepseek",
                     "activeId": active_id, "ownedActiveId": self.current_id, "runs": runs, "catalogVersion": CATALOG_VERSION,
                     "limits": Limits().to_mapping(), "localOnly": True}
 
@@ -53,15 +61,16 @@ class AgentService:
             raise ValueError("invalid_agent_request")
         lab, mode, provider = document["labId"], document["mode"], document["provider"]
         if not all(isinstance(x, str) for x in (lab, mode, provider)): raise ValueError("invalid_agent_request")
-        if mode not in {"candidate-review", "api-permissions"} or provider not in {"local", "deepseek", "zhipu", "openrouter"}:
+        if mode not in {"candidate-review", "api-permissions", "local-assessment"} or provider not in {"local", "deepseek", "zhipu", "openrouter"}:
             raise ValueError("invalid_agent_request")
         if type(document.get("allowCloud", False)) is not bool: raise ValueError("invalid_agent_request")
         if provider != "local" and not (remote_session_enabled and document.get("allowCloud") is True):
             raise ValueError("remote_ai_disabled_for_session")
+        cloud_budget = None
         if provider != "local":
-            # Staged rollout: existing manual AI reviews remain separate. Do not enable
-            # a potentially billed autonomous loop before its cost governance is accepted.
-            raise ValueError("cloud_agent_not_validated")
+            if provider != "deepseek": raise ValueError("cloud_agent_not_validated")
+            try: cloud_budget = DeepSeekAgentBudget.configured(self.root)
+            except (OSError, ValueError, KeyError): raise ValueError("cloud_agent_not_validated") from None
         limits = Limits.from_mapping(document.get("limits", {}))
         with self.control._lock:
             if not self.enabled: raise RuntimeError("agent_disabled")
@@ -70,6 +79,8 @@ class AgentService:
             self.control.manager.spec(lab)
             if self.control.manager.status(lab).get("status") != "READY": raise RuntimeError("lab_not_ready")
             if mode == "api-permissions" and lab != "business-api": raise ValueError("permission_recipe_unavailable")
+            if mode == "local-assessment" and lab not in {"juice-shop", "dvwa", "webgoat", "vampi", "business-api"}:
+                raise ValueError("local_assessment_recipe_unavailable")
             candidate = None
             candidate_id = document.get("candidateId")
             if candidate_id is not None:
@@ -83,7 +94,7 @@ class AgentService:
                 if not candidate_url or (candidate_url.scheme, candidate_url.hostname, candidate_url.port) != (spec_url.scheme, spec_url.hostname, spec_url.port):
                     raise ValueError("foreign_candidate")
             cancel = threading.Event()
-            actions = self.action_factory(self.root, self.control.manager, lab, limits, cancel, candidate=candidate)
+            actions = self.action_factory(self.root, self.control.manager, lab, limits, cancel, candidate=candidate, mode=mode)
             model = self.model_factory(self.root, provider, remote_session_enabled, document.get("allowCloud", False))
             resume_id = document.get("resumeId")
             if resume_id:
@@ -100,7 +111,7 @@ class AgentService:
                 self.history.update(row["id"], candidateId=candidate_id)
             self.current_id, self.cancel = row["id"], cancel
             resources = WindowsResources(load_mapping(self.root / "config/policy.yaml"))
-            runner = AgentRunner(self.root, self.history, model, actions, limits, provider, resource_check=resources.check)
+            runner = AgentRunner(self.root, self.history, model, actions, limits, provider, resource_check=resources.check, cloud_budget=cloud_budget)
             try:
                 self.executor.submit(self._run, runner, row["id"], lab, mode, cancel, resume_id)
             except Exception:

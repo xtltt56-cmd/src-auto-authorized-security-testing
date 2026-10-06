@@ -1,5 +1,5 @@
 import { fixtureSnapshot } from './fixtures'
-import type { AgentSnapshot, AgentStart } from './types'
+import type { AgentSnapshot, AgentStart, LocalApplicationDraft, LocalApplicationApproval } from './types'
 import type { AIConnectionResult, AIProviderSettings, ArtifactSummary, DashboardSnapshot, ReportFile, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
 
@@ -20,6 +20,8 @@ const eventFor = (task: TaskSummary, id: number, level: TaskEvent['level'], stag
 })
 
 export interface TaskRepository {
+  previewLocalApplication?(value: LocalApplicationDraft): Promise<LocalApplicationApproval>
+  startLocalApplication?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
   getAgent?(): Promise<AgentSnapshot>
   enableAgent?(enabled: boolean): Promise<{ enabled: boolean }>
   startAgent?(value: AgentStart): Promise<{ accepted: boolean; id: string }>
@@ -281,6 +283,8 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
   const action = (path: string): Promise<void> => request(path, { method: 'POST', body: '{}' }).then(() => undefined)
   return {
     getAgent: () => request<AgentSnapshot>('/agent'),
+    previewLocalApplication: value => request('/local-app/preview', { method: 'POST', body: JSON.stringify(value) }),
+    startLocalApplication: value => request('/local-app/start', { method: 'POST', body: JSON.stringify(value) }),
     enableAgent: (enabled) => request('/agent/enable', { method: 'POST', body: JSON.stringify({ enabled }) }),
     startAgent: (value) => request('/agent/start', { method: 'POST', body: JSON.stringify(value) }),
     cancelAgent: (id) => request('/agent/cancel', { method: 'POST', body: JSON.stringify({ id }) }).then(() => undefined),

@@ -10,7 +10,7 @@ from .controls import ResourceGuard
 class WindowsResources:
     def __init__(self, policy):
         self.previous = None
-        self.guard = ResourceGuard(float(policy.get("max_cpu_percent", 70)), float(policy.get("max_memory_gb", 20)), metrics_fn=self.metrics)
+        self.guard = ResourceGuard(float(policy.get("max_cpu_percent", 70)), float(policy.get("max_memory_gb", 30)), metrics_fn=self.metrics)
 
     def metrics(self):
         class Memory(ctypes.Structure):

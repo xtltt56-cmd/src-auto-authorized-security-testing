@@ -1,9 +1,17 @@
 {
   "default_lane": "primary",
+  "agent": {
+    "default_provider": "deepseek",
+    "cloud_enabled": true,
+    "peak_input_cny_per_million": 2,
+    "peak_output_cny_per_million": 8,
+    "pricing_checked_on": "2026-10-05",
+    "pricing_source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+  },
   "lanes": {
-    "bulk": {"provider": "ollama", "model": "qwen-agent-stable:30b", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 120, "estimated_cost": 0, "enabled": true},
-    "primary": {"provider": "ollama", "model": "qwen-agent-stable:30b", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 120, "estimated_cost": 0, "enabled": true},
-    "expert": {"provider": "ollama", "model": "qwen3-coder:30b", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 90, "estimated_cost": 0, "enabled": true}
+    "bulk": {"provider": "ollama", "model": "qwen3.5-local:9b-q4_k_m", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 120, "estimated_cost": 0, "enabled": true},
+    "primary": {"provider": "ollama", "model": "qwen3.5-local:9b-q4_k_m", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 120, "estimated_cost": 0, "enabled": true},
+    "expert": {"provider": "ollama", "model": "qwen3.5-local:9b-q4_k_m", "endpoint": "http://127.0.0.1:11434", "timeout_seconds": 120, "estimated_cost": 0, "enabled": true}
   },
   "remote_api": {
     "enabled": false,

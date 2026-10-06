@@ -8,6 +8,22 @@ from src_auto.agent_provider import AgentModel, configured_model
 
 
 class AgentProviderTests(unittest.TestCase):
+    def test_six_local_route_feedbacks_fit_bounded_model_context(self):
+        provider = SimpleNamespace(model='deepseek-flash', provider_name='deepseek', _post=lambda payload: {
+            'choices': [{'message': {'content': '{}'}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 2}})
+        observations = [dict(id='o{}'.format(i), action='inspect_local_route', reference='route-{:03d}'.format(i),
+            path='/api/route{}'.format(i), method='GET', status_code=200, response_bytes_read=100,
+            header_presence={key: False for key in ('content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'permissions-policy', 'strict-transport-security')},
+            summary='批准路由已真实检查；仅保存响应元数据', candidate=False, confirmed=False,
+            category='readonly-observation', raw_body_retained=False, header_values_retained=False,
+            body_truncated=False, redirects=0, status='ok', candidateCount=0, request_id='request-001') for i in range(1, 7)]
+        context = dict(mode='local-web-assessment', lab='owned-web', capabilities=['finish', 'request_human_review'],
+                       references=['entry'] + ['route-{:03d}'.format(i) for i in range(1, 7)],
+                       permissions={'routeReferences': ['route-{:03d}'.format(i) for i in range(1, 7)], 'requiredRouteCount': 6},
+                       observations=observations)
+        result = AgentModel(provider, local=False).decide(context)
+        self.assertFalse(result['usage_estimated'])
+
     def context(self):
         return {"references": ["entry"], "capabilities": ["inspect_headers", "finish"], "observations": []}
 
@@ -52,6 +68,17 @@ class AgentProviderTests(unittest.TestCase):
         self.assertFalse(payloads[0]["provider"]["allow_fallbacks"])
         self.assertEqual(payloads[0]["provider"]["data_collection"], "deny")
         self.assertEqual(json.loads(payloads[0]["messages"][1]["content"])["references"], ["entry"])
+
+    def test_deepseek_agent_disables_thinking_and_uses_json_decisions(self):
+        payloads = []
+        def post(payload):
+            payloads.append(payload)
+            return {"choices": [{"message": {"content": "{}"}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+        model = AgentModel(SimpleNamespace(model="deepseek-flash", provider_name="deepseek", _post=post), local=False)
+        model.decide(self.context())
+        self.assertEqual(payloads[0]["thinking"], {"type": "disabled"})
+        self.assertEqual(payloads[0]["temperature"], 0)
+        self.assertEqual(payloads[0]["response_format"], {"type": "json_object"})
 
 
 if __name__ == "__main__": unittest.main()

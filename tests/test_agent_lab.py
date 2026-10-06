@@ -5,6 +5,7 @@ import unittest
 import tempfile
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 from src_auto.agent_actions import GuardedHTTP, LocalActions
 from src_auto.agent_contracts import Limits, Decision
@@ -15,6 +16,42 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgentLabTests(unittest.TestCase):
+    def test_discovery_action_truncates_large_static_documents_and_marks_degraded(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for relative in ("config/validation/local_only.json", "config/models.yaml", "config/policy.yaml"):
+                target = root / relative; target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(str(ROOT / relative), str(target))
+            manager = LocalLabManager(ROOT, ROOT / "config/labs/local_labs.json", ROOT / "docker-compose.local-labs.yml")
+            actions = LocalActions(root, manager, "juice-shop", Limits(), threading.Event())
+
+            class Response:
+                headers = {"Content-Type": "text/javascript"}
+                def __init__(self): self.closed = False
+                def getcode(self): return 200
+                def read(self, size): return b"x" * min(size, 600 * 1024)
+                def close(self): self.closed = True
+
+            class Opener:
+                def __init__(self): self.response = Response()
+                def open(self, *args, **kwargs): return self.response
+
+            opener = Opener()
+            actions.client.opener = opener
+
+            def fake_discovery(policy, entry, fetch_fn, max_scripts):
+                page = fetch_fn(entry)
+                self.assertEqual(len(page["body"].encode("utf-8")), 512 * 1024)
+                self.assertTrue(page["truncated"])
+                return {"status": "COMPLETED", "discovered_urls": [entry], "api_urls": [],
+                        "external_urls_excluded": [], "degraded": False, "request_count": 1}
+
+            with patch("src_auto.agent_actions.discover_local_surface", side_effect=fake_discovery):
+                result = actions.execute(Decision("discover_surface", "entry", (), "读取本地页面"))
+            self.assertTrue(result["truncated"])
+            self.assertTrue(result["degraded"])
+            self.assertTrue(opener.response.closed)
+
     def test_candidate_is_durable_and_never_confirmed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

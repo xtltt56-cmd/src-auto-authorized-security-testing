@@ -56,6 +56,39 @@ class AgentServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cloud_agent_not_validated"):
             self.service.start(dict(self.request, provider="deepseek", allowCloud=True), True)
         self.assertEqual(self.factory_calls, 0)
+
+    def test_only_configured_deepseek_can_run_with_both_manual_gates(self):
+        document = {"agent": {"cloud_enabled": True, "default_provider": "deepseek",
+                              "peak_input_cny_per_million": 2, "peak_output_cny_per_million": 8},
+                    "remote_providers": {"deepseek": {"enabled": True, "manual_only": True,
+                                            "model": "deepseek-flash", "endpoint": "https://api.deepseek.com/chat/completions"}}}
+        (self.root / "config/models.yaml").write_text(json.dumps(document), encoding="utf-8")
+        (self.root / "config/policy.yaml").write_text('{"daily_ai_budget_yuan":10,"monthly_ai_budget_yuan":100}', encoding="utf-8")
+        self.service.set_enabled(True)
+        self.assertTrue(self.service.snapshot(True)["cloudAgentAvailable"])
+        for provider in ("zhipu", "openrouter"):
+            with self.assertRaisesRegex(ValueError, "cloud_agent_not_validated"):
+                self.service.start(dict(self.request, provider=provider, allowCloud=True), True)
+        accepted = self.service.start(dict(self.request, provider="deepseek", allowCloud=True), True)
+        deadline = time.monotonic() + 3
+        while self.service.active and time.monotonic() < deadline: time.sleep(.01)
+        row = self.service.history.get(accepted["id"])
+        self.assertEqual(row["state"], "completed")
+        self.assertGreater(row["reservedCostCny"], 0)
+        self.assertFalse(row["confirmed"])
+
+    def test_local_assessment_runs_required_recipes_through_service(self):
+        self.service.model_factory = lambda *args: ScriptedModel([decision("finish", evidence=["o1", "o2"])])
+        self.service.set_enabled(True)
+        request = dict(self.request, mode="local-assessment")
+        accepted = self.service.start(request, False)
+        deadline = time.monotonic() + 3
+        while self.service.active and time.monotonic() < deadline: time.sleep(.01)
+        row = self.service.history.get(accepted["id"])
+        self.assertEqual(row["state"], "completed")
+        self.assertEqual([x["action"] for x in row["observations"]],
+                         ["run_local_regression", "compare_object_authorization_matrix"])
+        self.assertTrue((self.root / row["reportId"]).is_file())
     def test_extra_command_and_url_rejected(self):
         for key in ("url", "command", "apiKey", "scope"):
             with self.subTest(key=key), self.assertRaises(ValueError): self.service.start(dict(self.request, **{key: "bad"}), False)
