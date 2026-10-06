@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { FileSearch, Flag, Gauge, LayoutDashboard, Settings2, ShieldCheck, Target, TestTube2 } from 'lucide-react'
+import { FileSearch, Flag, Gauge, LayoutDashboard, Settings2, ShieldCheck, Target, TestTube2, Monitor } from 'lucide-react'
 
-export type NavKey = 'overview' | 'labs' | 'targets' | 'review' | 'findings' | 'settings'
+export type NavKey = 'overview' | 'labs' | 'targets' | 'review' | 'findings' | 'settings' | 'agent' | 'local-app'
 
 type AppShellProps = {
   activeKey: NavKey
@@ -14,6 +14,8 @@ type AppShellProps = {
 const navItems: Array<{ key: NavKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: 'overview', label: '总览工作台', icon: LayoutDashboard },
   { key: 'labs', label: '本地靶场', icon: TestTube2 },
+  { key: 'agent', label: '受控 Agent', icon: Gauge },
+  { key: 'local-app', label: '本机应用审查', icon: Monitor },
   { key: 'targets', label: '目标与授权', icon: Target },
   { key: 'review', label: '离线审阅', icon: FileSearch },
   { key: 'findings', label: '候选与报告', icon: Flag },

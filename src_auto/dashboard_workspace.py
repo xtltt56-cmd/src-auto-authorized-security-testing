@@ -212,9 +212,9 @@ class DashboardWorkspace:
             try:
                 connection = sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=2)
                 connection.row_factory = sqlite3.Row
-                for row in connection.execute('SELECT id,title,severity,evidence,run_id FROM findings ORDER BY id DESC LIMIT 100'):
+                for row in connection.execute('SELECT id,title,url,severity,evidence,run_id FROM findings ORDER BY id DESC LIMIT 100'):
                     severity = row['severity'] if row['severity'] in ('high', 'medium', 'low', 'info') else 'info'
-                    findings.append(dict(id=str(row['id']), title=safe_text(row['title'], 300), severity=severity,
+                    findings.append(dict(id=str(row['id']), title=safe_text(row['title'], 300), url=_safe_url(row['url']), severity=severity,
                                          source='历史运行 ' + safe_text(row['run_id'], 100), state='待人工复核',
                                          summary='从本地结果数据库读取，不代表本次靶场启动发现的漏洞',
                                          evidence=safe_text(row['evidence'], 2000), prerequisites=[], impact='需人工复核'))

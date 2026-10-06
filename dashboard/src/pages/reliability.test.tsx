@@ -1,11 +1,23 @@
 import { render, screen } from '@testing-library/react'
 import { waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { App } from '../App'
 import { TaskDetailPage } from './TaskDetailPage'
 import { OverviewPage } from './OverviewPage'
 import { createFixtureRepository } from '../lib/taskRepository'
 import { safeDefaultSnapshot } from '../lib/fixtures'
+
+it('does not present Docker as a prerequisite for the native local-app page', async () => {
+  const repository = createFixtureRepository()
+  repository.getDashboardSnapshot = vi.fn().mockResolvedValue({ ...safeDefaultSnapshot, source: 'loopback', dependency: { executionServiceReady: true, dockerReady: false, message: 'not ready' } })
+  repository.getAgent = vi.fn().mockResolvedValue({ enabled: false, remoteSessionEnabled: false, activeId: null, runs: [] })
+  render(<App repository={repository} />)
+  await screen.findByText('Docker 尚未就绪')
+  await userEvent.click(screen.getByRole('button', { name: /^本机应用审查$/ }))
+  await screen.findByRole('heading', { name: '审查一个自有本机服务' })
+  expect(screen.queryByText('Docker 尚未就绪')).toBeNull()
+})
 
 it('updates task and events when polling delivers new props without claiming scan stages completed', () => {
   const task = safeDefaultSnapshot.tasks[1]

@@ -40,6 +40,7 @@ _ORDER_TEMPLATE = {
 }
 _orders = {}
 _ORDER_RE = re.compile(r"^/api/v1/orders/([^/]+)$")
+_AGENT_CASE_RE = re.compile(r"^/agent/cases/case-(\d{2})$")
 
 
 def reset_state():
@@ -88,6 +89,21 @@ class BusinessApiHandler(BaseHTTPRequestHandler):
             return
         if path == "/openapi.json":
             self._send_json(200, _load_openapi())
+            return
+
+        # Versioned synthetic controls: 10 vulnerable, 5 fixed private and 5
+        # public objects. No expected verdict or training hint in responses.
+        case_match = _AGENT_CASE_RE.fullmatch(path)
+        if case_match and 1 <= int(case_match.group(1)) <= 20:
+            index = int(case_match.group(1))
+            viewer = self.headers.get("X-Test-User", "anonymous")
+            if viewer not in {"buyer-a", "buyer-b", "anonymous"}:
+                self._send_json(403, {"error": "denied"}); return
+            if (index <= 10 and viewer == "anonymous") or (11 <= index <= 15 and viewer != "buyer-a"):
+                self._send_json(403, {"error": "denied"}); return
+            self._send_json(200, {"id": "case-{:02d}".format(index), "owner": "buyer-a",
+                                  "access": "public" if index >= 16 else "private",
+                                  "value": "synthetic-value-{:02d}".format(index)})
             return
 
         match = _ORDER_RE.match(path)

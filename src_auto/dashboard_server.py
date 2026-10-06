@@ -9,6 +9,7 @@ import secrets
 import os
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -165,7 +166,37 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _error(self, status: int, code: str, message: str) -> None:
+        if self.command == 'POST':
+            self._discard_unread_body()
         self._write_json(status, {"ok": False, "error": code, "message": message})
+
+    def _discard_unread_body(self) -> None:
+        # Closing a Windows socket with unread POST bytes can reset even a
+        # successfully written 401/413 response. Discard, never parse or log,
+        # a bounded amount; slow/oversized clients cannot prolong rejection.
+        if getattr(self, '_body_read', False):
+            return
+        try:
+            remaining = min(max(int(self.headers.get('Content-Length', '0')), 0), 65536)
+        except (ValueError, OverflowError):
+            return
+        previous = self.connection.gettimeout()
+        deadline = time.monotonic() + .1
+        try:
+            while remaining:
+                timeout = deadline - time.monotonic()
+                if timeout <= 0:
+                    break
+                self.connection.settimeout(timeout)
+                data = self.rfile.read1(min(remaining, 8192))
+                if not data:
+                    break
+                remaining -= len(data)
+        except (OSError, ValueError):
+            # Connection rejection still follows a timeout or peer disconnect.
+            pass
+        finally:
+            self.connection.settimeout(previous)
 
     def _preflight(self) -> bool:
         if not self._host_allowed():
@@ -214,6 +245,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/lifecycle":
             if self._authorized():
                 self._write_json(200, self.server.service.lifecycle())
+            return
+        if self.path == "/api/agent":
+            if not self._authorized(): return
+            agent = getattr(self.server.service, "agent", None)
+            if agent is None:
+                code = getattr(self.server.service, "agent_error", "agent_unavailable")
+                self._error(503, code, "Agent 状态不可用；未清除历史，标准控制台仍可使用。请核对本地状态库或服务版本")
+            else:
+                self._write_json(200, agent.snapshot(self.server.remote_ai_session_enabled))
             return
         if self.path == "/api/dashboard":
             if not self._authorized():
@@ -286,13 +326,60 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._error(415, "json_required", "仅接受 JSON 请求")
                 return
             try:
-                document = json.loads(self.rfile.read(length).decode("utf-8"))
+                raw = self.rfile.read(length)
+                self._body_read = True
+                document = json.loads(raw.decode("utf-8"))
             except (UnicodeDecodeError, ValueError):
                 self._error(400, "invalid_json", "JSON 请求无效")
                 return
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        if self.path in {'/api/local-app/preview', '/api/local-app/start'}:
+            agent = getattr(self.server.service, 'agent', None)
+            if agent is None:
+                self._error(503, 'agent_unavailable', '本机应用执行器不可用，请重新启动新版控制台')
+                return
+            try:
+                operation = agent.local_app.preview if self.path.endswith('/preview') else agent.local_app.start
+                result = operation(document, self.server.remote_ai_session_enabled)
+                self._write_json(200 if self.path.endswith('/preview') else 202, result)
+            except (ValueError, RuntimeError) as exc:
+                from .local_application_workflow import LOCAL_ERRORS
+                code = str(exc)
+                status = 403 if code == 'remote_ai_disabled_for_session' else 409 if isinstance(exc, RuntimeError) else 400
+                self._error(status, code if code in LOCAL_ERRORS else 'invalid_local_application_request',
+                            LOCAL_ERRORS.get(code, '请核对本机入口、精确路由、时间窗与确认开关'))
+            except Exception:
+                self._error(503, 'local_application_unavailable', '本机应用执行配置暂时不可用；没有输出异常原文')
+            return
+        if self.path in {'/api/agent/start', '/api/agent/enable', '/api/agent/cancel'}:
+            agent = getattr(self.server.service, 'agent', None)
+            if agent is None:
+                self._error(503, 'agent_unavailable', '请重新启动新版 Dashboard 执行服务')
+                return
+            # Immutable startup gate before factory/config/key access, including resumes.
+            if self.path == '/api/agent/start' and document.get('provider', 'local') != 'local' and not self.server.remote_ai_session_enabled:
+                self._error(403, 'remote_ai_disabled_for_session', '本次启动禁止云端 AI；保存密钥不会解除此限制')
+                return
+            try:
+                if self.path == '/api/agent/enable':
+                    if set(document) != {'enabled'} or type(document['enabled']) is not bool: raise ValueError('invalid_agent_request')
+                    result = agent.set_enabled(document['enabled'])
+                elif self.path == '/api/agent/cancel':
+                    if set(document) != {'id'}: raise ValueError('invalid_agent_request')
+                    result = agent.cancel_run(document['id'])
+                else: result = agent.start(document, self.server.remote_ai_session_enabled)
+                self._write_json(200 if self.path.endswith('/enable') else 202, result)
+            except (ValueError, RuntimeError) as exc:
+                code = str(exc)
+                safe_codes = {'invalid_agent_request', 'remote_ai_disabled_for_session', 'agent_disabled', 'agent_operation_conflict',
+                              'lab_not_ready', 'dashboard_closing', 'foreign_candidate', 'resume_context_changed', 'agent_not_resumable',
+                                'agent_not_running', 'permission_recipe_unavailable', 'unknown_agent_run', 'unsupported_provider', 'cloud_agent_not_validated'}
+                self._error(409 if isinstance(exc, RuntimeError) else 400, code if code in safe_codes else 'agent_request_failed', '任务未提交，请检查靶场、模式与授权开关')
+            except Exception:
+                self._error(503, 'agent_configuration_unavailable', 'Agent 配置暂时不可用，请核对本地模型与配置')
+            return
         if self.path == '/api/shutdown':
             if document:
                 self._error(400, 'unexpected_fields', '关闭服务不接受额外参数')
@@ -421,7 +508,17 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
 def build_service(project_root: Path, port=4174) -> DashboardControlService:
     root = Path(project_root).resolve()
     manager = LocalLabManager(root, root / "config" / "labs" / "local_labs.json", root / "docker-compose.local-labs.yml")
-    return DashboardControlService(manager, journal_path=root / "runtime" / "dashboard" / "task_state-{}.json".format(port))
+    service = DashboardControlService(manager, journal_path=root / "runtime" / "dashboard" / "task_state-{}.json".format(port))
+    from .agent_service import AgentService
+    import sqlite3
+    try:
+        service.agent = AgentService(root, service)
+    except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, RuntimeError):
+        # Preserve an unreadable checkpoint; optional Agent state must not take
+        # down the existing Dashboard or be silently deleted to manufacture success.
+        service.agent = None
+        service.agent_error = "agent_state_unavailable"
+    return service
 
 
 def main(argv=None) -> int:

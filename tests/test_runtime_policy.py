@@ -5,6 +5,11 @@ from src_auto.runtime_policy import RuntimePolicy
 
 
 class RuntimePolicyTests(unittest.TestCase):
+    def test_ai_flags_reject_string_booleans(self):
+        for field in ("LOCAL_LLM_ONLY", "ALLOW_REMOTE_LLM"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                RuntimePolicy.from_mapping({field: "false"})
+
     def test_exact_local_allowlist_and_concurrency(self):
         policy = RuntimePolicy.from_mapping(
             {

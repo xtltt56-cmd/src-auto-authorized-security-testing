@@ -66,6 +66,58 @@ class FakeProviderSettings:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_rejected_slow_post_does_not_wait_for_declared_body(self):
+        import http.client
+        import time
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=2)
+        try:
+            connection.putrequest('POST', '/api/local-app/preview')
+            connection.putheader('Content-Length', '5000')
+            connection.endheaders()
+            started = time.monotonic()
+            response = connection.getresponse()
+            self.assertEqual(response.status, 401)
+            self.assertEqual(json.loads(response.read())['error'], 'invalid_session_token')
+            self.assertLess(time.monotonic() - started, 1)
+        finally:
+            connection.close()
+
+    def test_rejected_post_discards_only_bounded_unread_bytes(self):
+        import io
+        from email.message import Message
+        from unittest.mock import Mock
+        from src_auto.dashboard_server import DashboardRequestHandler
+        handler = object.__new__(DashboardRequestHandler)
+        handler.headers = Message()
+        handler.headers['Content-Length'] = '1000000'
+        handler.rfile = io.BytesIO(b'x' * 1000000)
+        handler.connection = Mock()
+        handler.connection.gettimeout.return_value = None
+        handler._discard_unread_body()
+        self.assertEqual(handler.rfile.tell(), 65536)
+        handler.connection.settimeout.assert_called_with(None)
+        handler._body_read = True
+        handler._discard_unread_body()
+        self.assertEqual(handler.rfile.tell(), 65536)
+
+    def test_local_application_routes_are_authenticated_and_session_gated(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        local_app = SimpleNamespace(preview=Mock(return_value={'networkContact': False}),
+                                    start=Mock(return_value={'accepted': True, 'id': 'local-one'}))
+        self.service.agent = SimpleNamespace(local_app=local_app)
+        self.assertEqual(self.request('/api/local-app/preview', method='POST', body={})[0], 401)
+        self.assertEqual(self.request('/api/local-app/preview', method='POST', body={}, token='test-session-token')[0], 200)
+        local_app.preview.assert_called_once_with({}, True)
+        self.assertEqual(self.request('/api/local-app/start', method='POST', body={'approvalId': 'one', 'confirmStart': True}, token='test-session-token')[0], 202)
+        local_app.start.assert_called_once_with({'approvalId': 'one', 'confirmStart': True}, True)
+        local_app.preview.side_effect = ValueError('remote_ai_disabled_for_session')
+        self.assertEqual(self.request('/api/local-app/preview', method='POST', body={}, token='test-session-token')[0], 403)
+        local_app.start.side_effect = OSError('PRIVATE-DATA')
+        status, _, payload = self.request('/api/local-app/start', method='POST', body={}, token='test-session-token')
+        self.assertEqual(status, 503)
+        self.assertNotIn('PRIVATE-DATA', json.dumps(payload))
+
     def test_shutdown_is_authenticated_and_rejects_active_work(self):
         self.assertEqual(self.request('/api/lifecycle')[0], 401)
         self.assertEqual(self.request('/api/shutdown', method='POST', body={})[0], 401)
