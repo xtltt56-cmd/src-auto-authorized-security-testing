@@ -37,12 +37,14 @@ Docker 正常启动复现 sailor-ingest.sock 重命名失败后，复用既有�
 
 ## 代码、界面与发布门禁
 
-- Python 3.12.10 / 3.8：各 531 项，530 通过、1 个符号链接权限条件跳过；Python 行与分支总覆盖 73%。
+- Python 3.12.10 / 3.8：收尾补丁后各 536 项，535 通过、1 个符号链接权限条件跳过；Python 行与分支总覆盖 73.52%。
 - 前端 66/66；覆盖语句 75.93%、分支 70.47%、函数 70.69%、行 81.61%；构建、类型、Lint 和既有 Chromium 8/8 通过。
 - 23 个项目 PowerShell 解析通过，Git whitespace 检查通过。新增发行身份门禁在实际临时 Git 仓库中先复现失败再通过：拒绝修改/未跟踪源码，输出目录未创建。
 - 浏览器路径：载入草稿 → 重新确认隔离 → 保存/离线核对 → 选择 Agent/DeepSeek → 启用/单次同意 → 生成审批 → 独立启动确认 → 实际任务 → 四角色证据 → 报告阅读/导出。
 - URL 127.0.0.1:4373；1440×1100 / 390×844，内容正常，无框架错误覆盖、替换乱码或横向溢出，控制台无运行错误。存在 password 未包在 form 的 DOM 提示，不是功能异常。
 - 6,255 字符导出与后端原文统一 CRLF/LF 后逐字相同；刷新不保留授权/审批，localStorage 无密钥。候选始终未确认、不可自动提交。
+- 收尾发现客户端中断响应会误触发第二次 502 写入、导致终端堆栈。先复现再修复：只处理正常断连，后端故障仍 502、未知异常仍暴露。30 次实机中断后网页/API 健康，无堆栈。Python 子进程日志通过进程内 UTF-8 设置解决编码问题，没有改全局环境。
+- 首轮干净候选包实际启动、10 个菜单可点击；标准业务页面完成 16 请求/3 候选/0 AI，证据与报告可查看。启动拒绝云端后，DeepSeek 执行审批禁用，直接请求测试接口返回 403 remote_ai_disabled_for_session；该负例浏览器资源错误为预期拒绝，不是运行失败。收尾补丁后另打最终包，旧候选不作为交付。
 - Browser 插件不可用，按前端测试技能复用项目 Playwright 和 CLI。本轮截图是真实界面，不是 Figma 设计稿。
 
 本地打包和干净安装最终记录保存在 validation/l4-final-20261009。打包须使用干净提交与新 dist，核对 ZIP/清单/源码/SHA256。未执行的 CI 或正式发行不计为通过，正式发布仍需独立授权。
@@ -53,7 +55,8 @@ Docker 正常启动复现 sailor-ingest.sock 重命名失败后，复用既有�
 - validation/l4-business/20261009-003918-660970/summary.json：L4 标准/云端对照。
 - validation/local-application-l2/20261009-004453-782406/summary.json：原生流程 + 断网 ZAP。
 - artifacts/l3/source-proof.json：源码正负例。
-- validation/l4-final-20261009/python312.log、python38.log：本轮完整日志。
+- validation/l4-final-20261009/python312-final.log、python38-final.log：收尾补丁后完整日志。
+- validation/l4-final-20261009/live-abort-proof.json：实际断连及健康证明。
 - validation/l4-final-20261009/browser-cloud-workspace-v2：真实 UI 执行、数据库和报告，会话密文不发布。
 - output/playwright/l4-final-cloud-evidence.png、l4-final-cloud-mobile.png、l4-final-cloud-report.png：桌面/窄屏/报告。
 - validation/docker-recovery-20261005/runtime-recovery-20261009-004159.json：本次无损恢复记录。

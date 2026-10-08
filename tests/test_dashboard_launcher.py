@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -8,6 +10,22 @@ PROJECT_ROOT = Path(__file__).parents[1]
 
 
 class DashboardLauncherTests(unittest.TestCase):
+    def test_python_child_logs_use_utf8_without_global_environment_changes(self):
+        content = (PROJECT_ROOT / 'tools/start_dashboard.ps1').read_text(encoding='utf-8-sig')
+        assignment = "$env:PYTHONIOENCODING = 'utf-8'"
+        self.assertIn(assignment, content)
+        python = PROJECT_ROOT / 'runtime/python/python.exe'
+        shell = shutil.which('pwsh') or shutil.which('powershell')
+        if not shell or not python.is_file():
+            self.skipTest('Windows PowerShell and project Python are required')
+        command = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)\n" + assignment
+        command += "\n& '{}' -c \"import sys; print(sys.stdout.encoding); print('中文日志')\"".format(str(python).replace("'", "''"))
+        environment = dict(os.environ)
+        environment.pop('PYTHONIOENCODING', None)
+        result = subprocess.run([shell, '-NoProfile', '-Command', command], env=environment, capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.decode('utf-8').splitlines(), ['utf-8', '中文日志'])
+
     def test_launcher_accepts_all_current_pages(self):
         content = (PROJECT_ROOT / 'tools/start_dashboard.ps1').read_text(encoding='utf-8-sig')
         first_validate_set = content[content.index('[ValidateSet('):content.index('[string]$InitialPage')]

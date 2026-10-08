@@ -43,6 +43,14 @@ class DashboardStaticHTTPServer(ThreadingHTTPServer):
 class DashboardStaticRequestHandler(BaseHTTPRequestHandler):
     server_version = "SRC-Auto-Dashboard/1.0"
 
+    def handle(self):
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            # Navigation, refresh and AbortController may close a response in
+            # flight. Do not retry writing to that socket or log a false 502.
+            self.close_connection = True
+
     def log_message(self, fmt, *args):
         message = fmt % args
         print("[dashboard-web] {}".format(message[:500]))
@@ -100,26 +108,29 @@ class DashboardStaticRequestHandler(BaseHTTPRequestHandler):
             response = connection.getresponse()
             declared_length = response.getheader("Content-Length")
             if declared_length and int(declared_length) > _MAX_PROXY_RESPONSE_BYTES:
-                self._write_error(502, "本地控制接口响应超过代理限制")
-                return
-            payload = response.read(_MAX_PROXY_RESPONSE_BYTES + 1)
-            if len(payload) > _MAX_PROXY_RESPONSE_BYTES:
-                self._write_error(502, "本地控制接口响应超过代理限制")
-                return
-            self.send_response(response.status)
-            for name in _PROXY_RESPONSE_HEADERS:
-                value = response.getheader(name)
-                if value:
-                    self.send_header(name, value)
-            self.send_header("Content-Length", str(len(payload)))
-            self._write_security_headers()
-            self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(payload)
+                payload = None
+            else:
+                payload = response.read(_MAX_PROXY_RESPONSE_BYTES + 1)
         except (OSError, http.client.HTTPException, ValueError):
             self._write_error(502, "本地控制接口暂不可用")
+            return
         finally:
             connection.close()
+        if payload is None or len(payload) > _MAX_PROXY_RESPONSE_BYTES:
+            self._write_error(502, "本地控制接口响应超过代理限制")
+            return
+        # Downstream write failures are not backend failures. The request
+        # handler recognizes only normal client disconnects above.
+        self.send_response(response.status)
+        for name in _PROXY_RESPONSE_HEADERS:
+            value = response.getheader(name)
+            if value:
+                self.send_header(name, value)
+        self.send_header("Content-Length", str(len(payload)))
+        self._write_security_headers()
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(payload)
 
     def _resolve_static_file(self) -> Optional[Path]:
         request_path = unquote(urlsplit(self.path).path)

@@ -1,6 +1,9 @@
 import tempfile
 import threading
 import unittest
+from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -89,6 +92,62 @@ class DashboardStaticServerTests(unittest.TestCase):
             backend.shutdown()
             backend.server_close()
             backend_thread.join(timeout=2)
+
+
+class DashboardDisconnectTests(unittest.TestCase):
+    def handler(self):
+        from src_auto.dashboard_web import DashboardStaticRequestHandler
+        handler = object.__new__(DashboardStaticRequestHandler)
+        handler.server = SimpleNamespace(api_port=4174)
+        handler.command, handler.path, handler.headers = 'GET', '/api/session', {}
+        handler.rfile, handler.wfile = BytesIO(), Mock()
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        return handler
+
+    def test_cancelled_proxy_response_does_not_send_a_second_error_response(self):
+        for error in (ConnectionAbortedError(10053, 'cancelled'), ConnectionResetError('reset'), BrokenPipeError('closed')):
+            with self.subTest(error=type(error).__name__):
+                handler = self.handler()
+                handler.wfile.write.side_effect = error
+                response = Mock(status=200)
+                response.getheader.return_value = None
+                response.read.return_value = b'{"ok":true}'
+                with patch('src_auto.dashboard_web.http.client.HTTPConnection') as connection:
+                    connection.return_value.getresponse.return_value = response
+                    with patch.object(BaseHTTPRequestHandler, 'handle', side_effect=handler._proxy_api):
+                        handler.handle()
+                    connection.return_value.close.assert_called_once_with()
+                handler.send_response.assert_called_once_with(200)
+
+    def test_unavailable_upstream_still_returns_502(self):
+        handler = self.handler()
+        with patch('src_auto.dashboard_web.http.client.HTTPConnection') as connection:
+            connection.return_value.request.side_effect = ConnectionRefusedError('backend unavailable')
+            with patch.object(BaseHTTPRequestHandler, 'handle', side_effect=handler._proxy_api):
+                handler.handle()
+            connection.return_value.close.assert_called_once_with()
+        handler.send_response.assert_called_once_with(502)
+        self.assertIn('本地控制接口暂不可用'.encode('utf-8'), handler.wfile.write.call_args[0][0])
+
+    def test_cancelled_static_response_is_a_normal_disconnect(self):
+        handler = self.handler()
+        handler.wfile.write.side_effect = BrokenPipeError('closed')
+        path = Mock()
+        path.is_file.return_value = True
+        path.read_bytes.return_value = b'<h1>fixture</h1>'
+        handler._resolve_static_file = Mock(return_value=path)
+        with patch('src_auto.dashboard_web.mimetypes.guess_type', return_value=('text/html', None)):
+            with patch.object(BaseHTTPRequestHandler, 'handle', side_effect=handler._serve_static):
+                handler.handle()
+        handler.send_response.assert_called_once_with(200)
+
+    def test_unexpected_errors_are_not_hidden(self):
+        handler = self.handler()
+        with patch.object(BaseHTTPRequestHandler, 'handle', side_effect=PermissionError('unexpected')):
+            with self.assertRaises(PermissionError):
+                handler.handle()
 
 
 if __name__ == "__main__":

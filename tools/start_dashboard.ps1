@@ -17,6 +17,9 @@ $ProgressPreference = 'SilentlyContinue'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
+# Process-local only: both redirected API logs and foreground Python output
+# must use the same encoding as the Chinese launcher, regardless of the locale.
+$env:PYTHONIOENCODING = 'utf-8'
 
 if($RemoteAIConsent -eq 'ask'){
     $answer = (Read-Host '是否允许本次 Dashboard 使用云端 AI？输入 Y/是允许，N/否/回车禁止；连接测试及 Agent 任务仍需页面再次确认').Trim().ToLowerInvariant()
