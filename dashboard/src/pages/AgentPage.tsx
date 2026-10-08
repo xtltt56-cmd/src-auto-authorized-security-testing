@@ -73,7 +73,7 @@ export function AgentPage({ repository, snapshot, onOpenReport }: { repository: 
   }
   const start = async (resume?: AgentRun) => {
     if (!repository.startAgent) return
-    if (resume?.targetType === 'local_web' || resume?.mode === 'local-web-assessment' || resume?.mode === 'local-web-standard' || resume?.mode === 'source-audit') return
+    if (resume?.targetType === 'local_web' || resume?.mode === 'local-web-assessment' || resume?.mode === 'local-web-standard' || resume?.mode === 'source-audit' || resume?.mode === 'business-assessment' || resume?.mode === 'business-standard') return
     const value: AgentStart = { labId: resume?.labId ?? labId, mode: resume?.mode ?? mode, provider: resume?.provider ?? provider, allowCloud }
     if (resume) { value.resumeId = resume.id; if (resume.candidateId) value.candidateId = resume.candidateId }
     else { value.limits = { max_steps: steps }; if (candidateId && mode === 'candidate-review') value.candidateId = candidateId }

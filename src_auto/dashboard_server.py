@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import secrets
+import sys
 import os
 import subprocess
 import threading
@@ -232,6 +233,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._write_json(200, {
                 "status": "ok",
                 "service": "src-auto-dashboard-api",
+                "serviceApiVersion": 3,
+                "capabilities": ['business-preparation-v1', 'business-execution-v1'],
+                "pythonVersion": '.'.join(str(x) for x in sys.version_info[:3]),
                 "loopbackOnly": True,
                 "processId": os.getpid(),
                 "remoteAiSessionEnabled": self.server.remote_ai_session_enabled,
@@ -261,6 +265,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(200, {'targets': self.server.service.agent.local_targets.list()})
             except Exception:
                 self._error(503, 'local_targets_unavailable', '本机目标草稿库不可用')
+            return
+        if self.path == '/api/business-preparation':
+            if not self._authorized(): return
+            try:
+                self._write_json(200, self.server.business_preparation.snapshot())
+            except Exception:
+                self._error(503, 'preparation_unavailable', '业务验证准备库暂不可用；未读取或输出凭据')
             return
         if self.path == "/api/dashboard":
             if not self._authorized():
@@ -323,7 +334,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error(400, "invalid_content_length", "请求长度无效")
             return
-        limit = 32768 if self.path in ('/api/drafts', '/api/local-targets/save', '/api/local-app/preview') else _MAX_BODY_BYTES
+        limit = 32768 if self.path in ('/api/drafts', '/api/local-targets/save', '/api/local-app/preview',
+            '/api/business-preparation/save', '/api/business-preparation/session-save') else _MAX_BODY_BYTES
         if length < 0 or length > limit:
             self._error(413, "request_too_large", "请求体超过本地控制接口限制")
             return
@@ -342,6 +354,36 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(document, dict):
                 self._error(400, "json_object_required", "请求必须是 JSON 对象")
                 return
+        preparation_operations = {
+            '/api/business-preparation/save': 'save', '/api/business-preparation/preview': 'preview',
+            '/api/business-preparation/delete': 'delete', '/api/business-preparation/session-save': 'save_session',
+            '/api/business-preparation/session-delete': 'delete_session',
+        }
+        if self.path in preparation_operations:
+            from .business_preparation import ERRORS
+            try:
+                operation = getattr(self.server.business_preparation, preparation_operations[self.path])
+                self._write_json(200, operation(document))
+            except ValueError as exc:
+                code = str(exc) if str(exc) in ERRORS else 'preparation_invalid'
+                self._error(400, code, ERRORS[code])
+            except Exception:
+                self._error(503, 'preparation_unavailable', '准备资料暂时无法保存或读取；未输出凭据或异常原文')
+            return
+        if self.path in {'/api/business/preview', '/api/business/start'}:
+            from .business_workflow import ERROR_CODES
+            try:
+                coordinator = self.server.service.agent.business
+                operation = coordinator.preview if self.path.endswith('/preview') else coordinator.start
+                self._write_json(200 if self.path.endswith('/preview') else 202,
+                                 operation(document, self.server.remote_ai_session_enabled))
+            except (ValueError, RuntimeError) as exc:
+                code = str(exc) if str(exc) in ERROR_CODES else 'business_request_invalid'
+                self._error(403 if code == 'remote_ai_disabled_for_session' else 409 if isinstance(exc, RuntimeError) else 400,
+                            code, '业务验证未启动：请核对隔离目标、有效会话、精确对象、时间窗与本次执行授权')
+            except Exception:
+                self._error(503, 'business_unavailable', '业务执行器不可用；没有输出凭据、正文或异常原文')
+            return
         if self.path in {'/api/local-app/preview', '/api/local-app/start'}:
             agent = getattr(self.server.service, 'agent', None)
             if agent is None:
@@ -544,6 +586,8 @@ def create_server(service, port=4174, token=None, allowed_origin=_ALLOWED_ORIGIN
     server.workspace = DashboardWorkspace(project_root or Path(__file__).resolve().parents[1])
     server.project_id = project_identity(project_root)
     server.provider_settings = ProviderSettingsStore(project_root or Path(__file__).resolve().parents[1])
+    from .business_preparation import BusinessPreparation
+    server.business_preparation = BusinessPreparation(project_root or Path(__file__).resolve().parents[1])
     return server
 
 

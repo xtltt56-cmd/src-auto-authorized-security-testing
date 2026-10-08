@@ -143,7 +143,7 @@ export type AIConnectionResult = { ok: boolean; code: string }
 
 export type AgentStart = { labId: string; mode: 'candidate-review' | 'api-permissions' | 'local-assessment'; provider: string; allowCloud: boolean; limits?: { max_steps: number }; resumeId?: string; candidateId?: string }
 export type AgentRun = {
-  id: string; labId: string; mode: AgentStart['mode'] | 'local-web-assessment' | 'local-web-standard' | 'source-audit'; provider: string; state: string; reason: string
+  id: string; labId: string; mode: AgentStart['mode'] | 'local-web-assessment' | 'local-web-standard' | 'source-audit' | 'business-assessment' | 'business-standard'; provider: string; state: string; reason: string
   targetType?: string; origin?: string; standardRunId?: string
   directory?: string
   sourceAudit?: { findings: SourceFinding[]; complete: boolean; toolErrors: number; sourceFiles: number; sourceBytes: number }
@@ -153,12 +153,25 @@ export type AgentRun = {
   estimatedCostCny?: number; reservedCostCny?: number
   resourceCheck?: { known?: boolean; memory_gb?: number; max_memory_gb?: number; cpu_percent?: number }
   trace: Array<{ index: number; result: string; reason?: string; observationId?: string; decision?: { action: string; reference: string; evidence: string[]; reason: string } }>
-  observations: Array<{ id: string; action: string; reference: string; summary: string; candidate?: boolean; path?: string; method?: string; status_code?: number; response_bytes_read?: number }>
+  observations: Array<{ id: string; action: string; reference: string; summary: string; candidate?: boolean; path?: string; method?: string; status_code?: number; response_bytes_read?: number;
+    statuses?: Record<string, number>; expected?: Record<string, boolean>; equivalent?: Record<string, boolean>; baselineValid?: boolean; controlsValid?: boolean }>
 }
 export type AgentSnapshot = { enabled: boolean; remoteSessionEnabled: boolean; cloudAgentAvailable?: boolean; activeId: string | null; ownedActiveId?: string | null; runs: AgentRun[] }
 
 export type LocalTargetDraft = { id?: string; name: string; kind: 'custom_lab' | 'owned_app'; origin: string; paths: string[]; excluded: string[]; method: string; profile: string }
 export type LocalTarget = LocalTargetDraft & { id: string; revision: string; confirmed: false; allowCloud: false }
+
+export type BusinessRole = 'account-a' | 'account-b' | 'administrator' | 'anonymous'
+export type BusinessCase = { id: string; name: string; path: string; owner: Exclude<BusinessRole, 'anonymous'> | 'public'; expected: Record<BusinessRole, boolean> }
+export type BusinessIsolation = { dataLabel: string; storageLabel: string; resetNote: string; productionOrigin?: string; confirmIsolatedData: boolean; confirmTestAccounts: boolean; confirmNoProductionSecrets: boolean }
+export type BusinessPreparationDraft = { id?: string; targetId: string; targetRevision: string; isolation: BusinessIsolation; cases: BusinessCase[]; sessions: Partial<Record<Exclude<BusinessRole, 'anonymous'>, string>> }
+export type BusinessPreparationRow = BusinessPreparationDraft & { id: string; revision: string; executionAuthorized: false; isolationVerified: false }
+export type BusinessSession = { name: string; role: string; targetId: string; origin: string; expiresAt: string; expired: boolean; revision: string; bound: true }
+export type BusinessPreparationSnapshot = { targets: LocalTarget[]; preparations: BusinessPreparationRow[]; sessions: BusinessSession[]; executionAvailable: false }
+export type BusinessPreparationPreview = { id: string; blockers: string[]; readyForNextStage: boolean; executionAvailable: false; executionAuthorized: false; isolationVerified: false; networkRequests: 0; modelCalls: 0; cases: number }
+export type BusinessSessionInput = { targetId: string; targetRevision: string; name: string; role: Exclude<BusinessRole, 'anonymous'>; headers: Record<string, string>; expiresAt: string; confirmTestAccount: true }
+export type BusinessExecutionDraft = { id: string; revision: string; confirmIsolation: true; windowStart: string; windowEnd: string; mode: 'standard' | 'agent'; provider: 'none' | 'local' | 'deepseek'; allowCloud: boolean; controls: boolean }
+export type BusinessExecutionApproval = { approvalId: string; origin: string; applicationIdentity: string; requestCount: number; objectCount: number; controls: boolean; expiresAt: string; networkContact: false; modelCalls: 0; mode: string; provider: string }
 
 export type SourceFinding = { scanner: string; rule_id: string; title: string; path: string; line: number; confirmed: false }
 export type SourceAuditDraft = { directory: string; languages: string[]; confirmRead: boolean; confirmSnapshot: boolean }

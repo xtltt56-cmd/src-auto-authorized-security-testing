@@ -175,6 +175,12 @@ class LocalApplicationHTTP:
         decision = self.guard.decide(url, method=method, now=now)
         return "" if decision.allowed else decision.reason
 
+    def _headers(self, request):
+        return {"User-Agent": "SRC-Auto/local-readonly", "Accept-Encoding": "identity", "Connection": "close"}
+
+    def _observe(self, data, result):
+        return {}
+
     def fetch(self, request: LocalReadOnlyRequest) -> Mapping[str, Any]:
         if request not in self.plan.requests:
             raise LocalApplicationError("request_not_in_approved_plan")
@@ -221,8 +227,7 @@ class LocalApplicationHTTP:
                 reason = check_receive()
                 if reason:
                     raise LocalApplicationError(reason)
-                connection.request(request.method, parsed.path or "/", headers={
-                    "User-Agent": "SRC-Auto/local-readonly", "Accept-Encoding": "identity", "Connection": "close"})
+                connection.request(request.method, parsed.path or "/", headers=self._headers(request))
                 connection.sock.settimeout(min(0.1, timeout))
                 connection.sock = _ReceivingSocket(connection.sock, check_receive)
                 response = connection.getresponse()
@@ -230,6 +235,8 @@ class LocalApplicationHTTP:
                 if reason:
                     raise LocalApplicationError(reason)
                 if response.status in (301, 302, 303, 307, 308):
+                    if getattr(self, '_deny_redirects', False):
+                        raise LocalApplicationError('redirect_not_allowed')
                     if redirect_index == 3:
                         raise LocalApplicationError("redirect_limit")
                     location = response.getheader("Location")
@@ -257,6 +264,7 @@ class LocalApplicationHTTP:
                 if self.response_observer is not None:
                     result.update(self.response_observer(url, request.method, response.status, response.getheaders(),
                                                        data, result['body_truncated']))
+                result.update(self._observe(data, result))
                 data = b""
                 size = len(json.dumps(result, sort_keys=True).encode("utf-8"))
                 if self.output_bytes + size > self.limits.output_limit_bytes:

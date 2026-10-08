@@ -197,7 +197,7 @@ class AgentRunner:
                 return "cancelled", "operator_stop"
             if previous_elapsed + time.monotonic() - started >= self.limits.max_seconds:
                 return "needs-human", "time_limit"
-            if mode == 'local-web-assessment':
+            if mode in ('local-web-assessment', 'business-assessment'):
                 denial = self.actions.permission_gate()
                 if denial:
                     return 'cancelled' if denial == 'cancelled' else 'needs-human', denial
@@ -253,6 +253,7 @@ class AgentRunner:
                 code = str(exc) if str(exc) in {"request_limit", "scope_blocked", "cancelled", "response_too_large", "capability_unavailable",
                     "resource_limit", "blocked_disk", "task_timeout", "outside_test_window", "application_identity_changed",
                     "application_identity_unavailable", "scanner_configuration_changed", "tool_timeout", "tool_output_limit",
+                    "business_context_changed", "controlled_fixture_changed", "redirect_not_allowed", "request_timeout", "request_failed",
                     "tool_cleanup_failed", "passive_scanner_unavailable", "tool_isolation_invalid"} else "tool_failed"
                 entry["reason"] = code
                 save(state="cancelled" if code == "cancelled" else "needs-human", reason=code)
@@ -333,6 +334,8 @@ class AgentRunner:
                         action_references = ["candidate"] if "candidate" in self.actions.references else []
                     elif name == "inspect_local_route":
                         action_references = [x for x in self.actions.references if x.startswith("route-")]
+                    elif name == "compare_business_object":
+                        action_references = [x for x in self.actions.references if x.startswith("object-")]
                     else:
                         action_references = ["entry"]
                     if any((name, reference) not in used for reference in action_references):
@@ -403,6 +406,9 @@ class AgentRunner:
                     if value.action == "finish" and mode == "local-web-assessment" and not self.actions.completion_ready(evidence):
                         entry["result"] = "rejected"
                         save(state="needs-human", reason="local_web_coverage_incomplete"); break
+                    if value.action == 'finish' and mode == 'business-assessment' and not self.actions.completion_ready(evidence):
+                        entry['result'] = 'rejected'
+                        save(state='needs-human', reason='business_coverage_incomplete'); break
                     if value.action == "finish" and mode == "api-permissions" and not any(x["action"] == "compare_object_authorization" for x in evidence):
                         entry["result"] = "rejected"
                         save(state="needs-human", reason="permission_check_incomplete"); break
@@ -432,7 +438,7 @@ class AgentRunner:
         except Exception:
             save(state="failed", reason="execution_failed")
         # The coordinator owns the single task-linked, coverage-aware report.
-        if mode == "local-web-assessment":
+        if mode in ("local-web-assessment", "business-assessment"):
             return self.history.get(row["id"])
         path = project_path(self.root, "reports", "agent", row["id"] + ".md")
         path.parent.mkdir(parents=True, exist_ok=True)

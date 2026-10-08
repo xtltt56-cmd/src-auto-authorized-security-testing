@@ -22,6 +22,11 @@ $version = (Get-Content -LiteralPath (Join-Path $ProjectRoot 'VERSION') -Raw).Tr
 if($version -notmatch '^\d+\.\d+\.\d+$'){ throw "VERSION 不是语义化版本：$version" }
 $commit = (& git -C $ProjectRoot rev-parse HEAD).Trim()
 if($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$'){ throw '无法读取 Git 提交。' }
+# The manifest identifies committed source. Never omit new untracked modules or
+# silently package edited files under an old commit, and fail before output changes.
+$sourceChanges = @(& git -C $ProjectRoot status --porcelain=v1 --untracked-files=all)
+if($LASTEXITCODE -ne 0){ throw 'release_source_status_unavailable' }
+if($sourceChanges.Count -gt 0){ throw 'release_source_not_clean: commit intended source changes before building a distribution.' }
 
 $distIndex = Join-Path $ProjectRoot 'dashboard\dist\index.html'
 if(-not (Test-Path -LiteralPath $distIndex)){
@@ -51,7 +56,7 @@ New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
 
 $rootFiles = @(
     'VERSION', 'requirements-runtime.txt', 'pyproject.toml',
-    'START_SYSTEM.ps1', 'START.bat', 'START_DASHBOARD.bat', 'STOP.bat', 'STOP_DASHBOARD.bat', 'STATUS.bat', 'CHECK_UPDATE.bat',
+    'START_SYSTEM.ps1', 'START.bat', 'START_DASHBOARD.bat', 'START_L4_LAB.ps1', 'STOP.bat', 'STOP_DASHBOARD.bat', 'STATUS.bat', 'CHECK_UPDATE.bat',
     'README.md', 'USER_MANUAL.md', 'OPERATIONS.md', 'POLICY.md', 'ARCHITECTURE.md',
     'KNOWN_ISSUES.md', 'RELEASE_MANIFEST.md', 'tools.lock.yaml', 'docker-compose.local-labs.yml'
 )

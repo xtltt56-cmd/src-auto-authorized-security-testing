@@ -1,5 +1,7 @@
 # SRC-Auto
 
+> **2026-10-09 · v0.14.0 本地候选版，尚未正式发行：** L4 已接通隔离声明与 DPAPI 测试会话、四角色 JSON 对象权限对照、真实标准/Agent 任务及关联报告；专用合成靶场包含固定 SQL 布尔差异和惰性 HTML 反射正负对照。新一轮五固定靶场 DeepSeek 5/5、L4 对照 13/13、本机应用与断网 ZAP 对照 13/13 通过。HTML 反射不等于已确认脚本执行 XSS。使用见 [L4 操作说明](docs/L4_PREPARATION_PROGRESS.md)，准确进度见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。下方 v0.13.0 是上一正式基线；本地候选版不表示 GitHub latest 已更新。
+
 > **v0.13.0 统一版本（2026-10-06）：** 在既有受控 Agent 和本机应用审查之上，加入自定义本地目标库、L3 有界链接登记与断网 ZAP 响应头分析，以及独立目录授权的 Bandit / Semgrep 源码审查。操作见 [统一使用说明](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)，准确验收及限制见 [本轮报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)。源码、版本标签和 Windows 下载包由同一提交生成，实际发行完成状态以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。
 
 > **v0.12.0 发布范围（2026-10-06，历史基线）：** 新增 Dashboard「受控 Agent」及「本机应用审查」，接通人工范围审批、原生有限只读执行、DeepSeek Agent 实际反馈和关联报告。当时 Python 专项验收 460 项中 459 通过、1 跳过，Dashboard 51 项通过；发布另外受 CI、覆盖率、浏览器、凭据和打包门禁约束，只有全部通过才更新正式下载。真实云端对照及边界见 [专项进度与使用方法](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md) 和 [当前发布清单](RELEASE_MANIFEST.md)。该发行基线不包含本轮新加的 L3 与独立源码审查。
@@ -22,7 +24,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前版本读取规则：** 当前源码版本为 `v0.13.0`，实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
+> **当前版本读取规则：** 当前源码候选版本为 `v0.14.0`，尚未正式发行；实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

@@ -5,10 +5,11 @@ from typing import Mapping
 
 from .ai import _redact
 
-CATALOG_VERSION = "local-readonly-v3"
+CATALOG_VERSION = "local-readonly-v4"
 ACTIONS = frozenset({"inspect_headers", "inspect_local_route", "analyze_passive_capture", "discover_surface", "inspect_api_schema",
                      "compare_object_authorization", "run_local_regression",
                      "validate_controlled_inputs", "compare_object_authorization_matrix",
+                     "compare_business_object", "validate_business_controls",
                      "review_candidate", "read_observation", "finish", "request_human_review"})
 
 
@@ -40,7 +41,7 @@ class Decision:
         if not isinstance(value["reference"], str) or value["reference"] not in references:
             raise ValueError("foreign_reference")
         if value["action"] in {"inspect_headers", "analyze_passive_capture", "discover_surface", "inspect_api_schema", "run_local_regression",
-                                "validate_controlled_inputs", "compare_object_authorization_matrix",
+                                "validate_controlled_inputs", "compare_object_authorization_matrix", "validate_business_controls",
                                 "finish", "request_human_review"} and value["reference"] != "entry":
             raise ValueError("action_reference_mismatch")
         if value["action"] == "review_candidate" and value["reference"] != "candidate":

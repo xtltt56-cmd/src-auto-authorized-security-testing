@@ -1,4 +1,7 @@
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -7,6 +10,42 @@ PROJECT_ROOT = Path(__file__).parents[1]
 
 
 class ReleaseDistributionTests(unittest.TestCase):
+    def _assert_dirty_source_blocks_release(self, untracked):
+        git, shell = shutil.which('git'), shutil.which('pwsh') or shutil.which('powershell')
+        if not git or not shell:
+            self.skipTest('Windows PowerShell and Git required for actual packaging gate')
+        with tempfile.TemporaryDirectory(dir=str(PROJECT_ROOT / 'validation')) as folder:
+            root = Path(folder)
+            (root / 'tools').mkdir()
+            (root / 'dashboard/dist').mkdir(parents=True)
+            shutil.copyfile(str(PROJECT_ROOT / 'tools/build_windows_release.ps1'), str(root / 'tools/build_windows_release.ps1'))
+            (root / 'VERSION').write_text('1.0.0', encoding='utf-8')
+            (root / '.gitignore').write_text('dashboard/dist/\nartifacts/\n', encoding='utf-8')
+            (root / 'dashboard/dist/index.html').write_text('<html>synthetic</html>', encoding='utf-8')
+            def run_git(*args):
+                subprocess.run([git] + list(args), cwd=str(root), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            run_git('init')
+            run_git('add', 'VERSION', '.gitignore', 'tools/build_windows_release.ps1')
+            run_git('-c', 'user.name=Release gate test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'synthetic fixture')
+            if untracked:
+                (root / 'new-module.py').write_text('# synthetic untracked source', encoding='utf-8')
+            else:
+                (root / 'VERSION').write_text('1.0.1', encoding='utf-8')
+            result = subprocess.run([shell, '-NoLogo', '-NoProfile', '-File', str(root / 'tools/build_windows_release.ps1'), '-SkipDashboardBuild'], cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            self.assertNotEqual(result.returncode, 0, 'A dirty checkout must not produce a release with an old commit identity')
+            self.assertIn(b'release_source_not_clean', result.stdout + result.stderr, 'Failure must be the source-identity gate, not an unrelated error')
+            self.assertFalse((root / 'artifacts/release').exists(), 'The guard must run before creating or replacing output')
+
+    def test_actual_release_blocks_modified_tracked_source(self):
+        self._assert_dirty_source_blocks_release(False)
+
+    def test_actual_release_blocks_untracked_source(self):
+        self._assert_dirty_source_blocks_release(True)
+
+    def test_l4_manual_lab_launcher_is_in_the_distribution_allowlist(self):
+        content = (PROJECT_ROOT / 'tools/build_windows_release.ps1').read_text(encoding='utf-8-sig')
+        root_files = content[content.index('$rootFiles = @('):content.index('$deniedFragments = @(')]
+        self.assertIn("'START_L4_LAB.ps1'", root_files)
     def test_version_is_single_semantic_version(self):
         version = (PROJECT_ROOT / "VERSION").read_text(encoding="utf-8").strip()
         self.assertRegex(version, r"^\d+\.\d+\.\d+$")

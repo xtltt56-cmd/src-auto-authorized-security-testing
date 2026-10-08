@@ -4,11 +4,15 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Mapping
+from urllib.parse import urlsplit
+
+from .local_scope import aware_timestamp
 
 
 class SessionVaultError(ValueError):
@@ -20,6 +24,18 @@ class SessionProfile:
     name: str
     role: str
     headers: Mapping[str, str]
+    target_id: str = ''
+    origin: str = ''
+    expires_at: str = ''
+
+
+def bound_origin(value):
+    if not isinstance(value, str) or not re.fullmatch(r'https?://(127\.0\.0\.1|\[::1\]):[0-9]{1,5}', value):
+        raise SessionVaultError('session_origin_invalid')
+    parsed = urlsplit(value)
+    if not 1 <= parsed.port <= 65535:
+        raise SessionVaultError('session_origin_invalid')
+    return value
 
 
 class _DataBlob(ctypes.Structure):
@@ -95,6 +111,8 @@ class SessionVault:
         ).digest()
 
     def _path(self, name: str) -> Path:
+        if not isinstance(name, str):
+            raise SessionVaultError('invalid_profile_name')
         normalized = (name or "").strip().lower()
         if not self._NAME.fullmatch(normalized):
             raise SessionVaultError("invalid_profile_name")
@@ -117,24 +135,50 @@ class SessionVault:
             headers[header_name] = header_value
         if not headers:
             raise SessionVaultError("profile_headers_required")
-        return SessionProfile(name, role, headers)
+        if profile.target_id or profile.origin or profile.expires_at:
+            if not re.fullmatch(r'custom-[a-f0-9]{32}', profile.target_id or ''):
+                raise SessionVaultError('session_binding_required')
+            bound_origin(profile.origin)
+            try:
+                aware_timestamp(profile.expires_at, 'expiresAt')
+            except ValueError:
+                raise SessionVaultError('session_expiry_invalid') from None
+            if (set(headers) - {'Authorization', 'Cookie'} or any(not x or len(x) > 8192 or
+                    any(ord(c) < 32 or ord(c) > 255 or ord(c) == 127 for c in x) for x in headers.values())
+                    or any(type(x) is not str for x in profile.headers.values())):
+                raise SessionVaultError('session_headers_invalid')
+        return SessionProfile(name, role, headers, profile.target_id, profile.origin, profile.expires_at)
 
     def save(self, profile: SessionProfile) -> Path:
         clean = self._clean_profile(profile)
         path = self._path(clean.name)
-        plaintext = json.dumps(dict(clean.headers), ensure_ascii=False, sort_keys=True).encode("utf-8")
+        bound = bool(clean.target_id)
+        # Bind context inside DPAPI as well as public metadata: editing the
+        # JSON target/role/expiry must never rebind decrypted credentials.
+        protected = dict(headers=dict(clean.headers), name=clean.name, role=clean.role,
+                         target_id=clean.target_id, origin=clean.origin, expires_at=clean.expires_at) if bound else dict(clean.headers)
+        plaintext = json.dumps(protected, ensure_ascii=False, sort_keys=True).encode("utf-8")
         ciphertext = _dpapi_protect(plaintext, self._entropy)
         document = {
-            "schema_version": 1,
+            "schema_version": 2 if bound else 1,
             "name": clean.name,
             "role": clean.role,
             "header_names": sorted(clean.headers),
             "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        temp = path.with_suffix(path.suffix + ".tmp")
-        temp.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(str(temp), str(path))
+        if bound:
+            document.update(target_id=clean.target_id, origin=clean.origin, expires_at=clean.expires_at)
+        temp = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=str(self.vault_dir),
+                                             prefix=clean.name + '-', suffix='.tmp', delete=False) as stream:
+                temp = Path(stream.name)
+                stream.write(json.dumps(document, ensure_ascii=False, indent=2) + '\n')
+            os.replace(str(temp), str(path))
+        finally:
+            if temp is not None and temp.exists():
+                temp.unlink()
         return path
 
     def load(self, name: str) -> SessionProfile:
@@ -143,25 +187,54 @@ class SessionVault:
             document = json.loads(path.read_text(encoding="utf-8"))
             ciphertext = base64.b64decode(document["ciphertext"], validate=True)
             plaintext = _dpapi_unprotect(ciphertext, self._entropy)
-            headers = json.loads(plaintext.decode("utf-8"))
+            protected = json.loads(plaintext.decode("utf-8"))
         except (OSError, KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
             raise SessionVaultError("session_profile_unavailable") from exc
-        if not isinstance(headers, dict):
+        if not isinstance(protected, dict):
             raise SessionVaultError("session_profile_invalid")
-        return SessionProfile(str(document.get("name", "")), str(document.get("role", "")), headers)
+        if document.get('schema_version') == 2:
+            fields = ('name', 'role', 'target_id', 'origin', 'expires_at')
+            if any(protected.get(key) != document.get(key) for key in fields) or protected.get('name') != name:
+                raise SessionVaultError('session_profile_invalid')
+            try:
+                return self._clean_profile(SessionProfile(protected['name'], protected['role'], protected['headers'],
+                    protected['target_id'], protected['origin'], protected['expires_at']))
+            except (KeyError, TypeError, ValueError):
+                raise SessionVaultError('session_profile_invalid') from None
+        if document.get('schema_version') != 1:
+            raise SessionVaultError('session_profile_invalid')
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in protected.items()):
+            # A schema-2 envelope is not a legacy header dictionary, even if
+            # somebody changes the unauthenticated public schema number.
+            raise SessionVaultError('session_profile_invalid')
+        return SessionProfile(str(document.get("name", "")), str(document.get("role", "")), protected)
+
+    def load_for_target(self, name, target_id, origin, role, now=None):
+        profile = self.load(name)
+        if not profile.target_id:
+            raise SessionVaultError('session_binding_required')
+        if (profile.target_id, profile.origin, profile.role) != (target_id, origin, role):
+            raise SessionVaultError('session_target_mismatch')
+        if aware_timestamp(profile.expires_at, 'expiresAt') <= (now or datetime.now(timezone.utc)):
+            raise SessionVaultError('session_expired')
+        return profile
 
     def list_profiles(self) -> List[Dict[str, object]]:
         result = []
         for path in sorted(self.vault_dir.glob("*.dpapi.json")):
             try:
                 document = json.loads(path.read_text(encoding="utf-8"))
-                result.append(
-                    {
+                metadata = {
                         "name": str(document.get("name", "")),
                         "role": str(document.get("role", "")),
                         "header_names": sorted(str(value) for value in document.get("header_names", [])),
                     }
-                )
+                if document.get('schema_version') == 2:
+                    profile = self.load(metadata['name'])
+                    metadata.update(bound=True, targetId=profile.target_id, origin=profile.origin, expiresAt=profile.expires_at,
+                                    expired=aware_timestamp(profile.expires_at, 'expiresAt') <= datetime.now(timezone.utc),
+                                    revision=hashlib.sha256(path.read_bytes()).hexdigest())
+                result.append(metadata)
             except (OSError, ValueError, TypeError):
                 continue
         return result

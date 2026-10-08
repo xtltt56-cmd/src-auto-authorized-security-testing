@@ -1,3 +1,5 @@
+import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -6,6 +8,36 @@ PROJECT_ROOT = Path(__file__).parents[1]
 
 
 class DashboardLauncherTests(unittest.TestCase):
+    def test_launcher_accepts_all_current_pages(self):
+        content = (PROJECT_ROOT / 'tools/start_dashboard.ps1').read_text(encoding='utf-8-sig')
+        first_validate_set = content[content.index('[ValidateSet('):content.index('[string]$InitialPage')]
+        for page in ('agent', 'local-app', 'source-audit', 'business-preparation'):
+            self.assertIn("'{}'".format(page), first_validate_set)
+
+    def test_launcher_checks_api_compatibility_before_reusing_an_idle_process(self):
+        path = PROJECT_ROOT / 'tools/start_dashboard.ps1'
+        content = path.read_text(encoding='utf-8-sig')
+        self.assertIn('function Test-DashboardApiCompatible', content)
+        self.assertIn('$apiMatches = Test-DashboardApiCompatible $existingApiHealth', content)
+        self.assertIn('-or -not $apiMatches', content)
+        command = """
+        $tokens=$null; $errors=$null
+        $ast=[Management.Automation.Language.Parser]::ParseFile('%s',[ref]$tokens,[ref]$errors)
+        $function=$ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-DashboardApiCompatible'},$true)
+        . ([scriptblock]::Create($function.Extent.Text))
+        $results=@(
+          (Test-DashboardApiCompatible ([pscustomobject]@{})),
+          (Test-DashboardApiCompatible ([pscustomobject]@{serviceApiVersion=1;capabilities=@('business-preparation-v1')})),
+          (Test-DashboardApiCompatible ([pscustomobject]@{serviceApiVersion=2;capabilities=@()})),
+          (Test-DashboardApiCompatible ([pscustomobject]@{serviceApiVersion=2;capabilities=@('business-preparation-v1')})),
+          (Test-DashboardApiCompatible ([pscustomobject]@{serviceApiVersion=3;capabilities=@('business-preparation-v1','business-execution-v1')})),
+          (Test-DashboardApiCompatible ([pscustomobject]@{serviceApiVersion=2;capabilities='business-preparation-v1'}))
+        ); ConvertTo-Json -InputObject $results -Compress
+        """ % str(path).replace("'", "''")
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-Command', command], capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
+        self.assertEqual(json.loads(result.stdout.decode('utf-8-sig')), [False, False, False, False, True, False])
+
     def test_dashboard_launcher_is_present_and_loopback_only(self):
         path = PROJECT_ROOT / "tools" / "start_dashboard.ps1"
         self.assertTrue(path.exists())

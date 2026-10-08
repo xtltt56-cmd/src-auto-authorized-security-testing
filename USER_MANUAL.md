@@ -1,5 +1,7 @@
 # SRC-Auto 平台完整使用手册
 
+> **2026-10-09 · v0.14.0 本地候选版（尚未正式发行）：** 「业务验证准备」同页已接通四角色对象对照、标准/DeepSeek Agent 真实任务、取消和完整报告；使用 [L4 操作指南](docs/L4_PREPARATION_PROGRESS.md)。专用合成靶场可手动运行 `START_L4_LAB.ps1`，固定 SQL/惰性 HTML 正负对照不开放任意载荷，不代表已确认 XSS。最新全流程成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)，GitHub 正式下载尚未同步此候选版。
+
 > **v0.13.0 使用说明（2026-10-06）：** 自定义本地靶场 / 应用目标库、L3 断网 ZAP 与独立源码审查优先阅读 [统一操作指南](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)。本轮真实验收及限制见 [验收报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)，分发内容以 [当前发布清单](RELEASE_MANIFEST.md) 为准。源码中的版本、下载包 VERSION 和 release-manifest.json 应一致；下方旧版成绩保留用于追溯。
 
 > **v0.12.0 使用说明：** 新增「受控 Agent」与「本机应用审查」，用法见 [Agent 使用说明](docs/AGENT_USER_GUIDE.md) 与 [本机应用进度](docs/LOCAL_APPLICATION_SCAN_PROGRESS.md)。分发范围以 [当前发布清单](RELEASE_MANIFEST.md) 为准；下方旧版手册和历史靶场成绩不代表完整漏洞发现率。下载用户须自行填写密钥，不会获得原操作者的密钥或会话。

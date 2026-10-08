@@ -2,6 +2,7 @@
 data/*.sqlite3
 data/*.sqlite3-*
 data/model-migration-*/
+data/l4-fixtures/
 runs/*
 logs/*
 evidence/*
@@ -63,6 +64,7 @@ dashboard/playwright-report/
 dashboard/test-results/
 dashboard/storybook-static/
 .playwright-cli/
+output/playwright/
 artifacts/
 .coverage*
 htmlcov/

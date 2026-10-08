@@ -78,6 +78,63 @@ class DashboardServerTests(unittest.TestCase):
         for path in ('/api/source-audit/preview', '/api/source-audit/start', '/api/local-targets/save', '/api/local-targets/delete'):
             self.assertEqual(self.request(path, method='POST', body={})[0], 401)
         self.assertEqual(self.request('/api/local-targets')[0], 401)
+
+    def test_business_execution_auth_and_disabled_cloud_error_are_fail_closed(self):
+        from types import SimpleNamespace
+        def denied(*args): raise ValueError('remote_ai_disabled_for_session')
+        self.service.agent = SimpleNamespace(business=SimpleNamespace(preview=denied, start=denied))
+        for action in ('preview', 'start'):
+            path = '/api/business/' + action
+            self.assertEqual(self.request(path, method='POST', body={})[0], 401)
+            status, _, value = self.request(path, method='POST', token='test-session-token', body={})
+            self.assertEqual(status, 403)
+            self.assertEqual(value['error'], 'remote_ai_disabled_for_session')
+
+    def test_business_execution_does_not_echo_unexpected_exception(self):
+        from types import SimpleNamespace
+        def failed(*args): raise RuntimeError('Bearer PRIVATE_TEST_SECRET')
+        self.service.agent = SimpleNamespace(business=SimpleNamespace(preview=failed))
+        status, _, value = self.request('/api/business/preview', method='POST', token='test-session-token', body={})
+        self.assertEqual(status, 409)
+        self.assertNotIn('PRIVATE_TEST_SECRET', json.dumps(value))
+
+    def test_business_preparation_endpoints_require_session_and_cannot_execute(self):
+        self.assertEqual(self.request('/api/business-preparation')[0], 401)
+        for action in ('save', 'preview', 'delete', 'session-save', 'session-delete'):
+            self.assertEqual(self.request('/api/business-preparation/' + action, method='POST', body={})[0], 401)
+        self.assertEqual(self.request('/api/business-preparation/start', method='POST', token='test-session-token', body={})[0], 404)
+
+    def test_business_preparation_http_round_trip_does_not_echo_credentials(self):
+        from datetime import datetime, timedelta, timezone
+        from src_auto.business_preparation import BusinessPreparation
+        with tempfile.TemporaryDirectory(dir=str(Path(__file__).parents[1] / 'validation')) as temp:
+            preparation = BusinessPreparation(Path(temp))
+            self.server.business_preparation = preparation
+            target = preparation.targets.save(dict(name='HTTP 合成隔离目标', kind='custom_lab', origin='http://127.0.0.1:8765',
+                paths=['/objects/a'], excluded=['/reset'], method='GET', profile='readonly-baseline-v1'))
+            session = dict(targetId=target['id'], targetRevision=target['revision'], name='isolated-a', role='account-a',
+                headers={'Authorization': 'Bearer SYNTHETIC_HTTP_PRIVATE'}, confirmTestAccount=True,
+                expiresAt=(datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat())
+            status, _, saved = self.request('/api/business-preparation/session-save', method='POST', token='test-session-token', body=session)
+            self.assertEqual(status, 200)
+            self.assertNotIn('SYNTHETIC_HTTP_PRIVATE', json.dumps(saved))
+            status, _, snapshot = self.request('/api/business-preparation', token='test-session-token')
+            self.assertEqual(status, 200)
+            self.assertEqual(snapshot['sessions'][0]['targetId'], target['id'])
+            self.assertFalse(snapshot['executionAvailable'])
+            self.assertNotIn('SYNTHETIC_HTTP_PRIVATE', json.dumps(snapshot))
+            self.assertEqual(self.service.calls, [])
+            session['headers'] = {'Host': 'SYNTHETIC_HTTP_PRIVATE'}
+            status, _, rejected = self.request('/api/business-preparation/session-save', method='POST', token='test-session-token', body=session)
+            self.assertEqual(status, 400)
+            self.assertNotIn('SYNTHETIC_HTTP_PRIVATE', json.dumps(rejected))
+
+    def test_business_preparation_failure_is_sanitized(self):
+        with patch.object(self.server.business_preparation, 'save_session', side_effect=RuntimeError('SYNTHETIC_SECRET')):
+            status, _, payload = self.request('/api/business-preparation/session-save', method='POST', token='test-session-token', body={})
+        self.assertEqual(status, 503)
+        self.assertNotIn('SYNTHETIC_SECRET', json.dumps(payload))
+
     def test_rejected_slow_post_does_not_wait_for_declared_body(self):
         import http.client
         import time
@@ -264,6 +321,9 @@ class DashboardServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["service"], "src-auto-dashboard-api")
+        self.assertEqual(payload['serviceApiVersion'], 3)
+        self.assertIn('business-preparation-v1', payload['capabilities'])
+        self.assertRegex(payload['pythonVersion'], r'^3\.[0-9]+\.[0-9]+$')
         self.assertTrue(payload["loopbackOnly"])
         self.assertTrue(payload["remoteAiSessionEnabled"])
         self.assertGreater(payload["processId"], 0)

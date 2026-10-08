@@ -8,6 +8,24 @@ from src_auto.agent_provider import AgentModel, configured_model
 
 
 class AgentProviderTests(unittest.TestCase):
+    def test_full_business_feedback_fits_limit_without_hashes_or_private_fields(self):
+        payloads = []
+        def post(value):
+            payloads.append(value)
+            return {'choices': [{'message': {'content': '{}'}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 2}}
+        rows = [dict(id='o'+str(i), action='compare_business_object', reference='object-00'+str(i), validated=True,
+                     fingerprints={role: 'a'*64 for role in ('account-a', 'account-b', 'administrator', 'anonymous')},
+                     statuses={'account-a': 200}, baselineValid=True, unexpectedRoles=['account-b'], candidate=True,
+                     private_debug='DO_NOT_SEND_PRIVATE_'*500) for i in range(1,7)]
+        model = AgentModel(SimpleNamespace(model='deepseek-flash', provider_name='deepseek', _post=post), local=False)
+        model.decide(dict(mode='business-assessment', references=['entry']+['object-00'+str(i) for i in range(1,7)],
+                          capabilities=['finish'], observations=rows, permissions={'allObjectReferencesRequired': True}))
+        text = payloads[0]['messages'][1]['content']
+        self.assertNotIn('DO_NOT_SEND_PRIVATE', text)
+        self.assertNotIn('fingerprints', text)
+        self.assertIn('unexpectedRoles', text)
+        self.assertIn('o6', text)
+
     def test_six_local_route_feedbacks_fit_bounded_model_context(self):
         provider = SimpleNamespace(model='deepseek-flash', provider_name='deepseek', _post=lambda payload: {
             'choices': [{'message': {'content': '{}'}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 2}})

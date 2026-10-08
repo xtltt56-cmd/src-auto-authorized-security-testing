@@ -813,3 +813,24 @@ textarea:focus-visible {
 .local-app-page .inline-actions { flex-wrap: wrap; }
 .local-app-page .inline-notice { overflow-wrap: anywhere; }
 .local-app-page .data-table { min-width: 520px; }
+
+.business-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.business-preparation-page .form-field select { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid var(--color-border); border-radius: 7px; background: #fff; color: var(--color-ink-800); font: inherit; }
+.business-preparation-page .network-consent { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0; line-height: 1.7; }
+.business-preparation-page input[type='checkbox'] { flex: 0 0 auto; margin-top: 4px; }
+.business-preparation-page .inline-notice { overflow-wrap: anywhere; }
+.business-draft-row, .business-session-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 14px 0; padding: 14px; border: 1px solid var(--color-border); border-radius: 8px; overflow-wrap: anywhere; }
+.business-draft-row p { margin: 6px 0 0; color: var(--color-ink-500); font-size: 13px; }
+.business-case { padding: 18px; border: 1px solid var(--color-border); border-radius: 8px; margin-bottom: 18px; }
+.business-permissions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.business-permissions label { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; }
+@media (max-width: 650px) { .business-permissions { grid-template-columns: 1fr; } .business-case { padding: 14px; } }
+@media (max-width: 650px) {
+  .business-evidence .table-scroll { overflow: visible; }
+  .business-evidence .data-table, .business-evidence .data-table tbody, .business-evidence .data-table tr { display: block; width: 100%; }
+  .business-evidence .data-table thead { display: none; }
+  .business-evidence .data-table tbody { display: grid; gap: 12px; }
+  .business-evidence .data-table tr { border: 1px solid var(--color-border); border-radius: 8px; overflow: hidden; }
+  .business-evidence .data-table td { display: flex; align-items: flex-start; gap: 12px; padding: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+  .business-evidence .data-table td::before { content: attr(data-label); flex: 0 0 86px; color: var(--color-ink-500); font-weight: 700; }
+}

@@ -3,6 +3,7 @@ import type { SourceAuditDraft, SourceAuditApproval } from './types'
 import type { AgentSnapshot, AgentStart, LocalApplicationDraft, LocalApplicationApproval, LocalTarget, LocalTargetDraft } from './types'
 import type { AIConnectionResult, AIProviderSettings, ArtifactSummary, DashboardSnapshot, ReportFile, TaskEvent, TaskState, TaskSummary, TargetDraft, TargetDraftResult, ReviewEntry } from './types'
 import { validateTargetDraft } from './validation'
+import type { BusinessPreparationSnapshot, BusinessPreparationDraft, BusinessPreparationRow, BusinessPreparationPreview, BusinessSessionInput, BusinessExecutionDraft, BusinessExecutionApproval } from './types'
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -21,6 +22,14 @@ const eventFor = (task: TaskSummary, id: number, level: TaskEvent['level'], stag
 })
 
 export interface TaskRepository {
+  previewBusiness?(value: BusinessExecutionDraft): Promise<BusinessExecutionApproval>
+  startBusiness?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
+  getBusinessPreparation?(): Promise<BusinessPreparationSnapshot>
+  saveBusinessPreparation?(value: BusinessPreparationDraft): Promise<BusinessPreparationRow>
+  previewBusinessPreparation?(value: { id: string }): Promise<BusinessPreparationPreview>
+  deleteBusinessPreparation?(value: { id: string }): Promise<{ deleted: boolean }>
+  saveBusinessSession?(value: BusinessSessionInput): Promise<{ saved: boolean }>
+  deleteBusinessSession?(value: { name: string; targetId: string }): Promise<{ deleted: boolean }>
   previewSourceAudit?(value: SourceAuditDraft): Promise<SourceAuditApproval>
   startSourceAudit?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
   listLocalTargets?(): Promise<{ targets: LocalTarget[] }>
@@ -289,6 +298,14 @@ export const createLoopbackRepository = (baseUrl = '/api', fetchImpl: FetchLike 
 
   const action = (path: string): Promise<void> => request(path, { method: 'POST', body: '{}' }).then(() => undefined)
   return {
+    getBusinessPreparation: () => request('/business-preparation'),
+    previewBusiness: value => request('/business/preview', { method: 'POST', body: JSON.stringify(value) }),
+    startBusiness: value => request('/business/start', { method: 'POST', body: JSON.stringify(value) }),
+    saveBusinessPreparation: value => request('/business-preparation/save', { method: 'POST', body: JSON.stringify(value) }),
+    previewBusinessPreparation: value => request('/business-preparation/preview', { method: 'POST', body: JSON.stringify(value) }),
+    deleteBusinessPreparation: value => request('/business-preparation/delete', { method: 'POST', body: JSON.stringify(value) }),
+    saveBusinessSession: value => request('/business-preparation/session-save', { method: 'POST', body: JSON.stringify(value) }),
+    deleteBusinessSession: value => request('/business-preparation/session-delete', { method: 'POST', body: JSON.stringify(value) }),
     getAgent: () => request<AgentSnapshot>('/agent'),
     previewLocalApplication: value => request('/local-app/preview', { method: 'POST', body: JSON.stringify(value) }),
     listLocalTargets: () => request('/local-targets'),

@@ -4,7 +4,7 @@ param(
     [int]$Port = 4173,
     [ValidateRange(1024, 65535)]
     [int]$ApiPort = 4174,
-    [ValidateSet('overview','labs','targets','review','findings','settings')]
+    [ValidateSet('overview','labs','agent','local-app','business-preparation','source-audit','targets','review','findings','settings')]
     [string]$InitialPage = 'overview',
     [ValidateSet('ask','enabled','disabled')]
     [string]$RemoteAIConsent = 'ask',
@@ -115,6 +115,11 @@ function Test-DashboardApiReady {
     return $null -ne (Get-DashboardApiHealth)
 }
 
+function Test-DashboardApiCompatible([object]$Health) {
+    if(-not $Health -or -not $Health.PSObject.Properties['serviceApiVersion'] -or -not $Health.PSObject.Properties['capabilities']){ return $false }
+    return $Health.serviceApiVersion -eq 3 -and $Health.capabilities -is [array] -and $Health.capabilities -contains 'business-preparation-v1' -and $Health.capabilities -contains 'business-execution-v1'
+}
+
 function Test-DashboardHasActiveWork([object]$Health) {
     $origin = if($Health -and $Health.PSObject.Properties['allowedOrigin']){ [string]$Health.allowedOrigin } else { $dashboardOrigin }
     $session = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/api/session" -Headers @{ Origin = $origin } -TimeoutSec 2
@@ -149,10 +154,11 @@ if($existingApiHealth){
     $consentMatches = $consentProperty -and ([bool]$consentProperty.Value -eq $remoteAIEnabled)
     $originProperty = $existingApiHealth.PSObject.Properties['allowedOrigin']
     $originMatches = $originProperty -and ([string]$originProperty.Value -eq $dashboardOrigin)
-    if(-not $consentMatches -or -not $originMatches){
+    $apiMatches = Test-DashboardApiCompatible $existingApiHealth
+    if(-not $consentMatches -or -not $originMatches -or -not $apiMatches){
         try {
             if(Test-DashboardHasActiveWork $existingApiHealth){
-                Write-Host '已有 Dashboard 正在执行任务，且其云端 AI 授权与本次选择不一致。为保护任务和授权状态，本次启动已停止。请先在原 Dashboard 中停止任务后重试。' -ForegroundColor Red
+                Write-Host '已有 Dashboard 正在执行任务，且其版本或云端 AI 授权与本次选择不一致。为保护任务和授权状态，本次启动已停止。请先在原 Dashboard 中停止任务后重试。' -ForegroundColor Red
                 exit 10
             }
         } catch {
@@ -164,7 +170,7 @@ if($existingApiHealth){
             Write-Host '已有 Dashboard API 的授权状态与本次选择不一致，但无法安全确认其进程身份。请关闭旧 Dashboard 服务后重试。' -ForegroundColor Red
             exit 10
         }
-        Write-Host '检测到旧 Dashboard API 的云端 AI 授权与本次选择不一致，正在安全重启本地控制接口……' -ForegroundColor Cyan
+        Write-Host '检测到旧 Dashboard API 的版本或云端 AI 授权与本次选择不一致，正在安全重启本地控制接口……' -ForegroundColor Cyan
         Stop-IdleDashboardApi -Port $ApiPort -Health $existingApiHealth
         for($attempt = 0; $attempt -lt 20; $attempt++){
             Start-Sleep -Milliseconds 100
