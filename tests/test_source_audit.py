@@ -228,11 +228,11 @@ class SourceAuditContracts(unittest.TestCase):
             approval = service.source_audit.preview(document)
             with self.assertRaises(ValueError): service.source_audit.start(dict(approvalId=approval['approvalId'], confirmStart=False))
             started = service.source_audit.start(dict(approvalId=approval['approvalId'], confirmStart=True))
-            deadline = time.monotonic() + 4
-            while time.monotonic() < deadline:
-                row = service.history.get(started['id'])
-                if row['reportId']: break
-                time.sleep(.01)
+            # The single-worker queue publishes reportId before database/lease
+            # cleanup. A queue barrier waits for actual finalization, not just
+            # report visibility; keep the inactive assertion below meaningful.
+            service.executor.submit(lambda: None).result(timeout=4)
+            row = service.history.get(started['id'])
             self.assertEqual(row['state'], 'completed')
             self.assertEqual(row['modelCalls'], 0)
             self.assertTrue((self.root / row['reportId']).is_file())
