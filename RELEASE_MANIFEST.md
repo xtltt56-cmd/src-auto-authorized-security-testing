@@ -1,14 +1,14 @@
-# SRC-Auto 当前发布候选清单
+# SRC-Auto 当前发布清单
 
 **发布标识：** `v0.14.0`
 
 **准备日期：** 2026-10-09（Asia/Shanghai）
 
-**状态：本地候选版，尚未正式发行。** L4 功能、五靶场实际 DeepSeek 回归、断网扫描器和中文页面已有阶段验收；最新源码修复及发布前复核见 [本轮说明](docs/V0_14_RELEASE_READINESS.md)。最新准备记录在 validation/release-ready-20261009；validation/l4-final-20261009 是此前候选，不代表最新源码修复包。GitHub main、Actions、标签和 Releases 尚未更新；VERSION 或本地 ZIP 不代表 latest 已发布。上一正式基线为 v0.13.0。准确阶段成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。
+**状态：v0.14.0 发布范围，实际发行状态以 GitHub Releases 为准。** L4 功能、五靶场实际 DeepSeek 回归、断网扫描器和中文页面已有阶段验收；最新源码修复及发布前复核见 [本轮说明](docs/V0_14_RELEASE_READINESS.md)。最新准备记录在 validation/release-ready-20261009；validation/l4-final-20261009 是此前候选，不代表最新源码修复包。只有 GitHub Actions、不可变标签、Release 及公开资产全部核验通过，才算发行完成；VERSION、源码推送或本地 ZIP 均不单独证明 latest 已更新。v0.13.0 保留为历史正式基线。准确阶段成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
-## 本候选版包含什么
+## 本版本包含什么
 
 - 保留五固定回环靶场、授权草稿、离线范围审阅、真实任务/报告、中文内嵌 API 设置、本机应用审查及自定义目标库。
 - 保留受控 Agent 的有限动作、真实观察反馈、覆盖校验、逐请求范围/时间/资源/STOP 检查、人工启用/单任务云端同意、共享预算与取消。
@@ -60,4 +60,4 @@ Git 和包排除密钥/DPAPI 密文、Cookie/账号会话、数据库、生成�
 
 用户负责独立生产配置/数据/存储/账号隔离。未包含业务写操作、竞态、盲注、存储型/执行型 XSS、通用源码污点/CVE 分析及外部目标 Agent。可信本地 HTTPS 和 IPv6 传输仍未完整端到端验收。最终确认和补天提交由人工负责。
 
-v0.13.0 及更早不可变标签/包保留回退。候选包先解压到独立目录，不覆盖运行中的程序，不静默迁移密钥和状态。只有实际发布成功后才更新正式下载；历史文档是快照，不覆盖此候选清单。
+v0.13.0 及更早不可变标签/包保留回退。新包先解压到独立目录，不覆盖运行中的程序，不静默迁移密钥和状态。只有实际发布成功后才更新正式下载；历史文档是快照，不覆盖此发布清单。

@@ -1,6 +1,6 @@
 # SRC-Auto
 
-> **2026-10-09 · v0.14.0 本地候选版，尚未正式发行：** L4 已接通隔离声明与 DPAPI 测试会话、四角色 JSON 对象权限对照、真实标准/Agent 任务及关联报告；专用合成靶场包含固定 SQL 布尔差异和惰性 HTML 反射正负对照。新一轮五固定靶场 DeepSeek 5/5、L4 对照 13/13、本机应用与断网 ZAP 对照 13/13 通过。HTML 反射不等于已确认脚本执行 XSS。使用见 [L4 操作说明](docs/L4_PREPARATION_PROGRESS.md)，准确进度见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。下方 v0.13.0 是上一正式基线；本地候选版不表示 GitHub latest 已更新。
+> **2026-10-09 · v0.14.0 发布范围：** L4 已接通隔离声明与 DPAPI 测试会话、四角色 JSON 对象权限对照、真实标准/Agent 任务及关联报告；专用合成靶场包含固定 SQL 布尔差异和惰性 HTML 反射正负对照。新一轮五固定靶场 DeepSeek 5/5、L4 对照 13/13、本机应用与断网 ZAP 对照 13/13 通过。HTML 反射不等于已确认脚本执行 XSS。使用见 [L4 操作说明](docs/L4_PREPARATION_PROGRESS.md)，准确进度见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。下方 v0.13.0 是历史正式基线；实际发行状态以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准，源码推送本身不等于发行完成。
 
 > **最新发布前复核（2026-10-09）：** 已纳入源码审查覆盖、进度、排除项与可选 DeepSeek 匿名摘要辅助修复；默认打包强制重新构建页面，构建失败停止分发，Python 元数据与 VERSION 统一。最新代码验收：Python 3.12 / 3.8 各 552 项（551 通过、1 条件跳过）、前端 69/69、浏览器 8/8、真实 L4 标准/云端对照 13/13、合成源码断网扫描与云端摘要 10/10。发布准备与历史成绩的区分见 [本轮说明](docs/V0_14_RELEASE_READINESS.md)。公开下载仍以 GitHub Releases 实际发布状态为准。
 
@@ -26,7 +26,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前版本读取规则：** 当前源码候选版本为 `v0.14.0`，尚未正式发行；实际发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
+> **当前版本读取规则：** 当前源码版本为 `v0.14.0`；正式版本、对应提交与下载校验和以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

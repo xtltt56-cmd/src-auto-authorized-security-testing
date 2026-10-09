@@ -1,6 +1,6 @@
 # v0.14.0 发布前准备说明
 
-日期：2026-10-09。状态：代码已本机验收；正式发布等待用户当次确认和 GitHub CI。
+日期：2026-10-09。本文件记录发布前快照：代码已本机验收，当时正式发布等待用户当次确认和 GitHub CI。后续实际发行状态请查看 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest)，本文不是实时发布状态页面。
 
 ## 本次纳入的更新
 
