@@ -29,8 +29,11 @@ if($LASTEXITCODE -ne 0){ throw 'release_source_status_unavailable' }
 if($sourceChanges.Count -gt 0){ throw 'release_source_not_clean: commit intended source changes before building a distribution.' }
 
 $distIndex = Join-Path $ProjectRoot 'dashboard\dist\index.html'
-if(-not (Test-Path -LiteralPath $distIndex)){
-    if($SkipDashboardBuild){ throw 'Dashboard 尚未构建。' }
+if($SkipDashboardBuild){
+    if(-not (Test-Path -LiteralPath $distIndex)){ throw 'Dashboard 尚未构建。' }
+} else {
+    # Existing assets may belong to an earlier checkout. Default releases must
+    # rebuild; only an explicit CI/prevalidated caller may reuse its fresh dist.
     $node = @(
         (Join-Path $ProjectRoot 'runtime\node-v22.23.0-win-x64\node.exe'),
         (Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue)

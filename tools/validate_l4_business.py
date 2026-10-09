@@ -17,6 +17,20 @@ from src_auto.l4_lab import L4SyntheticLab
 from tools.validate_local_application_cloud import SyntheticControl
 
 
+def execution_finished(row):
+    """Require every real validated observation, even for a manual handoff.
+
+    The model may deliberately request human review after finding candidates.
+    That is not an interrupted tool run; it also is not a confirmed vulnerability.
+    Resource failures, partial coverage and unvalidated observations still fail.
+    """
+    covered = {item.get('reference') for item in row.get('observations', []) if item.get('validated') is True}
+    if not {'object-001', 'object-002', 'entry'} <= covered:
+        return False
+    return row.get('state') == 'completed' or (
+        row.get('state') == 'needs-human' and row.get('reason') == 'request_human_review')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--execute-cloud', action='store_true')
@@ -64,7 +78,7 @@ def main():
                 time.sleep(.2)
             else: service.cancel_run(key); raise RuntimeError('acceptance_timeout')
             results[mode] = result
-        assertions = {'standard_completed': results['standard']['state'] == 'completed',
+        assertions = {'standard_execution_finished': execution_finished(results['standard']),
             'standard_real_16_requests': results['standard']['requests'] == 16,
             'standard_no_model': results['standard']['modelCalls'] == 0,
             'positive_and_negative_controls': results['standard']['candidates'] == 3 and not results['standard']['observations'][1]['candidate'],
@@ -75,7 +89,7 @@ def main():
                 keys = {'reference', 'action', 'expected', 'statuses', 'fingerprints', 'baselineValid', 'equivalent',
                         'unexpectedRoles', 'missingExpectedRoles', 'inconclusiveRoles', 'checks', 'controlsValid', 'candidateCount', 'validated'}
                 return {x['reference']: {k:v for k,v in x.items() if k in keys} for x in result['observations']}
-            assertions.update(agent_completed=results['agent']['state'] == 'completed', agent_real_model=len(usages)>0,
+            assertions.update(agent_execution_finished=execution_finished(results['agent']), agent_real_model=len(usages)>0,
                 agent_16_requests=results['agent']['requests']==16, same_evidence=evidence(results['agent'])==evidence(results['standard']),
                 feedback_received=any(x['observations'] for x in contexts), usage_metered=results['agent']['modelCalls']==len(usages))
         persisted = json.dumps(results)+''.join((root/x['reportId']).read_text(encoding='utf-8') for x in results.values())

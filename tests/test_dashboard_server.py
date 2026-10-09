@@ -66,6 +66,73 @@ class FakeProviderSettings:
 
 
 class DashboardServerTests(unittest.TestCase):
+    def test_cancelled_real_http_poll_does_not_fail_the_api_or_retry_response(self):
+        import socket
+        import struct
+        import time
+        from unittest.mock import Mock
+        entered, release = threading.Event(), threading.Event()
+        def delayed_snapshot():
+            entered.set()
+            release.wait(2)
+            return {'source': 'synthetic-transport-only', 'padding': 'x' * 500000}
+        errors = Mock()
+        self.server.handle_error = errors
+        with patch.object(self.service, 'snapshot', side_effect=delayed_snapshot):
+            client = socket.create_connection(self.server.server_address, timeout=2)
+            try:
+                client.sendall(b'GET /api/dashboard HTTP/1.1\r\nHost: 127.0.0.1\r\nX-SRC-Auto-Token: test-session-token\r\n\r\n')
+                self.assertTrue(entered.wait(2))
+                client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('HH' if __import__('os').name == 'nt' else 'ii', 1, 0))
+            finally:
+                client.close()
+                release.set()
+            time.sleep(.1)
+            self.assertEqual(self.request('/health')[0], 200)
+            time.sleep(.1)
+            errors.assert_not_called()
+
+    def test_json_response_handles_peer_disconnect_but_not_other_io_errors(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from src_auto.dashboard_server import DashboardRequestHandler
+        for stage in ('end_headers', 'write'):
+            for error in (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                with self.subTest(stage=stage, error=error):
+                    handler = object.__new__(DashboardRequestHandler)
+                    handler.headers = {}
+                    handler.server = SimpleNamespace(allowed_origin='http://127.0.0.1:4173')
+                    handler.send_response = Mock()
+                    handler.send_header = Mock()
+                    handler.end_headers = Mock()
+                    handler.wfile = Mock()
+                    if stage == 'end_headers': handler.end_headers.side_effect = error('peer closed')
+                    else: handler.wfile.write.side_effect = error('peer closed')
+                    handler._write_json(200, {'ok': True})
+                    self.assertTrue(handler.close_connection)
+                    handler.send_response.assert_called_once_with(200)
+        handler.wfile.write.side_effect = OSError('unrelated IO failure')
+        handler.end_headers.side_effect = None
+        with self.assertRaises(OSError): handler._write_json(200, {'ok': True})
+
+    def test_source_start_receives_immutable_startup_cloud_gate(self):
+        from types import SimpleNamespace
+        calls = []
+        def start(document, session):
+            calls.append((document, session))
+            if document.get('allowCloud') and not session: raise ValueError('remote_ai_disabled_for_session')
+            return {'accepted': True, 'id': 'real'}
+        self.service.agent = SimpleNamespace(source_audit=SimpleNamespace(start=start))
+        self.server.remote_ai_session_enabled = False
+        status, _, value = self.request('/api/source-audit/start', method='POST', token='test-session-token',
+                                       body={'approvalId': 'a', 'confirmStart': True, 'allowCloud': True})
+        self.assertEqual(status, 403)
+        self.assertEqual(value['error'], 'remote_ai_disabled_for_session')
+        self.server.remote_ai_session_enabled = True
+        self.assertEqual(self.request('/api/source-audit/start', method='POST', token='test-session-token',
+                                     body={'approvalId': 'a', 'confirmStart': True, 'allowCloud': True})[0], 202)
+        self.assertEqual([x[1] for x in calls], [False, True])
+
     def test_expired_local_window_has_a_specific_public_error(self):
         from types import SimpleNamespace
         def expired(*args): raise ValueError('outside_test_window')

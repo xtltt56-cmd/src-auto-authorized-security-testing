@@ -143,6 +143,10 @@ class RemoteAITests(unittest.TestCase):
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertFalse(payload["stream"])
         self.assertEqual(timeout, 7)
+        prompt = payload['messages'][0]['content']
+        for disposition in ('candidate', 'manual_review', 'needs_manual_validation', 'false_positive'):
+            self.assertIn(disposition, prompt)
+        self.assertIn('No source code', prompt)
 
     def test_openai_responses_request_disables_storage_and_tools(self):
         calls = []

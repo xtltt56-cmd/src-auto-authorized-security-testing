@@ -4,7 +4,7 @@
 
 **准备日期：** 2026-10-09（Asia/Shanghai）
 
-**状态：本地候选版，尚未正式发行。** L4 功能、五靶场实际 DeepSeek 回归、断网扫描器和中文页面已验收。本机候选包与干净安装的最终记录在 validation/l4-final-20261009。GitHub main、Actions、标签和 Releases 尚未更新；VERSION 或本地 ZIP 不代表 latest 已发布。上一正式基线为 v0.13.0。准确成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。
+**状态：本地候选版，尚未正式发行。** L4 功能、五靶场实际 DeepSeek 回归、断网扫描器和中文页面已有阶段验收；最新源码修复及发布前复核见 [本轮说明](docs/V0_14_RELEASE_READINESS.md)。最新准备记录在 validation/release-ready-20261009；validation/l4-final-20261009 是此前候选，不代表最新源码修复包。GitHub main、Actions、标签和 Releases 尚未更新；VERSION 或本地 ZIP 不代表 latest 已发布。上一正式基线为 v0.13.0。准确阶段成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
@@ -16,8 +16,9 @@
 - L4-B：两道独立人工确认后，对精确回环实例的批准 GET 路由执行账号 A、账号 B、管理员与匿名四角色 JSON 对象对比。完整同一字符串 id / 内容摘要证据才形成候选，证据不足转人工。
 - L4-C：手动 START_L4_LAB.ps1 启动内存合成靶场，固定 SQL 布尔差异与惰性 HTML 反射正负对照。无任意载荷、业务写操作、脚本执行或生产复制。
 - 真实标准/DeepSeek 任务、四角色证据、取消、关联报告、直接阅读和完整导出。模型不能未经工具执行就标记完成。
-- L3：固定 ZAP 在断网容器分析脱敏 HAR；独立 Bandit 有限 Python / Semgrep 本地 JS/TS 规则源码审查，不运行项目、不上传代码、不调用 AI。
+- L3：固定 ZAP 在断网容器分析脱敏 HAR；独立 Bandit 有限 Python / Semgrep 本地 JS/TS 规则源码审查，不运行项目、不上传代码。源码审查可单独启用 DeepSeek 匿名规则摘要辅助，最多 4 次；默认关闭，不发送源码、路径或文件名，不能据此确认漏洞。见 [源码审查说明](docs/SOURCE_AUDIT_USAGE_ZH.md)。
 - 发行脚本在输出变更前拒绝修改、暂存或未跟踪的非忽略源文件，避免遗漏新模块或用旧提交号描述新内容。两项实际临时 Git 仓库回归先失败后通过。
+- 默认打包重新构建前端；构建失败即停止，不能分发残留旧页面。VERSION、Python 包与项目元数据均为 0.14.0。
 
 DeepSeek 实际 API ID 为 `deepseek-flash`，本轮调用成功；展示名称不是接口 ID。Qwen3.5-9B 可人工选择，不自动切换云端。CPU 70%、整机已用 RAM 30 GiB，未知资源不放行。所有候选未确认，不自动提交补天。
 
@@ -31,7 +32,16 @@ Docker、靶场/扫描器镜像及 Ollama 权重不随 ZIP 分发。五固定靶
 
 本地打包必须在干净提交上运行，并重新构建 Dashboard。正式发行须另取得当次授权，重新通过实际 CI、覆盖率、凭据与 ZIP/提交身份/干净运行门禁。
 
-## 本轮验证
+## 最新发布前代码验证
+
+- Python 3.12 / 3.8 各 552 项：551 通过、1 个 Windows 符号链接权限条件跳过；Python 行与分支总覆盖 73.76%。
+- 前端 69/69，覆盖语句/分支/函数/行 76.46/70.28/71.13/81.69%；Lint、类型、生产构建、Chromium 8/8 与 23 个 PowerShell 解析通过。
+- 实际 L4 标准/DeepSeek 对照 13/13：各 16 次回环请求、3 个候选，证据一致；标准 2.26 秒，Agent 6.17 秒 / 4 次调用 / 3,579 Token。Agent 完成覆盖后转交人工复核，不等于漏洞已确认。
+- 固定断网 Bandit/Semgrep：已知风险合成样本 2 条，修正负例 0 条，批准文件均实际分析；新云端源码摘要 10/10，2 次实际 DeepSeek 调用 / 720 Token / 7.50 秒，不发送文件定位或代码。
+- 打包旧页面、构建失败仍打包、版本不一致的回归先失败后通过。业务验收同时要求完整有效证据，不只检查 completed 字符串；资源阻断和覆盖不全仍失败。
+- ZIP 身份、校验和、私密文件排除、独立解压及真实页面运行结果须在生成包后检查，具体本机工件保留于上述最新准备目录；未执行的 GitHub CI 和正式发布不计作通过。
+
+## 此前 L4 阶段验证（历史证据，保留追溯）
 
 - Python 3.12 / 3.8 各 536 项：535 通过、1 个 Windows 符号链接权限条件跳过；行与分支总覆盖 73.52%。
 - 前端 66/66，覆盖语句/分支/函数/行 75.93/70.47/70.69/81.61%；Lint、类型、生产构建、Chromium 8/8 与 23 个 PowerShell 解析通过。

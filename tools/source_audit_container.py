@@ -31,7 +31,13 @@ def tool(args, name):
                          'start': {'line': row.get('start', {}).get('line')},
                          'extra': {'severity': row.get('extra', {}).get('severity')}})
     scanned = [x for x in raw.get('metrics', {}) if x.startswith('/input/')] if name == 'bandit' else raw.get('paths', {}).get('scanned', [])
-    return {'results': rows, 'errors': len(raw.get('errors', [])), 'version': raw.get('version'), 'scanned': scanned}
+    skipped = []
+    for row in raw.get('paths', {}).get('skipped', []):
+        if isinstance(row, dict) and str(row.get('path', '')).startswith('/input/'):
+            reason = str(row.get('reason', '')).lower()
+            reason = 'timeout' if 'timeout' in reason else 'parse_error' if 'parse' in reason else 'excluded' if 'ignore' in reason else 'analysis_failed'
+            skipped.append({'path': row['path'], 'reason': reason})
+    return {'results': rows, 'errors': len(raw.get('errors', [])), 'version': raw.get('version'), 'scanned': scanned, 'skipped': skipped}
 
 
 def main():

@@ -31,7 +31,7 @@ export interface TaskRepository {
   saveBusinessSession?(value: BusinessSessionInput): Promise<{ saved: boolean }>
   deleteBusinessSession?(value: { name: string; targetId: string }): Promise<{ deleted: boolean }>
   previewSourceAudit?(value: SourceAuditDraft): Promise<SourceAuditApproval>
-  startSourceAudit?(value: { approvalId: string; confirmStart: true }): Promise<{ accepted: boolean; id: string }>
+  startSourceAudit?(value: { approvalId: string; confirmStart: true; allowCloud?: boolean }): Promise<{ accepted: boolean; id: string }>
   listLocalTargets?(): Promise<{ targets: LocalTarget[] }>
   saveLocalTarget?(value: LocalTargetDraft): Promise<LocalTarget>
   duplicateLocalTarget?(id: string): Promise<LocalTarget>

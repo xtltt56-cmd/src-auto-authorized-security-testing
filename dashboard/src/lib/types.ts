@@ -146,7 +146,8 @@ export type AgentRun = {
   id: string; labId: string; mode: AgentStart['mode'] | 'local-web-assessment' | 'local-web-standard' | 'source-audit' | 'business-assessment' | 'business-standard'; provider: string; state: string; reason: string
   targetType?: string; origin?: string; standardRunId?: string
   directory?: string
-  sourceAudit?: { findings: SourceFinding[]; complete: boolean; toolErrors: number; sourceFiles: number; sourceBytes: number }
+  sourceAudit?: { findings: SourceFinding[]; complete: boolean; toolErrors: number; sourceFiles: number; sourceBytes: number; scannedFiles?: number; unprocessedFiles?: string[]; unprocessedDetails?: { path: string; scanner: string; reason: string }[]; cloudReview?: SourceCloudReview }
+  sourceProgress?: { phase: string; prepared: number; total: number }
   passive?: { findings: Array<{ rule_id: string; title: string; path: string }>; scanner_target_requests: number; coverage?: { discovered_approved_paths: string[]; blocked_link_count: number } }
   steps: number; requests: number; modelCalls: number; tokens: number; usageEstimated: boolean
   elapsedSeconds: number; candidates: number; reportId: string; createdAt: string; candidateId?: string
@@ -174,8 +175,9 @@ export type BusinessExecutionDraft = { id: string; revision: string; confirmIsol
 export type BusinessExecutionApproval = { approvalId: string; origin: string; applicationIdentity: string; requestCount: number; objectCount: number; controls: boolean; expiresAt: string; networkContact: false; modelCalls: 0; mode: string; provider: string }
 
 export type SourceFinding = { scanner: string; rule_id: string; title: string; path: string; line: number; confirmed: false }
+export type SourceCloudReview = { groups: { rule: string; candidates: number; disposition: string; reason: string; suggested_checks: string[] }[]; errors: { rule: string; reason: string }[]; reviewedCandidates: number; unreviewedCandidates: number; reservedCny: number; estimatedCny: number; usageEstimated: boolean }
 export type SourceAuditDraft = { directory: string; languages: string[]; confirmRead: boolean; confirmSnapshot: boolean }
-export type SourceAuditApproval = { approvalId: string; digest: string; directory: string; languages: string[]; files: number; bytes: number; excluded: Record<string, number>; expiresAt: string; modelCalls: 0; networkContact: false }
+export type SourceAuditApproval = { approvalId: string; digest: string; directory: string; languages: string[]; files: number; bytes: number; excluded: Record<string, number>; expiresAt: string; modelCalls: 0; networkContact: false; fileList?: string[]; exclusions?: { path: string; reason: string }[]; exclusionsTruncated?: boolean }
 
 export type LocalApplicationDraft = {
   scope: { schema_version: 2; target_type: 'local_web'; target_id: string; origin: string;

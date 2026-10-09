@@ -154,17 +154,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def _write_json(self, status: int, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        if self.headers.get("Origin", "").strip() == self.server.allowed_origin:
-            self.send_header("Access-Control-Allow-Origin", self.server.allowed_origin)
-            self.send_header("Vary", "Origin")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            if self.headers.get("Origin", "").strip() == self.server.allowed_origin:
+                self.send_header("Access-Control-Allow-Origin", self.server.allowed_origin)
+                self.send_header("Vary", "Origin")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # Navigation can cancel an in-flight poll. The response cannot be
+            # delivered; do not turn that into an application error/second write.
+            self.close_connection = True
 
     def _error(self, status: int, code: str, message: str) -> None:
         if self.command == 'POST':
@@ -422,7 +427,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             from .local_application import LocalApplicationError
             try:
                 coordinator = self.server.service.agent.source_audit
-                result = coordinator.preview(document) if self.path.endswith('/preview') else coordinator.start(document)
+                result = coordinator.preview(document) if self.path.endswith('/preview') else coordinator.start(document, self.server.remote_ai_session_enabled)
                 self._write_json(200 if self.path.endswith('/preview') else 202, result)
             except (ValueError, RuntimeError, LocalApplicationError) as exc:
                 code = getattr(exc, 'reason', str(exc))
@@ -431,8 +436,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     'source_enumeration_limit', 'source_no_supported_files', 'source_scanner_unavailable',
                     'passive_scanner_unavailable', 'source_changed_after_approval', 'source_configuration_changed', 'source_approval_expired',
                     'approval_already_used', 'manual_execution_confirmation_required', 'agent_operation_conflict',
-                    'dashboard_closing', 'resource_limit', 'blocked_disk', 'cancelled', 'task_timeout'}
-                self._error(409 if isinstance(exc, RuntimeError) else 400, code if code in allowed else 'source_request_invalid',
+                    'dashboard_closing', 'resource_limit', 'blocked_disk', 'cancelled', 'task_timeout',
+                    'remote_ai_disabled_for_session', 'cloud_agent_not_validated'}
+                self._error(403 if code == 'remote_ai_disabled_for_session' else 409 if isinstance(exc, RuntimeError) else 400, code if code in allowed else 'source_request_invalid',
                             '源码审查未启动：请核对独立目录授权、固定工具、文件额度与审批摘要')
             except Exception:
                 self._error(503, 'source_audit_unavailable', '源码审查执行器不可用；没有输出异常原文')

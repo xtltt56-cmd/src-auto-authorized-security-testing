@@ -1,8 +1,10 @@
+import os
 import re
 import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -10,6 +12,52 @@ PROJECT_ROOT = Path(__file__).parents[1]
 
 
 class ReleaseDistributionTests(unittest.TestCase):
+    def _release_with_existing_dashboard(self, build_fails=False):
+        git, shell = shutil.which('git'), shutil.which('pwsh') or shutil.which('powershell')
+        node = PROJECT_ROOT / 'runtime/node-v22.23.0-win-x64/node.exe'
+        if not git or not shell or not node.is_file():
+            self.skipTest('Windows release tools required for actual packaging regression')
+        with tempfile.TemporaryDirectory(dir=str(PROJECT_ROOT / 'validation')) as folder:
+            root = Path(folder)
+            (root / 'tools').mkdir()
+            (root / 'dashboard/dist').mkdir(parents=True)
+            runtime = root / 'runtime/node-v22.23.0-win-x64'
+            (runtime / 'node_modules/npm/bin').mkdir(parents=True)
+            os.link(str(node), str(runtime / 'node.exe'))
+            (runtime / 'node_modules/npm/bin/npm-cli.js').write_text(
+                "const fs=require('fs'),path=require('path');"
+                "const dir=process.argv[process.argv.indexOf('--prefix')+1];"
+                + ("process.exit(9);" if build_fails else
+                   "fs.writeFileSync(path.join(dir,'dist/index.html'),'<html>fresh-build</html>');"), encoding='utf-8')
+            shutil.copyfile(str(PROJECT_ROOT / 'tools/build_windows_release.ps1'), str(root / 'tools/build_windows_release.ps1'))
+            (root / 'VERSION').write_text('1.0.0', encoding='utf-8')
+            (root / '.gitignore').write_text('dashboard/dist/\nartifacts/\nruntime/\n', encoding='utf-8')
+            (root / 'dashboard/dist/index.html').write_text('<html>stale-build</html>', encoding='utf-8')
+            for args in (('init',), ('add', '.'), ('-c', 'user.name=Release gate test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'synthetic release')):
+                subprocess.run([git] + list(args), cwd=str(root), check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run([shell, '-NoLogo', '-NoProfile', '-File', str(root / 'tools/build_windows_release.ps1')],
+                                    cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
+            if build_fails:
+                self.assertNotEqual(result.returncode, 0, 'A failed rebuild must not publish an existing stale dashboard')
+                self.assertFalse((root / 'artifacts/release').exists())
+            else:
+                self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode('utf-8', errors='replace'))
+                with zipfile.ZipFile(root / 'artifacts/release/SRC-Auto-Windows-x64.zip') as archive:
+                    self.assertEqual(archive.read('SRC-Auto/dashboard/dist/index.html'), b'<html>fresh-build</html>')
+
+    def test_default_release_rebuilds_existing_dashboard(self):
+        self._release_with_existing_dashboard()
+
+    def test_failed_dashboard_rebuild_does_not_package_stale_dist(self):
+        self._release_with_existing_dashboard(True)
+
+    def test_python_metadata_and_package_version_match_release(self):
+        import src_auto
+        version = (PROJECT_ROOT / 'VERSION').read_text(encoding='utf-8').strip()
+        metadata = (PROJECT_ROOT / 'pyproject.toml').read_text(encoding='utf-8')
+        self.assertEqual(re.search(r'^version = "([^"]+)"', metadata, re.M).group(1), version)
+        self.assertEqual(src_auto.__version__, version)
+
     def _assert_dirty_source_blocks_release(self, untracked):
         git, shell = shutil.which('git'), shutil.which('pwsh') or shutil.which('powershell')
         if not git or not shell:
