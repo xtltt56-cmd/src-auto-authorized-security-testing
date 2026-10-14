@@ -137,7 +137,7 @@ export function LocalApplicationPage({ repository, onOpenReport }: { repository:
           <p className="agent-hint">耗时 {selected.elapsedSeconds} 秒 · {selected.id}。响应头缺失只计为配置建议；零候选不代表系统完全安全。中断或实例变化不自动续跑，请重新审批。</p>
           <div className="table-scroll"><table className="data-table"><thead><tr><th>证据</th><th>实际检查</th><th>HTTP 状态</th><th>观察口径</th></tr></thead><tbody>{selected.observations.map(x => <tr key={x.id}><td>{x.id}</td><td><code>{x.action === 'analyze_passive_capture' ? '断网 ZAP · 脱敏响应头' : `${x.method} ${x.path}`}</code></td><td>{x.action === 'analyze_passive_capture' ? '无网络请求' : x.status_code ?? '未知'}</td><td>{x.candidate ? '功能异常 · 未确认漏洞' : x.action === 'analyze_passive_capture' ? '配置建议 · 未确认漏洞' : '只读观察'}</td></tr>)}</tbody></table></div>
           <AgentDecisionDetails run={selected} />
-          <ol className="agent-trace">{selected.trace.map((x, i) => <li key={i}><strong>{x.decision?.action === 'inspect_local_route' ? '检查批准路由' : x.decision?.action === 'finish' ? '结束提议' : '受控动作'} · {x.decision?.reference} · {x.result}</strong><p>{x.decision?.reason ?? x.reason}</p><small>模型简述不是事实裁决；{x.observationId ? `实际证据：${x.observationId}` : '没有新增观察'}</small></li>)}</ol>
+          <ol className="agent-trace">{selected.trace.filter(step => step.result !== 'model-failed').map((x, i) => <li key={i}><strong>{x.decision?.action === 'inspect_local_route' ? '检查批准路由' : x.decision?.action === 'finish' ? '结束提议' : '受控动作'} · {x.decision?.reference} · {x.result}</strong><p>{x.decision?.reason ?? x.reason}</p><small>模型简述不是事实裁决；{x.observationId ? `实际证据：${x.observationId}` : '没有新增观察'}</small></li>)}</ol>
         </> : <p>选择一个任务，查看真实请求、执行轨迹、覆盖与关联报告。这里不显示模拟进度百分比。</p>}
       </section>
     </div>

@@ -1,5 +1,7 @@
 # SRC-Auto
 
+> **2026-10-14 · v0.14.2 修复范围：** 模型失败现有脱敏分类、中文恢复提示与系统设置入口；人工续接成功后清除当前失败提示但保留历史，模型报错与人工停止同时发生时优先显示已停止。云端响应读取限制为 256 KiB。五靶场复用一次批量 Docker 元数据查询，连接故障或坏数据不再误报容器丢失；批量查询只读取固定名称和状态，不读取环境变量及健康日志。详见 [修复与验收说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)。云端仍不自动重试，旧版本记录不覆盖本轮状态；正式下载以 GitHub Releases 为准。
+
 > **2026-10-14 · v0.14.1 更新范围：** Agent 使用任务专属的可调用动作目录，同时校验动作、批准对象和阶段；尚缺必要证据时不提供完成选项。已接通“动作菜单与执行校验”详情，区分固定配方、模型建议、被拒绝建议和真实工具反馈；格式与普通选择错误合计最多修正一次，安全违规和在途未知动作不重试。另修复 Docker 元数据超时拖住旧控制台、停止助手在大量 TCP 连接下延迟的问题。使用与本轮真实验收见 [v0.14.1 说明](docs/V0_14_1_AGENT_CATALOG.md)。正式下载是否已更新仍以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准，下方为历史成绩。
 
 > **2026-10-09 · v0.14.0 发布范围：** L4 已接通隔离声明与 DPAPI 测试会话、四角色 JSON 对象权限对照、真实标准/Agent 任务及关联报告；专用合成靶场包含固定 SQL 布尔差异和惰性 HTML 反射正负对照。新一轮五固定靶场 DeepSeek 5/5、L4 对照 13/13、本机应用与断网 ZAP 对照 13/13 通过。HTML 反射不等于已确认脚本执行 XSS。使用见 [L4 操作说明](docs/L4_PREPARATION_PROGRESS.md)，准确进度见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。下方 v0.13.0 是历史正式基线；实际发行状态以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准，源码推送本身不等于发行完成。
@@ -28,7 +30,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前版本读取规则：** 当前源码版本为 `v0.14.1`；正式版本、对应提交与下载校验和以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
+> **当前版本读取规则：** 当前源码版本为 `v0.14.2`；正式版本、对应提交与下载校验和以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

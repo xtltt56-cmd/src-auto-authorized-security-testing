@@ -737,7 +737,7 @@ def main(argv=None) -> int:
                 _json({"status": "BLOCKED_CONFIGURATION", "reason": str(exc), "network_contact": False})
                 return 3
             if args.action == "status" and not args.lab:
-                result = [manager.status(spec.lab_id) for spec in load_lab_specs(LOCAL_LABS_PATH)]
+                result = manager.statuses()
                 _json({"status": "COMPLETED", "labs": result, "network_contact": False})
                 return 0
             if not args.lab:

@@ -228,13 +228,18 @@ class LocalLabManager:
         return build_compose_command(self.compose_file, spec, action)
 
     def _inspect(self, spec: LabSpec) -> Dict[str, Any]:
+        return self._inspect_many([spec])[spec.lab_id]
+
+    def _inspect_many(self, specs) -> Dict[str, Dict[str, Any]]:
+        names = {self.container_name(spec): spec.lab_id for spec in specs}
+        unavailable = {spec.lab_id: {"State": "unknown", "Health": "unavailable"} for spec in specs}
         command = [
             "docker",
             "inspect",
+            "--type", "container",
             "--format",
-            "{{json .State}}",
-            self.container_name(spec),
-        ]
+            '{"Name":{{json .Name}},"State":{{json .State.Status}},"Health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}"none"{{end}}}',
+        ] + list(names)
         # Metadata probes must not block every lab card when the engine is down.
         # A timeout means unavailable, not that the user's container was deleted.
         try:
@@ -251,18 +256,47 @@ class LocalLabManager:
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
-            return {"State": "unknown", "Health": "unavailable"}
-        if result.returncode != 0:
-            return {}
+            return unavailable
+        # A failed connection, partial/malformed reply or absent metadata is not
+        # proof that a container was removed. Only exact missing-name diagnostics
+        # can establish absence; raw stderr never leaves this boundary.
+        values = dict(unavailable)
         try:
-            state = json.loads(result.stdout.strip())
+            if len(result.stdout.encode('utf-8')) > 8192:
+                return unavailable
+            seen = set()
+            for line in result.stdout.splitlines():
+                if not line.strip(): continue
+                row = json.loads(line)
+                name = row.get('Name', '')
+                if isinstance(name, str) and name.startswith('/'):
+                    name = name[1:]
+                if name not in names or name in seen:
+                    return unavailable
+                if row.get('State') not in {'running', 'starting', 'exited', 'dead', 'created', 'paused', 'restarting', 'removing'}:
+                    return unavailable
+                if row.get('Health') not in {'healthy', 'starting', 'unhealthy', 'none'}:
+                    return unavailable
+                seen.add(name)
+                values[names[name]] = {'State': row['State'], 'Health': row['Health']}
+            if result.returncode != 0:
+                for line in result.stderr.splitlines():
+                    match = re.fullmatch(r'Error: No such (?:container|object): (src-auto-[a-z0-9-]+)', line.strip())
+                    if match and match.group(1) in names:
+                        name = match.group(1)
+                        if name in seen: return unavailable
+                        values[names[name]] = {}
         except (TypeError, ValueError):
-            return {}
-        if not isinstance(state, Mapping):
-            return {}
-        health = state.get("Health", {})
-        health_status = health.get("Status", "none") if isinstance(health, Mapping) else "none"
-        return {"State": state.get("Status", ""), "Health": health_status}
+            return unavailable
+        except AttributeError:
+            return unavailable
+        return values
+
+    def statuses(self) -> List[Dict[str, Any]]:
+        """One bounded metadata read for all fixed labs; no target requests."""
+        specs = list(self.specs.values())
+        values = self._inspect_many(specs)
+        return [parse_lab_status(spec, values[spec.lab_id]) for spec in specs]
 
     def status(self, lab_id: str, inspect_fn=None) -> Dict[str, Any]:
         spec = self.spec(lab_id)

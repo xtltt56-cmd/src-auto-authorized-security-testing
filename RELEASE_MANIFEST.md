@@ -1,10 +1,10 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.14.1`
+**发布标识：** `v0.14.2`
 
 **准备日期：** 2026-10-14（Asia/Shanghai）
 
-**状态：v0.14.1 发布范围，实际发行状态以 GitHub Releases 为准。** 本轮增加任务专属可调用动作目录、动作/对象/阶段校验、有限修正和可展开的执行记录，修复靶场查询超时及停止助手延迟。最新源码验收与使用说明见 [本轮说明](docs/V0_14_1_AGENT_CATALOG.md)，本机准备记录在 `validation/agent-catalog-20261014`。只有 GitHub Actions、不可变标签、Release 及公开资产全部核验通过，才算发行完成；VERSION、源码推送或本地 ZIP 均不单独证明 latest 已更新。v0.14.0 已正式发布，保留为上一正式基线；其成绩见 [历史复核](docs/V0_14_RELEASE_READINESS.md)。
+**状态：v0.14.2 发布范围，实际发行状态以 GitHub Releases 为准。** 本轮修复模型失败诊断、续接残留提示、停止与失败竞争、云端响应无界读取和 Docker 状态误报/串行延迟。使用及真实验收见 [本轮说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)，本机准备记录在 `validation/runtime-diagnostics-20261014`。只有 GitHub Actions、不可变标签、Release 及公开资产全部核验通过，才算发行完成；VERSION、源码推送或本地 ZIP 均不单独证明 latest 已更新。v0.14.1 保留为上一正式基线，不覆盖历史标签。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 

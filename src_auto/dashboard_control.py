@@ -40,7 +40,7 @@ def docker_dependency_status() -> Tuple[bool, str]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=10,
+            timeout=3,
             shell=False,
             check=False,
         )
@@ -474,16 +474,25 @@ class DashboardControlService:
         now = self._clock()
         labs = []
         tasks = []
+        batch = None
+        if docker_ready and callable(getattr(self.manager, 'statuses', None)):
+            try:
+                batch = {row['lab_id']: row for row in self.manager.statuses()}
+            except Exception:
+                batch = {}
         for lab_id in self.lab_ids:
             spec = self.manager.spec(lab_id)
             try:
-                raw = self.manager.status(lab_id) if docker_ready else {"status": "NOT_FOUND"}
+                raw = batch.get(lab_id, {'status': 'NOT_READY', 'health': 'unavailable'}) if batch is not None else self.manager.status(lab_id) if docker_ready else {"status": "NOT_READY"}
             except Exception:
-                raw = {"status": "NOT_FOUND"}
+                raw = {"status": "NOT_READY", "health": "unavailable"}
             with self._lock:
                 operation = dict(self._operations.get(lab_id, {}))
                 detection = dict(self._detections.get(lab_id, {}))
             mapped = _map_state(str(raw.get("status", "NOT_FOUND")), operation, docker_ready)
+            if docker_ready and raw.get('health') == 'unavailable':
+                mapped['health'] = 'unavailable'
+                mapped['stage'] = '靶场状态暂不可读，未判断为已删除'
             elapsed = _elapsed_seconds(operation, now)
             counters = {"endpoints": 0, "api": 0, "candidates": 0, "blocked": 0, "errors": 1 if mapped["task"] == "failed" else 0}
             detection_state = str(detection.get("state", ""))

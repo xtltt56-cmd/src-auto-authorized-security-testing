@@ -23,8 +23,9 @@ class FakeResponse:
     def __exit__(self, exc_type, exc, tb):
         return False
 
-    def read(self):
-        return json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
+    def read(self, size=-1):
+        value = json.dumps(self.payload, ensure_ascii=False).encode("utf-8")
+        return value if size < 0 else value[:size]
 
 
 class RemoteAITests(unittest.TestCase):

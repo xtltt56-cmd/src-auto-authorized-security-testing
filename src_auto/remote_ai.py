@@ -237,12 +237,17 @@ class _RemoteProvider:
         )
         try:
             with self.urlopen_fn(request, timeout=self.timeout_seconds) as response:
-                raw = response.read().decode("utf-8")
-            value = json.loads(raw)
+                body = response.read(262145)
+                if len(body) > 262144:
+                    raise RemoteProviderError('remote_response_too_large')
         except HTTPError as exc:
             raise RemoteProviderError("remote_http_{}".format(getattr(exc, "code", "error")))
-        except (OSError, URLError, ValueError, UnicodeError):
+        except (OSError, URLError):
             raise RemoteProviderError("remote_request_failed")
+        try:
+            value = json.loads(body.decode('utf-8'))
+        except (ValueError, UnicodeError):
+            raise RemoteProviderError('remote_response_invalid') from None
         if not isinstance(value, dict):
             raise RemoteProviderError("remote_response_not_object")
         return value

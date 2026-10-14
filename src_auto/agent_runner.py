@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from .agent_contracts import CATALOG_VERSION, Decision, Limits, ActionRegistry, CONTROL_ACTIONS
+from .agent_contracts import CATALOG_VERSION, Decision, Limits, ActionRegistry, CONTROL_ACTIONS, model_failure_detail
 from .controls import DiskGuard, StopController
 from .agent_cloud_budget import CALL_TOKEN_RESERVATION, DeepSeekAgentBudget
 
@@ -375,6 +375,7 @@ class AgentRunner:
                         save(state="paused", reason=code); break
                     row["reservedCostCny"] = round(row.get("reservedCostCny", 0) + reserved, 8)
                 row["modelCalls"] += 1
+                row['modelFailure'] = None
                 save(reason="model_deciding")
                 try:
                     remaining = max(1, self.limits.max_seconds - (previous_elapsed + time.monotonic() - started))
@@ -391,13 +392,18 @@ class AgentRunner:
                         row["estimatedCostCny"] = round(row.get("estimatedCostCny", 0) + cost, 8)
                     row["tokens"] += sum(usage)
                     row["usageEstimated"] = row["usageEstimated"] or bool(answer.get("usage_estimated"))
-                except Exception:
+                except Exception as exc:
                     # A timed-out remote request may still be billed; reserve the cap, do not retry it.
                     row["tokens"] += token_reservation
                     row["usageEstimated"] = True
                     if self.cloud_budget:
                         row["estimatedCostCny"] = round(row.get("estimatedCostCny", 0) + reserved, 8)
-                    save(state="paused", reason="model_unavailable"); break
+                    failure = model_failure_detail(exc)
+                    trace.append(dict(index=len(trace) + 1, result='model-failed', source='model',
+                                      validation='not-run', reason=failure['code']))
+                    stopped = cancel.is_set() or StopController(self.root / 'STOP').requested()
+                    save(state='cancelled' if stopped else 'paused', reason='operator_stop' if stopped else 'model_unavailable',
+                         modelFailure=failure); break
                 stop = gate(before_model=False)
                 if stop:
                     save(state=stop[0], reason=stop[1]); break
@@ -471,7 +477,7 @@ class AgentRunner:
                   "任务：{} / {} / {}".format(lab, mode, self.provider), "状态：{}；原因：{}".format(row["state"], row["reason"]),
                   "动作 {}；HTTP 请求 {}；模型调用 {}；Token {}{}".format(row["steps"], row["requests"], row["modelCalls"], row["tokens"], "（含保守估算）" if row["usageEstimated"] else ""), "",
                   "范围摘要：{}；配置摘要：{}；动作版本：{}".format(row["scopeHash"], row["configHash"], CATALOG_VERSION), "",
-                  "```json", json.dumps({"resourceCheck": row.get("resourceCheck"), 'actionMenu': row.get('actionMenu'), "trace": trace, "observations": observations}, ensure_ascii=False, indent=2), "```", "",
+                  "```json", json.dumps({"resourceCheck": row.get("resourceCheck"), 'actionMenu': row.get('actionMenu'), 'modelFailure': row.get('modelFailure'), "trace": trace, "observations": observations}, ensure_ascii=False, indent=2), "```", "",
                   "模型费用按峰值价保守估算 {} 元；累计预算预留 {} 元（超时/取消不退回预算预留，并非真实账单）。最终费用以服务商账单为准。".format(row.get("estimatedCostCny", 0), row.get("reservedCostCny", 0)) if self.cloud_budget else "本任务仅使用本地模型，未调用云端 API。",
                   "候选和报告只用于人工研判，不代表漏洞已经确认。"]
         path.write_text("\n".join(report) + "\n", encoding="utf-8")

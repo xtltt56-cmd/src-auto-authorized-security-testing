@@ -1,5 +1,10 @@
 @import './tokens.css';
 
+.model-failure-notice { padding: 16px; margin: 14px 0; border: 1px solid var(--color-border); border-left: 4px solid var(--color-warning); border-radius: var(--radius-control); background: var(--color-warning-soft); color: var(--color-ink-800); overflow-wrap: anywhere; }
+.model-failure-notice strong { display: block; font-size: 15px; }
+.model-failure-notice p { margin: 8px 0; line-height: 1.65; }
+.model-failure-notice a { display: inline-block; margin-top: 4px; font-weight: 600; }
+
 :root {
   color: var(--color-ink-800);
   background: var(--color-surface);

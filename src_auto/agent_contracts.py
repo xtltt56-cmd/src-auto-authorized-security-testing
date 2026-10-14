@@ -7,6 +7,26 @@ from .ai import _redact
 
 CATALOG_VERSION = "local-readonly-v5"
 CONTROL_ACTIONS = frozenset({'finish', 'request_human_review'})
+
+
+def model_failure_detail(exc):
+    """Only constant codes survive; never retain provider text, headers or keys."""
+    codes = {
+        'provider_key_missing': 'model_key_unavailable', 'provider_key_unavailable': 'model_key_unavailable',
+        'remote_http_401': 'model_auth_failed', 'remote_http_403': 'model_auth_failed',
+        'remote_http_429': 'model_rate_limited', 'remote_http_402': 'model_account_unavailable',
+        'remote_http_404': 'model_endpoint_unavailable', 'remote_request_failed': 'model_transport_failed',
+        'model_input_limit': 'model_input_limit', 'invalid_model_usage': 'model_usage_invalid',
+        'remote_response_too_large': 'model_response_too_large', 'remote_response_not_object': 'model_response_invalid',
+        'remote_response_invalid': 'model_response_invalid',
+    }
+    message = str(exc)
+    code = codes.get(message, 'model_unavailable')
+    if message in {'remote_http_500', 'remote_http_502', 'remote_http_503', 'remote_http_504'}:
+        code = 'model_service_unavailable'
+    before_request = message in {'model_input_limit', 'provider_key_missing', 'provider_key_unavailable'}
+    return {'code': code, 'automaticRetry': False, 'requestMayHaveBeenSent': not before_request}
+
 ACTIONS = frozenset({"inspect_headers", "inspect_local_route", "analyze_passive_capture", "discover_surface", "inspect_api_schema",
                      "compare_object_authorization", "run_local_regression",
                      "validate_controlled_inputs", "compare_object_authorization_matrix",

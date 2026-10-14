@@ -38,3 +38,22 @@ it('marks finish as a control action rather than a scanner execution', async () 
   await userEvent.click(screen.getByText('动作菜单与执行校验'))
   expect(screen.getByText('控制动作 · 不调用扫描器')).toBeVisible()
 })
+
+it('shows safe failure cause and recovery guidance without expanding a menu', () => {
+  render(<AgentDecisionDetails run={{ ...run, state: 'paused', modelFailure: {
+    code: 'model_auth_failed', automaticRetry: false, requestMayHaveBeenSent: true,
+  } }} />)
+  expect(screen.getByText('API 密钥或权限无效')).toBeVisible()
+  expect(screen.getByText(/系统设置.*连接测试/)).toBeVisible()
+  expect(screen.getByText(/不会自动重试/)).toBeVisible()
+})
+
+it('clears the current warning after resumption and retains a correctly named historical failure', async () => {
+  render(<AgentDecisionDetails run={{ ...run, modelFailure: null, trace: [
+    { index: 1, result: 'model-failed', source: 'model', validation: 'not-run', reason: 'model_auth_failed' },
+  ] }} />)
+  expect(screen.queryByRole('status', { name: '模型失败诊断' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByText('动作菜单与执行校验'))
+  expect(screen.getByText(/未进入动作校验/)).toBeVisible()
+  expect(screen.getByText(/未形成有效建议，未调用工具/)).toBeVisible()
+})
