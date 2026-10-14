@@ -1,15 +1,18 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.14.0`
+**发布标识：** `v0.14.1`
 
-**准备日期：** 2026-10-09（Asia/Shanghai）
+**准备日期：** 2026-10-14（Asia/Shanghai）
 
-**状态：v0.14.0 发布范围，实际发行状态以 GitHub Releases 为准。** L4 功能、五靶场实际 DeepSeek 回归、断网扫描器和中文页面已有阶段验收；最新源码修复及发布前复核见 [本轮说明](docs/V0_14_RELEASE_READINESS.md)。最新准备记录在 validation/release-ready-20261009；validation/l4-final-20261009 是此前候选，不代表最新源码修复包。只有 GitHub Actions、不可变标签、Release 及公开资产全部核验通过，才算发行完成；VERSION、源码推送或本地 ZIP 均不单独证明 latest 已更新。v0.13.0 保留为历史正式基线。准确阶段成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)。
+**状态：v0.14.1 发布范围，实际发行状态以 GitHub Releases 为准。** 本轮增加任务专属可调用动作目录、动作/对象/阶段校验、有限修正和可展开的执行记录，修复靶场查询超时及停止助手延迟。最新源码验收与使用说明见 [本轮说明](docs/V0_14_1_AGENT_CATALOG.md)，本机准备记录在 `validation/agent-catalog-20261014`。只有 GitHub Actions、不可变标签、Release 及公开资产全部核验通过，才算发行完成；VERSION、源码推送或本地 ZIP 均不单独证明 latest 已更新。v0.14.0 已正式发布，保留为上一正式基线；其成绩见 [历史复核](docs/V0_14_RELEASE_READINESS.md)。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
 ## 本版本包含什么
 
+- Agent 工具菜单与真实处理函数由同一目录生成，不再从全局动作集合减项；各任务只能选择自己的批准对象。被动扫描在路由采集完成后才可选，必要证据不足不能 finish。
+- 格式错误和普通动作选择错误合计最多修正一次；未知动作、外来对象/证据、禁止字段、重复动作、STOP 和未知在途状态仍失败关闭，不放宽范围，不自动重试工具或云端请求。
+- Agent、本机应用与业务任务详情可展开菜单、校验、拒绝原因和实际执行器；旧任务没有新字段时明确显示历史记录，不伪造菜单或继续运行。
 - 保留五固定回环靶场、授权草稿、离线范围审阅、真实任务/报告、中文内嵌 API 设置、本机应用审查及自定义目标库。
 - 保留受控 Agent 的有限动作、真实观察反馈、覆盖校验、逐请求范围/时间/资源/STOP 检查、人工启用/单任务云端同意、共享预算与取消。
 - L4-A：SQLite 业务草稿、隔离环境说明、四角色预期权限、目标/入口/角色/有效期绑定的 DPAPI 测试会话。保存和离线核对不授予执行权限。

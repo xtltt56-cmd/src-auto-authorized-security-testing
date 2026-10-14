@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,15 @@ from src_auto.cli import build_parser
 
 
 class LocalLabSpecTests(unittest.TestCase):
+    def test_unresponsive_docker_metadata_is_bounded_and_not_reported_as_missing(self):
+        root = Path(__file__).resolve().parents[1]
+        manager = LocalLabManager(root, root / 'config/labs/local_labs.json', root / 'docker-compose.local-labs.yml')
+        with patch('src_auto.local_labs.subprocess.run', side_effect=subprocess.TimeoutExpired('docker inspect', 3)) as run:
+            result = manager.status('juice-shop')
+        self.assertEqual(result['status'], 'NOT_READY')
+        self.assertEqual(result['health'], 'unavailable')
+        self.assertEqual(run.call_args.kwargs['timeout'], 3)
+
     def test_loads_only_pinned_loopback_labs(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "labs.json"

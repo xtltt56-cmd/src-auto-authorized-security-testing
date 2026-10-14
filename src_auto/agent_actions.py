@@ -8,7 +8,7 @@ from urllib.error import HTTPError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from .agent_contracts import ACTIONS, CATALOG_VERSION
+from .agent_contracts import ActionRegistry, ActionSpec, CONTROL_ACTIONS, CATALOG_VERSION
 from .ai import sanitize_finding
 from .config import load_mapping
 from .local_discovery import MAX_DISCOVERY_BODY, discover_local_surface
@@ -94,10 +94,10 @@ class LocalActions:
         self.policy = RuntimePolicy.from_mapping(dict(policy.to_mapping(), allowed_hosts=["127.0.0.1"], allowed_ports=[spec.host_port]))
         self.references = ["entry"]
         self.permissions = None
-        self.capabilities = sorted(ACTIONS - {"read_observation", "review_candidate", "inspect_api_schema",
-                                              "compare_object_authorization", "run_local_regression",
-                                              "validate_controlled_inputs", "compare_object_authorization_matrix"})
-        if lab_id in {"vampi", "business-api"}: self.capabilities.append("inspect_api_schema")
+        specs = [ActionSpec('inspect_headers', ('entry',), self._inspect_headers),
+                 ActionSpec('discover_surface', ('entry',), self._discover_surface)]
+        if lab_id in {"vampi", "business-api"}:
+            specs.append(ActionSpec('inspect_api_schema', ('entry',), self._inspect_api_schema))
         if lab_id == "business-api":
             self.permissions = load_mapping(root / "config/agent/permissions.json")
             private = self.permissions.get("private_objects", [])
@@ -108,17 +108,18 @@ class LocalActions:
                 raise ValueError("invalid_permission_manifest")
             if (self.permissions.get("owner"), self.permissions.get("peer"), self.permissions.get("anonymous")) != ("buyer-a", "buyer-b", "anonymous"):
                 raise ValueError("invalid_permission_manifest")
-            self.capabilities.append("compare_object_authorization")
+            specs.append(ActionSpec('compare_object_authorization', tuple(private + public), self._compare_object))
             self.references += private + public
         if mode == "local-assessment":
-            self.capabilities.append("run_local_regression")
+            specs.append(ActionSpec('run_local_regression', ('entry',), self._run_regression))
             if lab_id == "dvwa":
-                self.capabilities.append("validate_controlled_inputs")
+                specs.append(ActionSpec('validate_controlled_inputs', ('entry',), self._validate_inputs))
             if lab_id == "business-api":
-                self.capabilities.append("compare_object_authorization_matrix")
+                specs.append(ActionSpec('compare_object_authorization_matrix', ('entry',), self._run_matrix))
         if candidate:
             self.references.append("candidate")
-            self.capabilities.append("review_candidate")
+            specs.append(ActionSpec('review_candidate', ('candidate',), self._review_candidate))
+        self.action_registry = ActionRegistry(specs)
         self.scope_hash = hashlib.sha256(json.dumps({"lab": lab_id, "entry": self.entry, "policy": policy.to_mapping()}, sort_keys=True).encode()).hexdigest()
         # No secrets included in checkpoint digests or model inputs.
         config = load_mapping(root / "config/models.yaml")
@@ -130,66 +131,70 @@ class LocalActions:
     @property
     def requests(self): return self.client.requests
 
+    @property
+    def capabilities(self): return self.action_registry.capabilities + sorted(CONTROL_ACTIONS)
+
     @requests.setter
     def requests(self, value): self.client.requests = value
 
     def execute(self, value):
-        if value.action not in self.capabilities: raise RuntimeError("capability_unavailable")
-        if value.action == "review_candidate":
-            if value.reference != "candidate" or not self.candidate: raise RuntimeError("scope_blocked")
-            return {"status": "ok", "summary": "已加载本任务关联的脱敏候选；仍需核对复现与影响", "finding": sanitize_finding(self.candidate), "candidate": False}
-        if value.action == "compare_object_authorization":
-            if self.lab_id != "business-api" or value.reference not in self.permissions["private_objects"] + self.permissions["public_objects"]: raise RuntimeError("scope_blocked")
-            access = "public" if value.reference in self.permissions["public_objects"] else "private"
-            snapshots = [self.client.fetch(self.client.origin + "/agent/cases/" + value.reference, user=x) for x in ("buyer-a", "buyer-b", "anonymous")]
-            bodies = [json.loads(x["body"]) for x in snapshots]
-            statuses = [x["status_code"] for x in snapshots]
-            ownership = bodies[0].get("owner") == "buyer-a" and bodies[0].get("id") == value.reference
-            equivalent = bodies[0] == bodies[1]
-            candidate = access == "private" and ownership and statuses[0] == 200 and statuses[1] == 200 and equivalent
-            return {"status": "ok", "summary": "合成账号对象比较完成；不保留对象正文", "access": access,
-                    "statuses": statuses, "ownerVerified": ownership, "equivalentPeer": equivalent,
-                    "fingerprints": [hashlib.sha256(x["body"].encode()).hexdigest() for x in snapshots],
-                    "candidate": candidate, "confirmed": False}
-        if value.action == "run_local_regression":
-            if value.reference != "entry" or self.mode != "local-assessment": raise RuntimeError("scope_blocked")
-            if self.manager.status(self.lab_id).get("status") != "READY": raise RuntimeError("target_unavailable")
-            return run_agent_regression(self.root, self.lab_id, self.manager, before_request=self._reserve_request)
-        if value.action == "validate_controlled_inputs":
-            if value.reference != "entry" or self.mode != "local-assessment" or self.lab_id != "dvwa": raise RuntimeError("scope_blocked")
-            if self.manager.status(self.lab_id).get("status") != "READY": raise RuntimeError("target_unavailable")
-            return run_agent_dvwa_controls(self.root, self.manager, before_request=self._reserve_request)
-        if value.action == "compare_object_authorization_matrix":
-            if value.reference != "entry" or self.mode != "local-assessment" or self.lab_id != "business-api": raise RuntimeError("scope_blocked")
-            if self.manager.status(self.lab_id).get("status") != "READY": raise RuntimeError("target_unavailable")
-            return self._compare_authorization_matrix()
-        if value.reference != "entry": raise RuntimeError("scope_blocked")
-        if value.action == "inspect_headers":
-            result = self.client.fetch(self.entry)
-            if result["status_code"] >= 500: raise RuntimeError("target_unavailable")
-            missing = [x for x in ("content-security-policy", "x-content-type-options", "x-frame-options") if not result["headers"].get(x)]
-            return {"status": "ok", "summary": "响应头元数据检查；缺失项仅是加固建议，不自动计为漏洞", "httpStatus": result["status_code"], "missingHeaders": missing, "candidate": False}
-        if value.action == "discover_surface":
-            truncated = []
-            def fetch_discovery(url):
-                result = self.client.fetch(url, max_response_bytes=MAX_DISCOVERY_BODY, truncate_response=True)
-                if result.get("truncated"):
-                    truncated.append(url)
-                return result
-            result = discover_local_surface(self.policy, self.entry, fetch_fn=fetch_discovery, max_scripts=2)
-            if result.get("status") != "COMPLETED": raise RuntimeError("surface_discovery_failed")
-            return {"status": "ok", "summary": "有限同源静态页面分析；未执行发现的API",
-                    "endpoints": len(result.get("discovered_urls", [])), "api": len(result.get("api_urls", [])),
-                    "excluded": len(result.get("external_urls_excluded", [])), "candidate": False,
-                    "truncated": bool(truncated), "degraded": bool(result.get("degraded", False) or truncated)}
-        if value.action == "inspect_api_schema":
-            result = self.client.fetch(self.client.origin + "/openapi.json")
-            if result["status_code"] != 200: raise RuntimeError("schema_unavailable")
-            document = json.loads(result["body"])
-            return {"status": "ok", "summary": "仅读取规范；不解析远程引用、不自动访问规范中的URL",
-                    "schemaVersion": str(document.get("openapi", document.get("swagger", "unknown")))[:20],
-                    "pathCount": len(document.get("paths", {})), "candidate": False}
-        raise RuntimeError("capability_unavailable")
+        return self.action_registry.execute(value)
+
+    def _review_candidate(self, value):
+        if not self.candidate: raise RuntimeError('scope_blocked')
+        return {"status": "ok", "summary": "已加载本任务关联的脱敏候选；仍需核对复现与影响", "finding": sanitize_finding(self.candidate), "candidate": False}
+
+    def _compare_object(self, value):
+        access = "public" if value.reference in self.permissions["public_objects"] else "private"
+        snapshots = [self.client.fetch(self.client.origin + "/agent/cases/" + value.reference, user=x) for x in ("buyer-a", "buyer-b", "anonymous")]
+        bodies = [json.loads(x["body"]) for x in snapshots]
+        statuses = [x["status_code"] for x in snapshots]
+        ownership = bodies[0].get("owner") == "buyer-a" and bodies[0].get("id") == value.reference
+        equivalent = bodies[0] == bodies[1]
+        candidate = access == "private" and ownership and statuses[0] == 200 and statuses[1] == 200 and equivalent
+        return {"status": "ok", "summary": "合成账号对象比较完成；不保留对象正文", "access": access,
+                "statuses": statuses, "ownerVerified": ownership, "equivalentPeer": equivalent,
+                "fingerprints": [hashlib.sha256(x["body"].encode()).hexdigest() for x in snapshots],
+                "candidate": candidate, "confirmed": False}
+
+    def _run_regression(self, value):
+        if self.manager.status(self.lab_id).get('status') != 'READY': raise RuntimeError('target_unavailable')
+        return run_agent_regression(self.root, self.lab_id, self.manager, before_request=self._reserve_request)
+
+    def _validate_inputs(self, value):
+        if self.manager.status(self.lab_id).get('status') != 'READY': raise RuntimeError('target_unavailable')
+        return run_agent_dvwa_controls(self.root, self.manager, before_request=self._reserve_request)
+
+    def _run_matrix(self, value):
+        if self.manager.status(self.lab_id).get('status') != 'READY': raise RuntimeError('target_unavailable')
+        return self._compare_authorization_matrix()
+
+    def _inspect_headers(self, value):
+        result = self.client.fetch(self.entry)
+        if result['status_code'] >= 500: raise RuntimeError('target_unavailable')
+        missing = [x for x in ('content-security-policy', 'x-content-type-options', 'x-frame-options') if not result['headers'].get(x)]
+        return {'status': 'ok', 'summary': '响应头元数据检查；缺失项仅是加固建议，不自动计为漏洞', 'httpStatus': result['status_code'], 'missingHeaders': missing, 'candidate': False}
+
+    def _discover_surface(self, value):
+        truncated = []
+        def fetch_discovery(url):
+            result = self.client.fetch(url, max_response_bytes=MAX_DISCOVERY_BODY, truncate_response=True)
+            if result.get('truncated'): truncated.append(url)
+            return result
+        result = discover_local_surface(self.policy, self.entry, fetch_fn=fetch_discovery, max_scripts=2)
+        if result.get('status') != 'COMPLETED': raise RuntimeError('surface_discovery_failed')
+        return {'status': 'ok', 'summary': '有限同源静态页面分析；未执行发现的API',
+                'endpoints': len(result.get('discovered_urls', [])), 'api': len(result.get('api_urls', [])),
+                'excluded': len(result.get('external_urls_excluded', [])), 'candidate': False,
+                'truncated': bool(truncated), 'degraded': bool(result.get('degraded', False) or truncated)}
+
+    def _inspect_api_schema(self, value):
+        result = self.client.fetch(self.client.origin + '/openapi.json')
+        if result['status_code'] != 200: raise RuntimeError('schema_unavailable')
+        document = json.loads(result['body'])
+        return {'status': 'ok', 'summary': '仅读取规范；不解析远程引用、不自动访问规范中的URL',
+                'schemaVersion': str(document.get('openapi', document.get('swagger', 'unknown')))[:20],
+                'pathCount': len(document.get('paths', {})), 'candidate': False}
 
     def _reserve_request(self):
         if self.client.cancel.is_set() or self.client.stop(): raise RuntimeError("cancelled")

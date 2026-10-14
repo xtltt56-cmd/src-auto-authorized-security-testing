@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
-from .agent_contracts import Limits
+from .agent_contracts import Limits, ActionRegistry, ActionSpec, CONTROL_ACTIONS
 from .agent_resources import WindowsResources
 from .agent_runner import AgentRunner, process_identity, project_path
 from .agent_cloud_budget import DeepSeekAgentBudget
@@ -106,12 +106,9 @@ class LocalWebActions:
         self.config_hash = hashlib.sha256((plan.digest() + identity + 'local-web-v1' + (scanner_config_hash(root) if scope.local_web.profile_id == PASSIVE_PROFILE else '')).encode()).hexdigest()
         self.routes = {'route-{:03d}'.format(i + 1): request for i, request in enumerate(plan.requests)}
         self.references = ['entry'] + list(self.routes)
-        self.capabilities = ['inspect_local_route', 'finish', 'request_human_review']
         self.capture = PassiveCapture(scope) if scope.local_web.profile_id == PASSIVE_PROFILE else None
         self.scanner_hash = scanner_config_hash(root) if self.capture else ''
         self.passive_result = None
-        if self.capture:
-            self.capabilities.append('analyze_passive_capture')
         self.permissions = {'target_type': 'local_web', 'routeReferences': list(self.routes),
                             'requiredRouteCount': len(self.routes), 'rawBodyAllowed': False,
                             'note': '必须逐个检查全部批准 routeReferences；完成时引用全部观察。只读，不允许新增地址。'}
@@ -124,6 +121,14 @@ class LocalWebActions:
             self.permissions.update(passiveRequired=True, note='全部批准路由检查后，必须调用 analyze_passive_capture(entry)。仅脱敏响应头与批准链接，不扩大范围。')
         self.completed_routes = set()
         self.standard_run_id = ''
+        specs = [ActionSpec('inspect_local_route', tuple(self.routes), self._inspect_route)]
+        if self.capture:
+            specs.append(ActionSpec('analyze_passive_capture', ('entry',), self._analyze_capture,
+                                    lambda: self.completed_routes == set(self.routes) and self.passive_result is None))
+        self.action_registry = ActionRegistry(specs)
+
+    @property
+    def capabilities(self): return self.action_registry.capabilities + sorted(CONTROL_ACTIONS)
 
     @property
     def requests(self):
@@ -161,17 +166,20 @@ class LocalWebActions:
         return ''
 
     def execute(self, value):
-        if value.action == 'analyze_passive_capture' and value.reference == 'entry':
-            if not self.scanner or self.passive_result is not None or self.completed_routes != set(self.routes):
-                raise RuntimeError('capability_unavailable')
-            denial = self.before_request()
-            if denial: raise LocalApplicationError(denial)
-            self.passive_result = self.scanner.run(self.scope, self.capture, max(.01, self.client.deadline - time.monotonic()))
-            return dict(status='ok', summary='断网 ZAP 已真实分析脱敏响应头；正文规则未启用；未确认漏洞',
-                        candidate=False, candidateCount=0, advisoryCount=len(self.passive_result['findings']),
-                        coverage=self.passive_result.get('coverage', {}), confirmed=False, category='configuration-advisory')
-        if value.action != 'inspect_local_route' or value.reference not in self.routes or value.reference in self.completed_routes:
+        return self.action_registry.execute(value)
+
+    def _analyze_capture(self, value):
+        if not self.scanner or self.passive_result is not None or self.completed_routes != set(self.routes):
             raise RuntimeError('capability_unavailable')
+        denial = self.before_request()
+        if denial: raise LocalApplicationError(denial)
+        self.passive_result = self.scanner.run(self.scope, self.capture, max(.01, self.client.deadline - time.monotonic()))
+        return dict(status='ok', summary='断网 ZAP 已真实分析脱敏响应头；正文规则未启用；未确认漏洞',
+                    candidate=False, candidateCount=0, advisoryCount=len(self.passive_result['findings']),
+                    coverage=self.passive_result.get('coverage', {}), confirmed=False, category='configuration-advisory')
+
+    def _inspect_route(self, value):
+        if value.reference in self.completed_routes: raise RuntimeError('duplicate_action')
         observation = dict(self.client.fetch(self.routes[value.reference]))
         self.completed_routes.add(value.reference)
         anomaly = observation['status_code'] >= 500
@@ -182,6 +190,9 @@ class LocalWebActions:
     def completion_ready(self, evidence):
         checked = {x.get('reference') for x in evidence if x.get('action') == 'inspect_local_route'}
         return set(self.routes) <= checked and (not self.capture or any(x.get('action') == 'analyze_passive_capture' for x in evidence))
+
+    def required_evidence(self):
+        return [('inspect_local_route', ref) for ref in self.routes] + ([('analyze_passive_capture', 'entry')] if self.capture else [])
 
     def persist_candidates(self, agent_id, value, observation):
         store = Store(self.root / 'data/src_auto.sqlite3')

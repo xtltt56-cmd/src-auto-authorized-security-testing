@@ -1,6 +1,8 @@
 # SRC-Auto 平台完整使用手册
 
-> **2026-10-09 · v0.14.0 本地候选版（尚未正式发行）：** 「业务验证准备」同页已接通四角色对象对照、标准/DeepSeek Agent 真实任务、取消和完整报告；使用 [L4 操作指南](docs/L4_PREPARATION_PROGRESS.md)。专用合成靶场可手动运行 `START_L4_LAB.ps1`，固定 SQL/惰性 HTML 正负对照不开放任意载荷，不代表已确认 XSS。最新全流程成绩见 [统一验收](docs/L4_UNIFIED_ACCEPTANCE.md)，GitHub 正式下载尚未同步此候选版。
+> **2026-10-14 · v0.14.1 使用入口：** 保留现有桌面启动器、目标录入和人工确认流程。在受控 Agent、本机应用或隔离业务任务中展开“动作菜单与执行校验”，可查看模型实际获准选择的动作、对象、尚缺证据，以及建议是否通过校验、是否真正调用了工具。菜单是最近一轮快照，不是点击执行的新入口。详情见 [本轮指南](docs/V0_14_1_AGENT_CATALOG.md)；正式下载版本以 GitHub Releases 为准。
+
+> **2026-10-09 · v0.14.0 上一正式版：** 「业务验证准备」同页已接通四角色对象对照、标准/DeepSeek Agent 真实任务、取消和完整报告；使用 [L4 操作指南](docs/L4_PREPARATION_PROGRESS.md)。专用合成靶场可手动运行 `START_L4_LAB.ps1`，固定 SQL/惰性 HTML 正负对照不开放任意载荷，不代表已确认 XSS。该版已正式发布，下方更早版本的未发布状态只记录当时情况。
 
 > **v0.13.0 使用说明（2026-10-06）：** 自定义本地靶场 / 应用目标库、L3 断网 ZAP 与独立源码审查优先阅读 [统一操作指南](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)。本轮真实验收及限制见 [验收报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)，分发内容以 [当前发布清单](RELEASE_MANIFEST.md) 为准。源码中的版本、下载包 VERSION 和 release-manifest.json 应一致；下方旧版成绩保留用于追溯。
 

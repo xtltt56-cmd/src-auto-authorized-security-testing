@@ -34,6 +34,26 @@ def wait_for_health(port, process):
 
 
 class DashboardProcessTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows listener parser')
+    def test_listener_parser_requires_exact_loopback_state_port_and_owner(self):
+        helper = str(ROOT / 'tools/dashboard_process.ps1').replace("'", "''")
+        script = ". '{}'\n".format(helper) + """
+$rows = @('TCP 127.0.0.1:4174 0.0.0.0:0 LISTENING 1234',
+          'TCP 0.0.0.0:4174 0.0.0.0:0 LISTENING 999',
+          'TCP 127.0.0.1:41740 0.0.0.0:0 LISTENING 999',
+          'TCP 127.0.0.1:4174 127.0.0.1:9999 ESTABLISHED 999')
+$item = Convert-DashboardTcpListeners -Rows $rows -Port 4174
+if($item.OwningProcess -ne 1234) { throw 'Wrong listener selected' }
+if(Convert-DashboardTcpListeners -Rows $rows -Port 1111) { throw 'Foreign port selected' }
+try {
+    Convert-DashboardTcpListeners -Rows @('TCP 127.0.0.1:4174 0.0.0.0:0 LISTENING 1', 'TCP 127.0.0.1:4174 0.0.0.0:0 LISTENING 2') -Port 4174
+    exit 9
+} catch { exit 0 }
+"""
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], cwd=str(ROOT),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+        self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode('utf-8', errors='replace'))
+
     def start_api(self, port, origin):
         environment = os.environ.copy()
         environment["SRC_AUTO_REMOTE_AI_CONSENT"] = "disabled"

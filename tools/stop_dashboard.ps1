@@ -10,8 +10,8 @@ $ProgressPreference = 'SilentlyContinue'
 try {
     $apiHealth = $null
     $webHealth = $null
-    $apiListener = Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $ApiPort -ErrorAction SilentlyContinue
-    $webListener = Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $WebPort -ErrorAction SilentlyContinue
+    $apiListener = Get-DashboardLoopbackListener -Port $ApiPort
+    $webListener = Get-DashboardLoopbackListener -Port $WebPort
     if($apiListener) {
         $apiHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$ApiPort/health" -TimeoutSec 3
         if($apiHealth.service -ne 'src-auto-dashboard-api') { throw 'API service mismatch.' }

@@ -13,6 +13,22 @@ from src_auto.agent_service import AgentService
 
 
 class LocalApplicationWorkflowTests(unittest.TestCase):
+    def test_passive_action_is_not_advertised_until_all_routes_are_captured(self):
+        self.doc['scope']['profile_id'] = 'bounded-passive-v1'
+        self.service.set_enabled(True)
+        model = ScriptedModel([decision('inspect_local_route', reference='route-001'),
+                               decision('inspect_local_route', reference='route-002'),
+                               decision('analyze_passive_capture'), decision('finish', evidence=['o1', 'o2', 'o3'])])
+        self.service.model_factory = lambda *args: model
+        with patch('src_auto.local_application_workflow.ZapOfflineScanner.prepare'), patch('src_auto.local_application_workflow.ZapOfflineScanner.run', return_value={'status': 'completed', 'findings': [], 'scanner_target_requests': 0}):
+            approval = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)
+            row = self.wait_run(self.service.local_app.start(dict(approvalId=approval['approvalId'], confirmStart=True), False)['id'])
+        self.assertEqual(row['state'], 'completed')
+        self.assertNotIn('analyze_passive_capture', model.contexts[0]['actionReferences'])
+        self.assertNotIn('analyze_passive_capture', model.contexts[1]['actionReferences'])
+        self.assertEqual(model.contexts[2]['actionReferences']['analyze_passive_capture'], ['entry'])
+        self.assertNotIn('analyze_passive_capture', model.contexts[3]['actionReferences'])
+
     def test_arbitrary_tool_exception_text_is_not_persisted(self):
         self.service.set_enabled(True)
         preview = self.service.local_app.preview(dict(self.doc, mode='agent', provider='local'), False)

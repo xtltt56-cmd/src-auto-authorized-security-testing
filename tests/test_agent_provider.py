@@ -38,7 +38,8 @@ class AgentProviderTests(unittest.TestCase):
         context = dict(mode='local-web-assessment', lab='owned-web', capabilities=['finish', 'request_human_review'],
                        references=['entry'] + ['route-{:03d}'.format(i) for i in range(1, 7)],
                        permissions={'routeReferences': ['route-{:03d}'.format(i) for i in range(1, 7)], 'requiredRouteCount': 6},
-                       observations=observations)
+                       observations=observations, actionReferences={'finish': ['entry'], 'request_human_review': ['entry']},
+                       pendingChecks=[], used=[['inspect_local_route', 'route-{:03d}'.format(i)] for i in range(1, 7)], steps_remaining=2)
         for passive in (False, True):
             if passive:
                 context['permissions'].update(passiveRequired=True)
@@ -104,6 +105,16 @@ class AgentProviderTests(unittest.TestCase):
         self.assertEqual(payloads[0]["thinking"], {"type": "disabled"})
         self.assertEqual(payloads[0]["temperature"], 0)
         self.assertEqual(payloads[0]["response_format"], {"type": "json_object"})
+
+
+    def test_prompt_includes_safe_four_field_example_not_a_workflow_result(self):
+        payloads = []
+        provider = SimpleNamespace(model='deepseek-flash', provider_name='deepseek', _post=lambda payload: (
+            payloads.append(payload) or {'choices': [{'message': {'content': '{}'}}], 'usage': {'prompt_tokens': 1, 'completion_tokens': 1}}))
+        AgentModel(provider, local=False).decide(self.context())
+        instructions = payloads[0]['messages'][0]['content']
+        self.assertIn('{"action":"request_human_review","reference":"entry","evidence":[],"reason":', instructions)
+        self.assertIn('不要输出任务报告', instructions)
 
 
 if __name__ == "__main__": unittest.main()

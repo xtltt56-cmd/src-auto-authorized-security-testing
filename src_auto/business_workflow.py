@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-from .agent_contracts import Decision, Limits
+from .agent_contracts import Decision, Limits, ActionRegistry, ActionSpec, CONTROL_ACTIONS
 from .agent_runner import AgentRunner, project_path
 from .agent_resources import WindowsResources
 from .business_preparation import BusinessPreparation, ROLES
@@ -96,8 +96,6 @@ class BusinessActions:
         self.config_hash = hashlib.sha256((self.row['revision'] + approval['identity'] + str(approval['controls'])).encode()).hexdigest()
         self.objects = {'object-{:03d}'.format(i+1): x for i, x in enumerate(self.row['cases'])}
         self.references = ['entry'] + list(self.objects)
-        self.capabilities = ['compare_business_object', 'finish', 'request_human_review']
-        if approval['controls']: self.capabilities.insert(1, 'validate_business_controls')
         self.permissions = {'objects': {ref: {'expected': case['expected'], 'owner': case['owner']} for ref, case in self.objects.items()},
                             'allObjectReferencesRequired': True, 'controlsRequired': approval['controls'], 'rawBodyAllowed': False,
                             'summary': '四角色、同一精确对象；固定合成输入对照；必须引用全部已执行观察才能完成'}
@@ -105,6 +103,13 @@ class BusinessActions:
         self.completed, self.standard_run_id = set(), ''
         self.client = BusinessHTTP(ScopeGuard(self.scope), self.plan, cancel, self.permission_gate, self._before_request,
                                    lambda: StopController(root / 'STOP').requested())
+        specs = [ActionSpec('compare_business_object', tuple(self.objects), self._compare_object)]
+        if approval['controls']:
+            specs.append(ActionSpec('validate_business_controls', ('entry',), self._validate_controls))
+        self.action_registry = ActionRegistry(specs)
+
+    @property
+    def capabilities(self): return self.action_registry.capabilities + sorted(CONTROL_ACTIONS)
 
     @property
     def requests(self): return self.client.request_count
@@ -146,49 +151,56 @@ class BusinessActions:
         finally: self.client.session_headers = {}; self.client.object_id = None
 
     def execute(self, value):
-        if value.action not in self.capabilities: raise LocalApplicationError('capability_unavailable')
+        return self.action_registry.execute(value)
+
+    def _compare_object(self, value):
         if value.reference in self.completed: raise LocalApplicationError('duplicate_action')
-        if value.action == 'compare_business_object' and value.reference in self.objects:
-            case = self.objects[value.reference]
-            snapshots = {role: self._fetch(case['path'], role, case['id']) for role in ROLES}
-            owner = case['owner'] if case['owner'] != 'public' else next(x for x in ROLES if case['expected'][x])
-            baseline = snapshots[owner]
-            valid = 200 <= baseline['status_code'] < 300 and baseline['objectMatched'] and bool(baseline['jsonFingerprint'])
-            equivalent = {role: bool(valid and 200 <= obs['status_code'] < 300 and obs['objectMatched']
-                                     and obs['jsonFingerprint'] == baseline['jsonFingerprint']) for role, obs in snapshots.items()}
-            unexpected = [role for role in ROLES if not case['expected'][role] and equivalent[role]]
-            mismatches = [role for role in ROLES if case['expected'][role] and not equivalent[role]]
-            uncertain = [role for role, obs in snapshots.items() if not equivalent[role] and obs['status_code'] not in (401, 403, 404)]
-            result = dict(status='ok', summary='四角色对象对照；正文仅在内存比较，未保留或发送', path=case['path'],
-                expected=case['expected'], statuses={r: x['status_code'] for r, x in snapshots.items()},
-                fingerprints={r: x['jsonFingerprint'] for r, x in snapshots.items()}, baselineValid=valid,
-                equivalent=equivalent, unexpectedRoles=unexpected, missingExpectedRoles=mismatches, inconclusiveRoles=uncertain,
-                candidate=bool(unexpected), candidateCount=int(bool(unexpected)), confirmed=False,
-                validated=bool(valid and not mismatches and not uncertain))
-        elif value.action == 'validate_business_controls' and value.reference == 'entry' and self.approval['controls']:
-            from .l4_lab import CONTROL_PATHS
-            observations = {path: self._fetch(path) for path in CONTROL_PATHS}
-            checks = {}
-            for variant in ('vulnerable', 'protected'):
-                sql = [observations['/l4/sqli/{}/{}'.format(variant, probe)] for probe in ('baseline', 'true', 'false')]
-                checks[variant] = {'sqli': bool(all(x['status_code'] == 200 for x in sql) and sql[0]['rowCount'] == sql[1]['rowCount'] == 1
-                    and sql[0]['jsonFingerprint'] == sql[1]['jsonFingerprint'] and sql[2]['rowCount'] == 0),
-                    'counts': [x['rowCount'] for x in sql], 'htmlReflection': observations['/l4/xss/{}/marker'.format(variant)]['markerParsed']}
-            valid = (all(x['status_code'] == 200 and not x['body_truncated'] for x in observations.values())
-                     and checks['vulnerable']['sqli'] and not checks['protected']['sqli']
-                     and checks['vulnerable']['htmlReflection'] and not checks['protected']['htmlReflection']
-                     and checks['protected']['counts'] == [1, 0, 0])
-            result = dict(status='ok', summary='固定合成 SQL 布尔差异与惰性 HTML 反射正负对照；脚本执行未验证',
-                controlsValid=valid, checks=checks, candidate=valid, candidateCount=2 if valid else 0,
-                candidateKinds=['boolean-sqli-differential', 'inert-html-reflection'] if valid else [],
-                confirmed=False, validated=valid, scriptExecutionVerified=False)
-        else: raise LocalApplicationError('capability_unavailable')
+        case = self.objects[value.reference]
+        snapshots = {role: self._fetch(case['path'], role, case['id']) for role in ROLES}
+        owner = case['owner'] if case['owner'] != 'public' else next(x for x in ROLES if case['expected'][x])
+        baseline = snapshots[owner]
+        valid = 200 <= baseline['status_code'] < 300 and baseline['objectMatched'] and bool(baseline['jsonFingerprint'])
+        equivalent = {role: bool(valid and 200 <= obs['status_code'] < 300 and obs['objectMatched']
+                                 and obs['jsonFingerprint'] == baseline['jsonFingerprint']) for role, obs in snapshots.items()}
+        unexpected = [role for role in ROLES if not case['expected'][role] and equivalent[role]]
+        mismatches = [role for role in ROLES if case['expected'][role] and not equivalent[role]]
+        uncertain = [role for role, obs in snapshots.items() if not equivalent[role] and obs['status_code'] not in (401, 403, 404)]
+        result = dict(status='ok', summary='四角色对象对照；正文仅在内存比较，未保留或发送', path=case['path'],
+            expected=case['expected'], statuses={r: x['status_code'] for r, x in snapshots.items()},
+            fingerprints={r: x['jsonFingerprint'] for r, x in snapshots.items()}, baselineValid=valid,
+            equivalent=equivalent, unexpectedRoles=unexpected, missingExpectedRoles=mismatches, inconclusiveRoles=uncertain,
+            candidate=bool(unexpected), candidateCount=int(bool(unexpected)), confirmed=False,
+            validated=bool(valid and not mismatches and not uncertain))
+        self.completed.add(value.reference)
+        return result
+
+    def _validate_controls(self, value):
+        if value.reference in self.completed: raise LocalApplicationError('duplicate_action')
+        from .l4_lab import CONTROL_PATHS
+        observations = {path: self._fetch(path) for path in CONTROL_PATHS}
+        checks = {}
+        for variant in ('vulnerable', 'protected'):
+            sql = [observations['/l4/sqli/{}/{}'.format(variant, probe)] for probe in ('baseline', 'true', 'false')]
+            checks[variant] = {'sqli': bool(all(x['status_code'] == 200 for x in sql) and sql[0]['rowCount'] == sql[1]['rowCount'] == 1
+                and sql[0]['jsonFingerprint'] == sql[1]['jsonFingerprint'] and sql[2]['rowCount'] == 0),
+                'counts': [x['rowCount'] for x in sql], 'htmlReflection': observations['/l4/xss/{}/marker'.format(variant)]['markerParsed']}
+        valid = (all(x['status_code'] == 200 and not x['body_truncated'] for x in observations.values())
+                 and checks['vulnerable']['sqli'] and not checks['protected']['sqli']
+                 and checks['vulnerable']['htmlReflection'] and not checks['protected']['htmlReflection']
+                 and checks['protected']['counts'] == [1, 0, 0])
+        result = dict(status='ok', summary='固定合成 SQL 布尔差异与惰性 HTML 反射正负对照；脚本执行未验证',
+            controlsValid=valid, checks=checks, candidate=valid, candidateCount=2 if valid else 0,
+            candidateKinds=['boolean-sqli-differential', 'inert-html-reflection'] if valid else [],
+            confirmed=False, validated=valid, scriptExecutionVerified=False)
         self.completed.add(value.reference)
         return result
 
     def completion_ready(self, evidence):
         required = set(self.objects) | ({'entry'} if self.approval['controls'] else set())
         return required <= {x.get('reference') for x in evidence if x.get('validated') is True}
+
+    def required_evidence(self):
+        return [('compare_business_object', ref) for ref in self.objects] + ([('validate_business_controls', 'entry')] if self.approval['controls'] else [])
 
     def persist_candidates(self, key, value, observation):
         store = Store(self.root / 'data/src_auto.sqlite3')

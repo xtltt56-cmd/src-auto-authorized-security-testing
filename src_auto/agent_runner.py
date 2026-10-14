@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from .agent_contracts import CATALOG_VERSION, Decision, Limits
+from .agent_contracts import CATALOG_VERSION, Decision, Limits, ActionRegistry, CONTROL_ACTIONS
 from .controls import DiskGuard, StopController
 from .agent_cloud_budget import CALL_TOKEN_RESERVATION, DeepSeekAgentBudget
 
@@ -185,6 +185,7 @@ class AgentRunner:
         trace, observations = row["trace"], row["observations"]
         used = {(x["decision"]["action"], x["decision"]["reference"]) for x in trace if x.get("result") == "ok"}
         repaired = any(x.get("result") == "rejected" for x in trace)
+        repair_code = 'invalid_proposal'
         row = self.history.acquire(row["id"], resume=bool(resume_id))
 
         def save(**changes):
@@ -239,9 +240,33 @@ class AgentRunner:
                         and observation.get("requests") == 60)
             return False
 
+        def completion_issue(evidence):
+            if not evidence: return 'insufficient_evidence'
+            if mode == 'local-web-assessment' and not self.actions.completion_ready(evidence): return 'local_web_coverage_incomplete'
+            if mode == 'business-assessment' and not self.actions.completion_ready(evidence): return 'business_coverage_incomplete'
+            if mode == 'api-permissions' and not any(x['action'] == 'compare_object_authorization' for x in evidence): return 'permission_check_incomplete'
+            if mode == 'local-assessment':
+                covered = {x['action'] for x in evidence if recipe_completed(x.get('action'), x)}
+                if not set(required_local_actions()) <= covered: return 'local_assessment_incomplete'
+            if mode == 'candidate-review' and 'candidate' in self.actions.references and not any(x['action'] == 'review_candidate' for x in evidence):
+                return 'candidate_review_incomplete'
+            return ''
+
+        def missing_checks():
+            if hasattr(self.actions, 'required_evidence'):
+                required = self.actions.required_evidence()
+            elif mode == 'local-assessment': required = [(x, 'entry') for x in required_local_actions()]
+            elif mode == 'api-permissions': required = [('compare_object_authorization', '*')]
+            elif mode == 'candidate-review' and 'candidate' in self.actions.references: required = [('review_candidate', 'candidate')]
+            else: required = []
+            return [dict(action=action, reference=reference) for action, reference in required
+                    if not any(x.get('action') == action and (reference == '*' or x.get('reference') == reference)
+                               and (mode != 'business-assessment' or x.get('validated') is True)
+                               and (mode != 'local-assessment' or recipe_completed(action, x)) for x in observations)]
+
         def perform_action(value, entry):
             """Execute a model or scheduled action through the same durable path."""
-            entry["result"] = "executing"
+            entry.update(result='executing', validation='passed', executor=type(self.actions).__name__)
             row["steps"] += 1
             save(reason="tool_executing")
             try:
@@ -285,6 +310,8 @@ class AgentRunner:
             return True
 
         try:
+            registry = getattr(self.actions, 'action_registry', None)
+            if not isinstance(registry, ActionRegistry): raise RuntimeError('action_catalog_invalid')
             DiskGuard(self.root).assert_allowed()
             while True:
                 # Fixed local-assessment recipes are deterministic executor work,
@@ -322,32 +349,21 @@ class AgentRunner:
                 if row["modelCalls"] >= self.limits.max_model_calls or row["tokens"] >= self.limits.max_tokens:
                     save(state="needs-human", reason="budget_limit")
                     break
-                terminal_actions = {"finish", "request_human_review"}
-                capabilities = []
-                for name in getattr(self.actions, "capabilities", []):
-                    if name in terminal_actions:
-                        capabilities.append(name)
-                        continue
-                    if name == "compare_object_authorization":
-                        action_references = [x for x in self.actions.references if x.startswith("case-")]
-                    elif name == "review_candidate":
-                        action_references = ["candidate"] if "candidate" in self.actions.references else []
-                    elif name == "inspect_local_route":
-                        action_references = [x for x in self.actions.references if x.startswith("route-")]
-                    elif name == "compare_business_object":
-                        action_references = [x for x in self.actions.references if x.startswith("object-")]
-                    else:
-                        action_references = ["entry"]
-                    if any((name, reference) not in used for reference in action_references):
-                        capabilities.append(name)
+                action_options = registry.options(used) if row['steps'] < self.limits.max_steps else {}
+                if not completion_issue(observations): action_options['finish'] = ['entry']
+                action_options['request_human_review'] = ['entry']
+                menu = dict(catalogVersion=CATALOG_VERSION, options=action_options, missing=missing_checks(),
+                            completionReady=not bool(completion_issue(observations)))
+                row['actionMenu'] = menu
                 context = {"mode": mode, "lab": lab, "requiredActions": required_actions,
                            "completedRequiredActions": [x for x in required_actions if x in completed_actions],
                            "references": self.actions.references,
                            "permissions": getattr(self.actions, "permissions", None),
-                           "capabilities": (["finish", "request_human_review"] if row["steps"] >= self.limits.max_steps else capabilities),
+                           "capabilities": list(action_options), 'actionReferences': action_options,
+                           'pendingChecks': menu['missing'],
                            "observations": observations[-8:], "used": [list(x) for x in sorted(used)],
                            "steps_remaining": self.limits.max_steps - row["steps"],
-                           "repair": "上次格式不合法；请仅返回四字段JSON" if repaired else ""}
+                           "repair": ('上次建议被拒绝：' + repair_code + '。只从本轮 actionReferences 选择动作和对象，返回四字段JSON。') if repaired else ""}
                 # Reserve a conservative input + output bound before starting inference.
                 token_reservation = CALL_TOKEN_RESERVATION if self.cloud_budget else 6800
                 if row["tokens"] + token_reservation > self.limits.max_tokens:
@@ -387,41 +403,41 @@ class AgentRunner:
                     save(state=stop[0], reason=stop[1]); break
                 if row["tokens"] > self.limits.max_tokens:
                     save(state="needs-human", reason="budget_limit"); break
+                value = None
                 try:
                     value = Decision.parse(answer["text"], self.actions.references, [x["id"] for x in observations])
-                except (ValueError, TypeError, KeyError):
-                    trace.append({"index": len(trace) + 1, "result": "rejected", "reason": "invalid_proposal"})
-                    if repaired:
-                        save(state="needs-human", reason="invalid_proposal"); break
+                    # Control coverage and repeated/in-flight work keep their
+                    # existing fail-closed semantics; none are retried as tools.
+                    if value.action == 'finish':
+                        issue = completion_issue([x for x in observations if x['id'] in value.evidence])
+                        if issue: raise ValueError(issue)
+                    if value.action not in CONTROL_ACTIONS and row['steps'] >= self.limits.max_steps:
+                        raise ValueError('budget_limit')
+                    if (value.action, value.reference) in used: raise ValueError('duplicate_action')
+                    value.validate_for(action_options)
+                except (ValueError, TypeError, KeyError) as exc:
+                    recoverable = {'invalid_decision_fields', 'action_not_available', 'action_reference_mismatch'}
+                    stop_codes = {'insufficient_evidence', 'local_web_coverage_incomplete', 'business_coverage_incomplete',
+                                  'permission_check_incomplete', 'local_assessment_incomplete', 'candidate_review_incomplete',
+                                  'duplicate_action', 'budget_limit'}
+                    code = str(exc) if str(exc) in recoverable | stop_codes | {'unknown_action', 'foreign_reference', 'foreign_evidence',
+                        'forbidden_decision_field', 'duplicate_field', 'invalid_decision_size', 'invalid_reason'} else 'invalid_proposal'
+                    rejected = dict(index=len(trace) + 1, result='rejected', reason=code, validation='rejected', source='model')
+                    if value is not None: rejected['decision'] = value.to_mapping()
+                    trace.append(rejected)
+                    if code in stop_codes:
+                        save(state='needs-human', reason=code); break
+                    if repaired or code not in recoverable | {'invalid_proposal'}:
+                        save(state='needs-human', reason='invalid_proposal'); break
                     repaired = True
+                    repair_code = code
                     save(reason="format_repair"); continue
                 action = (value.action, value.reference)
-                entry = {"index": len(trace) + 1, "decision": value.to_mapping(), "result": "proposed"}
+                entry = {"index": len(trace) + 1, "decision": value.to_mapping(), "result": "proposed", 'validation': 'passed', 'source': 'model'}
                 trace.append(entry)
                 if value.action in {"finish", "request_human_review"}:
-                    if not observations or not value.evidence:
-                        entry["result"] = "rejected"
-                        save(state="needs-human", reason="insufficient_evidence"); break
-                    evidence = [x for x in observations if x["id"] in value.evidence]
-                    if value.action == "finish" and mode == "local-web-assessment" and not self.actions.completion_ready(evidence):
-                        entry["result"] = "rejected"
-                        save(state="needs-human", reason="local_web_coverage_incomplete"); break
-                    if value.action == 'finish' and mode == 'business-assessment' and not self.actions.completion_ready(evidence):
-                        entry['result'] = 'rejected'
-                        save(state='needs-human', reason='business_coverage_incomplete'); break
-                    if value.action == "finish" and mode == "api-permissions" and not any(x["action"] == "compare_object_authorization" for x in evidence):
-                        entry["result"] = "rejected"
-                        save(state="needs-human", reason="permission_check_incomplete"); break
-                    if value.action == "finish" and mode == "local-assessment":
-                        required = set(required_local_actions())
-                        complete_evidence = {x["action"] for x in evidence
-                                             if x["action"] in required and recipe_completed(x["action"], x)}
-                        if not required <= complete_evidence:
-                            entry["result"] = "rejected"
-                            save(state="needs-human", reason="local_assessment_incomplete"); break
-                    if value.action == "finish" and mode == "candidate-review" and "candidate" in self.actions.references and not any(x["action"] == "review_candidate" for x in evidence):
-                        entry["result"] = "rejected"
-                        save(state="needs-human", reason="candidate_review_incomplete"); break
+                    # completion_issue validated all required real evidence
+                    # before this point; a handoff is never a tool invocation.
                     entry["result"] = "ok"
                     save(state="completed" if value.action == "finish" else "needs-human", reason=value.action); break
                 if row["steps"] >= self.limits.max_steps:
@@ -435,8 +451,8 @@ class AgentRunner:
                     entry["result"] = "rejected"
                     save(state="needs-human", reason="inflight_action_uncertain"); break
                 if not perform_action(value, entry): break
-        except Exception:
-            save(state="failed", reason="execution_failed")
+        except Exception as exc:
+            save(state="failed", reason='action_catalog_invalid' if str(exc) == 'action_catalog_invalid' else "execution_failed")
         # The coordinator owns the single task-linked, coverage-aware report.
         if mode in ("local-web-assessment", "business-assessment"):
             return self.history.get(row["id"])
@@ -455,7 +471,7 @@ class AgentRunner:
                   "任务：{} / {} / {}".format(lab, mode, self.provider), "状态：{}；原因：{}".format(row["state"], row["reason"]),
                   "动作 {}；HTTP 请求 {}；模型调用 {}；Token {}{}".format(row["steps"], row["requests"], row["modelCalls"], row["tokens"], "（含保守估算）" if row["usageEstimated"] else ""), "",
                   "范围摘要：{}；配置摘要：{}；动作版本：{}".format(row["scopeHash"], row["configHash"], CATALOG_VERSION), "",
-                  "```json", json.dumps({"resourceCheck": row.get("resourceCheck"), "trace": trace, "observations": observations}, ensure_ascii=False, indent=2), "```", "",
+                  "```json", json.dumps({"resourceCheck": row.get("resourceCheck"), 'actionMenu': row.get('actionMenu'), "trace": trace, "observations": observations}, ensure_ascii=False, indent=2), "```", "",
                   "模型费用按峰值价保守估算 {} 元；累计预算预留 {} 元（超时/取消不退回预算预留，并非真实账单）。最终费用以服务商账单为准。".format(row.get("estimatedCostCny", 0), row.get("reservedCostCny", 0)) if self.cloud_budget else "本任务仅使用本地模型，未调用云端 API。",
                   "候选和报告只用于人工研判，不代表漏洞已经确认。"]
         path.write_text("\n".join(report) + "\n", encoding="utf-8")

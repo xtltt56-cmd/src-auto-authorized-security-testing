@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Bot, ShieldCheck, Square, FileText } from 'lucide-react'
 import type { TaskRepository } from '../lib/taskRepository'
 import type { AgentRun, AgentSnapshot, AgentStart, DashboardSnapshot, Finding } from '../lib/types'
+import { AgentDecisionDetails } from '../components/AgentDecisionDetails'
 
 const states: Record<string, string> = { queued: '已排队', running: '执行中', cancelling: '正在停止', completed: '已结束 · 待人工复核', 'needs-human': '需要人工处理', paused: '已暂停', interrupted: '上次执行中断', failed: '执行失败', cancelled: '已取消' }
 const actions: Record<string, string> = { inspect_headers: '响应头检查', discover_surface: '有限表面发现', inspect_api_schema: '读取 API 规范', compare_object_authorization: '对象授权对比', run_local_regression: '本地固定回归配方', validate_controlled_inputs: 'DVWA 受控 SQLi/XSS 指标', compare_object_authorization_matrix: '20 项合成权限矩阵', review_candidate: '读取脱敏候选', finish: '结束任务', request_human_review: '请求人工复核' }
@@ -111,6 +112,7 @@ export function AgentPage({ repository, snapshot, onOpenReport }: { repository: 
           {selected.provider === 'deepseek' ? <p className="agent-hint">费用保守估算：{(selected.estimatedCostCny ?? 0).toFixed(5)} 元 · 预算已预留：{(selected.reservedCostCny ?? 0).toFixed(5)} 元（预留并非账单，超时或取消不退回预算预留）。</p> : null}
           {selected.resourceCheck?.known && typeof selected.resourceCheck.memory_gb === 'number' ? <p className="agent-hint">资源采样：整机已用内存 {selected.resourceCheck.memory_gb.toFixed(2)} GB{typeof selected.resourceCheck.max_memory_gb === 'number' ? ` / 上限 ${selected.resourceCheck.max_memory_gb} GB` : ''}；CPU {selected.resourceCheck.cpu_percent?.toFixed(1) ?? '未知'}%。释放资源后可人工续接；更换模型或配置后请创建新任务。</p> : null}
           <p className="agent-hint">模型简述不是事实裁决；检测结论以工具观察与人工复核为准。</p>
+          <AgentDecisionDetails run={selected} />
           <ol className="agent-trace">{selected.trace.map(step => <li key={step.index}><strong>{step.index}. {actions[step.decision?.action ?? ''] ?? '格式校验'} · {step.result === 'ok' ? '完成' : step.result === 'executing' ? '执行中' : step.result === 'rejected' ? '已拒绝' : '失败/未完成'}</strong><p>{step.decision?.reason ?? step.reason}</p>{step.decision ? <small>对象 {step.decision.reference} · 输入证据 {step.decision.evidence.join('、') || '无（初始观察）'} · 输出证据 {step.observationId || '未产生'}</small> : null}{step.observationId ? <p>{selected.observations.find(x => x.id === step.observationId)?.summary}</p> : null}</li>)}</ol>
         </> : <><h4>执行轨迹</h4><p>启动或选择一个历史任务，查看动作、短理由、工具反馈和用量。这里不展示模型的内部推理过程。</p></>}
       </section>

@@ -152,8 +152,9 @@ export type AgentRun = {
   steps: number; requests: number; modelCalls: number; tokens: number; usageEstimated: boolean
   elapsedSeconds: number; candidates: number; reportId: string; createdAt: string; candidateId?: string
   estimatedCostCny?: number; reservedCostCny?: number
+  actionMenu?: { catalogVersion: string; options: Record<string, string[]>; missing: Array<{ action: string; reference: string }>; completionReady: boolean }
   resourceCheck?: { known?: boolean; memory_gb?: number; max_memory_gb?: number; cpu_percent?: number }
-  trace: Array<{ index: number; result: string; reason?: string; observationId?: string; decision?: { action: string; reference: string; evidence: string[]; reason: string } }>
+  trace: Array<{ index: number; result: string; reason?: string; observationId?: string; validation?: string; source?: string; executor?: string; decision?: { action: string; reference: string; evidence: string[]; reason: string } }>
   observations: Array<{ id: string; action: string; reference: string; summary: string; candidate?: boolean; path?: string; method?: string; status_code?: number; response_bytes_read?: number;
     statuses?: Record<string, number>; expected?: Record<string, boolean>; equivalent?: Record<string, boolean>; baselineValid?: boolean; controlsValid?: boolean }>
 }

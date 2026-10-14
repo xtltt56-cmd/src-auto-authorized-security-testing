@@ -235,18 +235,23 @@ class LocalLabManager:
             "{{json .State}}",
             self.container_name(spec),
         ]
-        result = subprocess.run(
-            command,
-            cwd=str(self.project_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=20,
-            shell=False,
-            check=False,
-        )
+        # Metadata probes must not block every lab card when the engine is down.
+        # A timeout means unavailable, not that the user's container was deleted.
+        try:
+            result = subprocess.run(
+                command,
+                cwd=str(self.project_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3,
+                shell=False,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return {"State": "unknown", "Health": "unavailable"}
         if result.returncode != 0:
             return {}
         try:

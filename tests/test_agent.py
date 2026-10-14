@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src_auto.agent_contracts import Decision, Limits
+from src_auto.agent_contracts import Decision, Limits, ActionRegistry, ActionSpec, CONTROL_ACTIONS
 from src_auto.agent_runner import AgentRunner, AgentHistory, project_path
 from src_auto.agent_actions import GuardedHTTP, LocalActions
 from src_auto.agent_cloud_budget import DeepSeekAgentBudget
@@ -31,6 +31,19 @@ class FakeActions:
     scope_hash = "fixed-scope"
     config_hash = "fixed-config"
     references = ["entry", "case-01"]
+    capabilities = ['inspect_headers', 'discover_surface', 'inspect_api_schema', 'compare_object_authorization',
+                    'run_local_regression', 'validate_controlled_inputs', 'compare_object_authorization_matrix']
+
+    @property
+    def action_registry(self):
+        names = list(self.capabilities)
+        if 'candidate' in self.references: names.append('review_candidate')
+        specs = []
+        for name in names:
+            if name in CONTROL_ACTIONS: continue
+            refs = tuple(x for x in self.references if x.startswith('case-')) if name == 'compare_object_authorization' else ('candidate',) if name == 'review_candidate' else ('entry',)
+            if refs: specs.append(ActionSpec(name, refs, self.execute))
+        return ActionRegistry(specs)
 
     def __init__(self, results=None):
         self.requests = 0
