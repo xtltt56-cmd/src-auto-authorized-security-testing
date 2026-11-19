@@ -5,9 +5,11 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 from .ai import AITriage
 from .controls import DiskGuard, ResourceGuard, StopController
 from .models import ScopeDecision
+from .redaction import redact_tool_output
 from .reporting import ButianReportGenerator, EvidencePackager
 from .scope import ScopeGuard
 from .store import Store
+from .surface_ingest import ingest_tool_output
 from .local_application import LocalApplicationError, LocalApplicationHTTP, LocalReadOnlyPlan
 
 
@@ -206,6 +208,7 @@ class PipelineRunner:
         sequence = list(sequence or ["bbot", "subfinder", "httpx", "katana", "nuclei", "zap", "reconftw"])
         tool_args = dict(tool_args or {})
         results = []
+        ingest_summary = {"assets": 0, "inserted": 0, "merged": 0, "skipped_out_of_scope": 0}
         for name in sequence:
             stopped = self._stop_if_requested(run_id, [item["tool"] for item in results])
             if stopped:
@@ -213,14 +216,26 @@ class PipelineRunner:
             adapter = adapters.get(name)
             if adapter is None:
                 self.store.set_run_status(run_id, "blocked_adapter")
-                return {"status": "blocked_adapter", "reason": "missing_" + name, "stages": results}
+                return {"status": "blocked_adapter", "reason": "missing_" + name, "stages": results, "ingest": ingest_summary}
             result = adapter.run(list(tool_args.get(name, [])), self.scope_guard, target_urls=target_urls)
-            result_dict = getattr(result, "__dict__", result)
+            result_dict = dict(getattr(result, "__dict__", result))
+            for key in ("stdout", "stderr", "detail"):
+                if key in result_dict:
+                    result_dict[key] = redact_tool_output(result_dict[key], 2000 if key == "detail" else 16000)
             results.append({"tool": name, "result": result_dict})
             self.store.record_event(run_id, "info", "external_tool", {"tool": name, "result": result_dict})
             self.store.save_checkpoint(run_id, "tool_" + name, {"status": result_dict.get("status", "unknown")})
             if result_dict.get("status") != "completed":
-                self.store.set_run_status(run_id, "tool_error")
-                return {"status": "tool_error", "stages": results}
+                # Completed tools keep their ingested output: one flaky tool no
+                # longer voids the whole run. Per-tool status stays in stages.
+                self.store.set_run_status(run_id, "partial_tools")
+                return {"status": "partial_tools", "stages": results, "ingest": ingest_summary}
+            try:
+                summary = ingest_tool_output(self.store, self.root, run_id, self.scope_guard, name, result_dict)
+                for key in ingest_summary:
+                    ingest_summary[key] += int(summary.get(key, 0) or 0)
+            except Exception as exc:
+                # Ingest failure must not discard tool results; it is audited.
+                self.store.record_event(run_id, "warning", "tool_ingest_failed", {"tool": name, "error": str(exc)[:200]})
         self.store.set_run_status(run_id, "completed_tools")
-        return {"status": "completed_tools", "stages": results}
+        return {"status": "completed_tools", "stages": results, "ingest": ingest_summary}

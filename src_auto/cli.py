@@ -15,12 +15,14 @@ from .ai import AITriage, ModelRouter
 from .business_logic import ResponseSnapshot, compare_api_objects, compare_authorization_responses
 from .business_api_lab import run_authorization_matrix
 from .config import load_mapping
+from .finding_ingest import ingest_zap_candidates
 from .controls import BudgetGovernor
 from .defense import DefenseAsset, build_defense_plan, compare_defense_snapshots
 from .i18n import human_summary, with_zh_fields
 from .live_plan import LivePlanError, validate_live_plan
 from .local_application import LocalReadOnlyPlan
 from .pipeline import PipelineRunner
+from .reporting import ButianReportGenerator
 from .remote_ai import (
     DeepSeekProvider,
     OpenAIProvider,
@@ -385,6 +387,9 @@ def build_parser() -> argparse.ArgumentParser:
     surface_plan.add_argument("--scope", required=True)
     surface_plan.add_argument("--automation-allowed", action="store_true", help="确认该范围允许自动化观察")
     surface_plan.add_argument("--output", required=True, help="项目内输出 JSON 文件")
+    surface_plan.add_argument("--operator", default="", help="执行人标识（live-plan 三字段之一）")
+    surface_plan.add_argument("--authorization-note", default="", help="授权依据说明（live-plan 三字段之一）")
+    surface_plan.add_argument("--manual-execution-confirmed", action="store_true", help="人工确认允许后续 --execute-live 执行")
     api_compare = sub.add_parser("api-compare", help="离线比较三份 API 响应快照，不联网")
     api_compare.add_argument("--owner", required=True, help="项目内 owner 响应 JSON")
     api_compare.add_argument("--peer", required=True, help="项目内 peer 响应 JSON")
@@ -583,6 +588,16 @@ def main(argv=None) -> int:
                     name for name, detail in registry.status().items() if detail.get("status") == "available"
                 }
                 plan = build_attack_surface_plan(target, guard, bool(args.automation_allowed), available_tools)
+                if args.manual_execution_confirmed and not (args.operator.strip() and args.authorization_note.strip()):
+                    raise ValueError("operator_and_authorization_note_required_for_execution")
+                from dataclasses import replace as _replace
+
+                plan = _replace(
+                    plan,
+                    operator=args.operator.strip(),
+                    authorization_note=args.authorization_note.strip(),
+                    manual_execution_confirmed=bool(args.manual_execution_confirmed),
+                )
                 output = _write_project_json(args.output, plan.to_mapping(), "output")
             except (OSError, ValueError, TypeError) as exc:
                 _json({"status": "BLOCKED", "reason": str(exc), "network_contact": False})
@@ -994,6 +1009,14 @@ def main(argv=None) -> int:
                 },
             })
             artifact.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            run_id = store.create_run(guard.policy.target_id, guard.policy.digest(), "juice-shop-zap")
+            ingest = ingest_zap_candidates(
+                store, PROJECT_ROOT, run_id, guard, parsed, scanner_version=str(report.get("@version", ""))
+            )
+            butian_path = ButianReportGenerator(PROJECT_ROOT, store).generate(
+                run_id, guard.policy.digest(), store.list_findings(run_id)
+            )
+            store.set_run_status(run_id, "completed")
             _json(
                 {
                     "status": document["status"],
@@ -1001,7 +1024,10 @@ def main(argv=None) -> int:
                     "artifact": str(artifact),
                     "report_path": str(report_path),
                     "alert_count": document["alert_count"],
-                    "finding_count": document["finding_count"],
+                    "finding_count": ingest["finding_count"],
+                    "run_id": run_id,
+                    "butian_report_path": str(butian_path),
+                    "ingest": ingest,
                     "network_contact": True,
                 }
             )

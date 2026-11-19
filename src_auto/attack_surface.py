@@ -56,6 +56,12 @@ class AttackSurfacePlan:
     max_requests_per_second: int = 2
     execute: bool = False
     manual_execution_required: bool = True
+    # L2 bridge: these three fields let a reviewed plan feed validate_live_plan
+    # directly. Empty/unconfirmed by default; execution still requires the CLI
+    # live-plan gates (policy switch, confirmed scope, --execute-live).
+    operator: str = ""
+    authorization_note: str = ""
+    manual_execution_confirmed: bool = False
 
     def to_mapping(self) -> Dict[str, Any]:
         return {
@@ -69,6 +75,9 @@ class AttackSurfacePlan:
             "execute": self.execute,
             "manual_execution_required": self.manual_execution_required,
             "template_tags": list(SAFE_TEMPLATE_TAGS),
+            "operator": self.operator,
+            "authorization_note": self.authorization_note,
+            "manual_execution_confirmed": self.manual_execution_confirmed,
         }
 
 

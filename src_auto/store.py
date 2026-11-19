@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlsplit
 
 from .models import InsertResult
 
@@ -141,6 +142,7 @@ class Store:
         spend_columns = {row[1] for row in self.conn.execute("PRAGMA table_info(spend)")}
         if "run_id" not in spend_columns:
             self.conn.execute("ALTER TABLE spend ADD COLUMN run_id TEXT")
+        self._migrate_findings()
         self.conn.execute(
             "INSERT OR IGNORE INTO finding_runs(run_id,fingerprint,first_seen,last_seen) "
             "SELECT run_id,fingerprint,first_seen,last_seen FROM findings WHERE run_id <> ''"
@@ -407,6 +409,119 @@ class Store:
         inserted = self.conn.execute("SELECT changes()").fetchone()[0] == 1
         if not inserted:
             self.conn.execute("UPDATE findings SET last_seen=? WHERE fingerprint=?", (now, fingerprint))
+        run_id = str(finding.get("run_id", ""))
+        if run_id:
+            self.conn.execute(
+                "INSERT INTO finding_runs(run_id,fingerprint,first_seen,last_seen) VALUES(?,?,?,?) "
+                "ON CONFLICT(run_id,fingerprint) DO UPDATE SET last_seen=excluded.last_seen",
+                (run_id, fingerprint, now, now),
+            )
+        self.conn.commit()
+        row = self.conn.execute("SELECT id FROM findings WHERE fingerprint=?", (fingerprint,)).fetchone()
+        return InsertResult(inserted, fingerprint, int(row[0]))
+
+    _SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+    def _migrate_findings(self) -> None:
+        """Idempotently add candidate-ingestion columns to pre-v0.15 databases."""
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(findings)")}
+        additions = (
+            ("vuln_type", "TEXT NOT NULL DEFAULT ''"),
+            ("scanner", "TEXT NOT NULL DEFAULT ''"),
+            ("template_id", "TEXT NOT NULL DEFAULT ''"),
+            ("matched_at", "TEXT NOT NULL DEFAULT ''"),
+            ("confidence", "REAL NOT NULL DEFAULT 0"),
+            ("cwe", "TEXT NOT NULL DEFAULT ''"),
+            ("cvss", "REAL"),
+            ("sources_json", "TEXT NOT NULL DEFAULT '[]'"),
+        )
+        for name, declaration in additions:
+            if name not in columns:
+                self.conn.execute("ALTER TABLE findings ADD COLUMN {} {}".format(name, declaration))
+        self.conn.commit()
+
+    @staticmethod
+    def _canonical_finding_url(url: str) -> str:
+        """Scheme/host/port/path only: query values must not split fingerprints."""
+        try:
+            parsed = urlsplit(str(url or ""))
+            if not parsed.scheme or not parsed.hostname:
+                return str(url or "").lower()
+            netloc = parsed.hostname.lower()
+            if parsed.port:
+                netloc += ":{}".format(parsed.port)
+            return "{}://{}{}".format(parsed.scheme.lower(), netloc, parsed.path or "/")
+        except ValueError:
+            return str(url or "").lower()
+
+    def insert_candidate(self, finding: Dict[str, Any]) -> InsertResult:
+        """Insert a scanner candidate keyed by vuln_type + canonical URL + parameter.
+
+        Unlike ``insert_finding`` (title-based, kept for legacy lanes), the same
+        vulnerability reported by two scanners merges into one row whose
+        ``sources_json`` keeps every origin. Severity/confidence keep the max.
+        """
+        title = str(finding.get("title", "")).strip()
+        url = str(finding.get("url", "")).strip()
+        parameter = str(finding.get("parameter", "")).strip().lower()
+        vuln_type = str(finding.get("vuln_type") or "unspecified").strip().lower()
+        fingerprint = stable_hash(
+            {"vuln_type": vuln_type, "url": self._canonical_finding_url(url), "parameter": parameter}
+        )
+        now = utc_now()
+        severity = str(finding.get("severity", "info")).lower()
+        confidence = float(finding.get("confidence", 0) or 0)
+        cvss = finding.get("cvss")
+        source = {
+            "scanner": str(finding.get("scanner", "")),
+            "template_id": str(finding.get("template_id", "")),
+            "matched_at": str(finding.get("matched_at") or url),
+            "confidence": confidence,
+        }
+        self.conn.execute(
+            "INSERT OR IGNORE INTO findings(fingerprint,run_id,title,url,parameter,severity,evidence,status,triage_json,"
+            "first_seen,last_seen,vuln_type,scanner,template_id,matched_at,confidence,cwe,cvss,sources_json) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                fingerprint,
+                str(finding.get("run_id", "")),
+                title,
+                url,
+                parameter,
+                severity,
+                str(finding.get("evidence", "")),
+                str(finding.get("status", "candidate")),
+                json.dumps(finding.get("triage", {}), ensure_ascii=False, sort_keys=True),
+                now,
+                now,
+                vuln_type,
+                source["scanner"],
+                source["template_id"],
+                source["matched_at"],
+                confidence,
+                str(finding.get("cwe", "")),
+                float(cvss) if cvss is not None else None,
+                json.dumps([source], ensure_ascii=False, sort_keys=True),
+            ),
+        )
+        inserted = self.conn.execute("SELECT changes()").fetchone()[0] == 1
+        if not inserted:
+            row = self.conn.execute(
+                "SELECT severity,confidence,sources_json FROM findings WHERE fingerprint=?", (fingerprint,)
+            ).fetchone()
+            sources = json.loads(row["sources_json"] or "[]")
+            known = {(s.get("scanner"), s.get("template_id"), s.get("matched_at")) for s in sources}
+            if (source["scanner"], source["template_id"], source["matched_at"]) not in known:
+                sources.append(source)
+                sources = sources[:20]
+            rank = self._SEVERITY_RANK
+            if rank.get(severity, 0) < rank.get(row["severity"], 0):
+                severity = row["severity"]
+            confidence = max(float(row["confidence"] or 0), confidence)
+            self.conn.execute(
+                "UPDATE findings SET last_seen=?,severity=?,confidence=?,sources_json=? WHERE fingerprint=?",
+                (now, severity, confidence, json.dumps(sources, ensure_ascii=False, sort_keys=True), fingerprint),
+            )
         run_id = str(finding.get("run_id", ""))
         if run_id:
             self.conn.execute(

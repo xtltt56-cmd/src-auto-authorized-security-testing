@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
 from .models import ToolResult
+from .redaction import decode_tool_bytes
 from .scope import ScopeGuard
 
 
@@ -101,11 +102,23 @@ class SafeToolAdapter:
             invocation = [command] + list(args)
             if command.lower().endswith((".bat", ".cmd")):
                 invocation = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", command] + list(args)
-            completed = subprocess.run(invocation, capture_output=True, text=True, timeout=timeout, cwd=str(cwd) if cwd else None)
+            completed = subprocess.run(invocation, capture_output=True, timeout=timeout, cwd=str(cwd) if cwd else None)
             status = "completed" if completed.returncode == 0 else "error"
-            return ToolResult(self.name, status, completed.returncode, completed.stdout or "", completed.stderr or "")
+            return ToolResult(
+                self.name,
+                status,
+                completed.returncode,
+                decode_tool_bytes(completed.stdout),
+                decode_tool_bytes(completed.stderr),
+            )
         except subprocess.TimeoutExpired as exc:
-            return ToolResult(self.name, "timeout", detail=str(exc))
+            return ToolResult(
+                self.name,
+                "timeout",
+                detail=str(exc),
+                stdout=decode_tool_bytes(exc.stdout),
+                stderr=decode_tool_bytes(exc.stderr),
+            )
         except OSError as exc:
             return ToolResult(self.name, "error", detail=str(exc))
 

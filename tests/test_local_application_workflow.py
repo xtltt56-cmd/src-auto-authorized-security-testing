@@ -121,7 +121,9 @@ class LocalApplicationWorkflowTests(unittest.TestCase):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             row = self.service.history.get(key)
-            if row.get('reportId'):
+            # reportId is persisted before the worker clears current_id; a
+            # follow-up start in the same test must not race that teardown.
+            if row.get('reportId') and not self.service.active:
                 return row
             time.sleep(.01)
         self.fail('local application task did not finalize')

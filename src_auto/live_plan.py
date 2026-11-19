@@ -9,7 +9,7 @@ import json
 from typing import Any, Dict, Mapping
 
 
-ALLOWED_TOOLS = ("bbot", "subfinder", "httpx", "katana", "nuclei", "zap", "reconftw")
+ALLOWED_TOOLS = ("bbot", "subfinder", "httpx", "katana", "nuclei", "zap")
 _SHELL_MARKERS = ("\x00", "\r", "\n", ";", "&&", "||", "|", ">", "<", "`", "$(")
 _DANGEROUS_MARKERS = (
     "--dos",
