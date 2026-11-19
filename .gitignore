@@ -1,6 +1,7 @@
 # Local state and potentially sensitive material
 data/*.sqlite3
 data/*.sqlite3-*
+data/backups/
 data/model-migration-*/
 data/l4-fixtures/
 runs/*
