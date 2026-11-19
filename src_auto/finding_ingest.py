@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
 from .reporting import EvidencePackager
+from .redaction import redact_data, redact_url
 from .scope import ScopeGuard
 from .store import Store
 
@@ -41,6 +42,12 @@ def _ingest_candidates(
             continue
         item = dict(candidate)
         item["run_id"] = run_id
+        safe_url = redact_url(url)
+        item["url"] = safe_url
+        if item.get("matched_at"):
+            item["matched_at"] = redact_url(item["matched_at"])
+        item["evidence"] = redact_data(str(item.get("evidence", "")), 1600)
+        item["parameter"] = redact_data(str(item.get("parameter", "")), 300)
         result = store.insert_candidate(item)
         if result.inserted:
             inserted += 1
@@ -49,7 +56,7 @@ def _ingest_candidates(
                 {
                     "fingerprint": result.fingerprint,
                     "title": item.get("title", ""),
-                    "url": url,
+                    "url": safe_url,
                     "severity": item.get("severity", "info"),
                     "evidence": item.get("evidence", ""),
                 },

@@ -1,12 +1,12 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.14.2`
+**发布标识：** `v0.15.0`
 
-**发布日期：** 2026-10-14（Asia/Shanghai）
+**本次复核日期：** 2026-11-19（Asia/Shanghai）
 
-**状态：v0.14.2 正式版已发布。** [CI](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions/runs/38571694686) 和 [发布工作流](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions/runs/38571694692) 均已通过；匿名下载包的版本、源码提交、SHA-256 与独立运行已核验。本轮修复模型失败诊断、续接残留提示、停止与失败竞争、云端响应无界读取和 Docker 状态误报/串行延迟。使用及真实验收见 [本轮说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)，本机原始工件在 `validation/runtime-diagnostics-20261014`。实际最新发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准；后续未发布的工作区改动不自动属于该发行包。v0.14.1 保留为上一正式基线，不覆盖历史标签。
+**状态：本清单记录 v0.15.0 的源码范围与验收结果。** GitHub CI、不可变标签和公开发行包的最终状态，以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 与对应 [Actions](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions) 为准；本地验收不代表远端门禁已通过。v0.14.2 及更早发行保留为回退基线，不覆盖历史标签。
 
-> **v0.15.0 源码准备（未发布）：** 源码版本已升至 `v0.15.0`，包含 L0-L2 升级——工具输出脱敏截断与候选入库、ZAP/nuclei 多源 Finding 闭环、httpx/katana 资产快照与差异、工具失败部分入库、surface-plan 三字段执行桥。Python 3.12 / 3.8 各 617 项通过（1 个 Windows 符号链接条件跳过），3.12 总覆盖率 75%（门禁 68%）。详见 [L0/L1 报告](docs/FINDING_INGEST_L0_L1.md) 与 [L2 报告](docs/L2_SURFACE_INGEST.md)。该版本尚未取得当次发布授权，未通过当次 CI、不可变标签与公开包 SHA-256 核验，GitHub Releases latest 仍为 v0.14.2；源码推送不等于发行完成。nuclei 真实容器执行待 Docker Desktop 启动后复测，外部真实目标出站/审批/会话（L4）仍未开放。
+> **v0.15.0 本轮范围与本地验收：** 在 L0-L2 升级基础上，修正 Python 包版本仍为 0.14.2 的元数据错误；在 Finding、资产、证据包和事件持久化边界统一脱敏 URL 查询值；将 pinned Nuclei Docker runner 接入 live-plan CLI，并绑定审核 URL、模板标签及请求速率。Python 3.12 / 3.8 各 622 项通过、各跳过 1 项 Windows 符号链接条件用例；Python 3.12 总覆盖率 75%（门槛 68%）。Dashboard lint 通过，Vitest 74/74（语句/分支/函数/行覆盖 76.62/70.46/71.24/81.93%），Vite 8.3.8 生产构建通过，Chromium E2E 8/8 通过。npm CI 锁文件可由 Node 22.23.0 自带的 npm 10.9.8 干净安装；`npm audit --omit=dev` 为 0 项漏洞。全量 npm audit 仍报告 4 项仅在 Storybook 开发依赖链中的 Moderate，自动修复要求把 Storybook 降到 8.5.3，未做破坏性降级。详见 [L0/L1 报告](docs/FINDING_INGEST_L0_L1.md) 与 [L2 报告](docs/L2_SURFACE_INGEST.md)。Nuclei 真实 Docker 容器执行未在本轮验证；真实目标执行仍由默认关闭的 `allow_real_targets`、人工确认范围、计划确认与 `--execute-live` 四道门控制。GitHub CI、不可变标签和公开包仍需实际工作流验收；历史 v0.14.2 验收记录见下文。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
@@ -23,7 +23,7 @@
 - 真实标准/DeepSeek 任务、四角色证据、取消、关联报告、直接阅读和完整导出。模型不能未经工具执行就标记完成。
 - L3：固定 ZAP 在断网容器分析脱敏 HAR；独立 Bandit 有限 Python / Semgrep 本地 JS/TS 规则源码审查，不运行项目、不上传代码。源码审查可单独启用 DeepSeek 匿名规则摘要辅助，最多 4 次；默认关闭，不发送源码、路径或文件名，不能据此确认漏洞。见 [源码审查说明](docs/SOURCE_AUDIT_USAGE_ZH.md)。
 - 发行脚本在输出变更前拒绝修改、暂存或未跟踪的非忽略源文件，避免遗漏新模块或用旧提交号描述新内容。两项实际临时 Git 仓库回归先失败后通过。
-- 默认打包重新构建前端；构建失败即停止，不能分发残留旧页面。VERSION、Python 包与项目元数据均为 0.14.2。
+- 默认打包重新构建前端；构建失败即停止，不能分发残留旧页面。`VERSION`、Python 包与项目元数据均为 0.15.0。
 
 DeepSeek 实际 API ID 为 `deepseek-flash`，本轮调用成功；展示名称不是接口 ID。Qwen3.5-9B 可人工选择，不自动切换云端。CPU 70%、整机已用 RAM 30 GiB，未知资源不放行。所有候选未确认，不自动提交补天。
 

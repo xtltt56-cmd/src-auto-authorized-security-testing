@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 from .models import InsertResult
+from .redaction import redact_data, redact_url
 
 
 def utc_now() -> str:
@@ -220,7 +221,7 @@ class Store:
     def record_event(self, run_id: str, level: str, message: str, payload: Optional[Dict[str, Any]] = None) -> None:
         self.conn.execute(
             "INSERT INTO events(run_id,level,message,payload_json,created_at) VALUES(?,?,?,?,?)",
-            (run_id, level, message, json.dumps(payload or {}, ensure_ascii=False, sort_keys=True), utc_now()),
+            (run_id, level, redact_data(message, 500), json.dumps(redact_data(payload or {}), ensure_ascii=False, sort_keys=True), utc_now()),
         )
         self.conn.commit()
 
@@ -352,11 +353,11 @@ class Store:
         return result
 
     def upsert_asset(self, run_id: str, asset: Dict[str, Any]) -> str:
-        host = str(asset.get("host", "")).lower().rstrip(".")
+        host = str(redact_data(str(asset.get("host", "")), 300)).lower().rstrip(".")
         port = int(asset["port"]) if asset.get("port") is not None else None
-        url = str(asset.get("url", ""))
-        kind = str(asset.get("kind", "web"))
-        metadata = dict(asset.get("metadata", {}))
+        url = redact_url(asset.get("url", ""))
+        kind = str(redact_data(str(asset.get("kind", "web")), 80))
+        metadata = redact_data(dict(asset.get("metadata", {})))
         fingerprint = stable_hash({"host": host, "port": port, "url": url, "kind": kind})
         now = utc_now()
         self.conn.execute(
@@ -461,9 +462,9 @@ class Store:
         vulnerability reported by two scanners merges into one row whose
         ``sources_json`` keeps every origin. Severity/confidence keep the max.
         """
-        title = str(finding.get("title", "")).strip()
-        url = str(finding.get("url", "")).strip()
-        parameter = str(finding.get("parameter", "")).strip().lower()
+        title = str(redact_data(str(finding.get("title", "")).strip(), 300))
+        url = redact_url(finding.get("url", ""))
+        parameter = str(redact_data(str(finding.get("parameter", "")).strip(), 300)).lower()
         vuln_type = str(finding.get("vuln_type") or "unspecified").strip().lower()
         fingerprint = stable_hash(
             {"vuln_type": vuln_type, "url": self._canonical_finding_url(url), "parameter": parameter}
@@ -475,7 +476,7 @@ class Store:
         source = {
             "scanner": str(finding.get("scanner", "")),
             "template_id": str(finding.get("template_id", "")),
-            "matched_at": str(finding.get("matched_at") or url),
+            "matched_at": redact_url(finding.get("matched_at") or url),
             "confidence": confidence,
         }
         self.conn.execute(
@@ -489,9 +490,9 @@ class Store:
                 url,
                 parameter,
                 severity,
-                str(finding.get("evidence", "")),
+                str(redact_data(str(finding.get("evidence", "")), 1600)),
                 str(finding.get("status", "candidate")),
-                json.dumps(finding.get("triage", {}), ensure_ascii=False, sort_keys=True),
+                json.dumps(redact_data(finding.get("triage", {})), ensure_ascii=False, sort_keys=True),
                 now,
                 now,
                 vuln_type,

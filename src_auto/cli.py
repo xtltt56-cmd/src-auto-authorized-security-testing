@@ -36,6 +36,7 @@ from .runtime_policy import RuntimePolicy
 from .provider_credentials import load_saved_provider_key
 from .target_review import review_target_selection
 from .local_labs import LocalLabManager, load_lab_specs
+from .nuclei_runner import NucleiDockerRunner
 from .log_analysis import analyse_jsonl_security_log, parse_defensive_log, summarize_defensive_events
 from .juice_shop import (
     DEFAULT_JUICE_SHOP_URL,
@@ -157,6 +158,14 @@ def _runner(store: Store, guard: ScopeGuard) -> PipelineRunner:
         spend_callback=lambda amount, category: store.record_spend(amount, category),
     )
     return PipelineRunner(store, guard, PROJECT_ROOT, ai_triage=ai)
+
+
+def _live_adapters(sequence, registry, project_root):
+    """Use the pinned, scope-bound container path for nuclei in live plans."""
+    return {
+        name: NucleiDockerRunner(project_root) if name == "nuclei" else SafeToolAdapter(name, registry)
+        for name in sequence
+    }
 
 
 def _remote_config(provider: str) -> Dict[str, Any]:
@@ -1205,7 +1214,7 @@ def main(argv=None) -> int:
                 )
                 return 0
             registry = ToolRegistry(search_paths=project_tool_search_paths(PROJECT_ROOT))
-            adapters = {name: SafeToolAdapter(name, registry) for name in plan["sequence"]}
+            adapters = _live_adapters(plan["sequence"], registry, PROJECT_ROOT)
             result = _runner(store, guard).run_external(
                 args.run_id,
                 plan["target_urls"],

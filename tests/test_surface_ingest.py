@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src_auto.adapters import ToolRegistry
+from src_auto.adapters import SafeToolAdapter, ToolRegistry
 from src_auto.attack_surface import AttackSurfaceTarget, build_attack_surface_plan
 from src_auto.finding_ingest import ingest_nuclei_candidates
 from src_auto.live_plan import LivePlanError, validate_live_plan
@@ -100,6 +100,49 @@ class SurfaceIngestTests(unittest.TestCase):
                 self.assertEqual(result["assets"], 1)
                 self.assertEqual(result["skipped_out_of_scope"], 1)
                 self.assertEqual(len(store.diff_assets(run_id, run_id)["unchanged"]), 1)
+            finally:
+                store.close()
+
+    def test_ingest_redacts_asset_query_values_and_out_of_scope_audit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = Store(root / "db.sqlite3")
+            try:
+                guard = scope()
+                run_id = store.create_run("local", guard.policy.digest(), "real")
+                allowed = json.dumps({"url": "http://localhost:8765/api?token=asset-secret", "host": "localhost", "port": 8765})
+                outside = json.dumps({"url": "https://third-party.example/?key=outside-secret", "host": "third-party.example", "port": 443})
+                result = ingest_tool_output(
+                    store, root, run_id, guard, "httpx", ToolResult("httpx", "completed", 0, allowed + "\n" + outside)
+                )
+                self.assertEqual(result["assets"], 1)
+                asset_rows = store.conn.execute("SELECT url, metadata_json FROM assets WHERE run_id=?", (run_id,)).fetchall()
+                stored = json.dumps([dict(row) for row in asset_rows], sort_keys=True)
+                events = json.dumps([event["payload"] for event in store.list_events(run_id)], sort_keys=True)
+                self.assertIn("http://localhost:8765/api?token=[REDACTED]", stored)
+                self.assertNotIn("asset-secret", stored)
+                self.assertNotIn("outside-secret", events)
+            finally:
+                store.close()
+
+    def test_ingest_redacts_nuclei_candidate_and_evidence_urls(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = Store(root / "db.sqlite3")
+            try:
+                guard = scope()
+                run_id = store.create_run("local", guard.policy.digest(), "real")
+                row = json.loads(NUCLEI_LINE)
+                row["matched-at"] = "http://localhost:8765/api?token=finding-secret"
+                result = ingest_tool_output(
+                    store, root, run_id, guard, "nuclei", ToolResult("nuclei", "completed", 0, json.dumps(row))
+                )
+                self.assertEqual(result["inserted"], 1)
+                finding = store.list_findings(run_id)[0]
+                evidence = (root / "evidence" / run_id / (finding["fingerprint"] + ".json")).read_text(encoding="utf-8")
+                stored = json.dumps(finding, sort_keys=True) + evidence
+                self.assertIn("http://localhost:8765/api?token=[REDACTED]", stored)
+                self.assertNotIn("finding-secret", stored)
             finally:
                 store.close()
 
@@ -253,6 +296,46 @@ class PlanBridgeTests(unittest.TestCase):
 
 
 class NucleiRunnerTests(unittest.TestCase):
+    def test_live_cli_wires_nuclei_to_pinned_runner(self):
+        from src_auto.cli import _live_adapters
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        with tempfile.TemporaryDirectory() as temp:
+            registry = ToolRegistry(commands={"httpx": "unused-httpx"})
+            adapters = _live_adapters(["httpx", "nuclei"], registry, Path(temp))
+        self.assertIsInstance(adapters["httpx"], SafeToolAdapter)
+        self.assertIsInstance(adapters["nuclei"], NucleiDockerRunner)
+
+    def test_nuclei_target_arguments_must_match_reviewed_urls(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        with tempfile.TemporaryDirectory() as temp:
+            runner = NucleiDockerRunner(Path(temp))
+            with patch("src_auto.nuclei_runner.subprocess.run") as proc:
+                result = runner.run(
+                    ["-u", "https://outside.example/", "-jsonl"],
+                    scope(),
+                    ["http://localhost:8765/"],
+                )
+            self.assertEqual(result.status, "blocked")
+            self.assertEqual(result.detail, "target_argument_mismatch")
+            proc.assert_not_called()
+
+    def test_nuclei_rejects_unbounded_list_and_unknown_options(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        with tempfile.TemporaryDirectory() as temp:
+            runner = NucleiDockerRunner(Path(temp))
+            for args in (
+                ["-list", "targets.txt", "-jsonl"],
+                ["-u", "http://localhost:8765/", "-interactsh-url", "https://outside.example/"],
+            ):
+                with self.subTest(args=args), patch("src_auto.nuclei_runner.subprocess.run") as proc:
+                    result = runner.run(args, scope(), ["http://localhost:8765/"])
+                self.assertEqual(result.status, "blocked")
+                self.assertEqual(result.detail, "unsupported_or_unbounded_arguments")
+                proc.assert_not_called()
+
     def test_missing_docker_binary_fails_closed_without_subprocess(self):
         from src_auto.nuclei_runner import NucleiDockerRunner
 

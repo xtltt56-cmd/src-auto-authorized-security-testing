@@ -25,24 +25,57 @@ _SECRET_PATTERNS = (
     ),
 )
 _URL = re.compile(r"https?://[^\s\"'<>]+")
+_SENSITIVE_KEY = re.compile(r"(?i)(authorization|cookie|token|secret|password|api[_-]?key)")
 
 
-def _mask_url(match):
-    raw = match.group(0).rstrip(".,;:)]}")
+def redact_url(value):
+    """Return a display/storage-safe HTTP URL with credentials and values removed.
+
+    Callers must make authorization and scope decisions against the original URL
+    before storing this representation. Query parameter names are retained for
+    useful triage, while every value and fragment is discarded.
+    """
+    raw = str(value or "").strip()
     try:
         parsed = urlsplit(raw)
-        if not parsed.hostname:
+        hostname = parsed.hostname
+        if parsed.scheme.lower() not in ("http", "https") or not hostname:
             return "[REDACTED_URL]"
+        port = parsed.port
+        host = hostname.lower()
+        if ":" in host and not host.startswith("["):
+            host = "[{}]".format(host)
+        netloc = host + ((":" + str(port)) if port is not None else "")
         query = urlencode(
             [(key, "[REDACTED]") for key, _ in parse_qsl(parsed.query, keep_blank_values=True)],
             quote_via=lambda string, safe, encoding=None, errors=None: string,
         )
-        netloc = parsed.hostname.lower()
-        if parsed.port:
-            netloc += ":{}".format(parsed.port)
         return urlunsplit((parsed.scheme.lower(), netloc, parsed.path or "/", query, ""))
-    except ValueError:
+    except (TypeError, ValueError):
         return "[REDACTED_URL]"
+
+
+def redact_data(value, limit=MAX_TOOL_OUTPUT_CHARS, _depth=0):
+    """Redact nested scanner metadata, including values under secret-like keys."""
+    if _depth > 8:
+        return "[TRUNCATED]"
+    if isinstance(value, dict):
+        return {
+            str(key): "[REDACTED]" if _SENSITIVE_KEY.search(str(key)) else redact_data(item, limit, _depth + 1)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_data(item, limit, _depth + 1) for item in value[:500]]
+    if isinstance(value, str):
+        return redact_tool_output(value, limit)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return redact_tool_output(value, limit)
+
+
+def _mask_url(match):
+    raw = match.group(0).rstrip(".,;:)]}")
+    return redact_url(raw)
 
 
 def redact_tool_output(value, limit=MAX_TOOL_OUTPUT_CHARS):

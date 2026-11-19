@@ -14,6 +14,7 @@ import subprocess
 import uuid
 from pathlib import Path
 from typing import Iterable, List, Optional
+from urllib.parse import urlsplit
 
 from .models import ToolResult
 from .redaction import decode_tool_bytes
@@ -21,6 +22,87 @@ from .scope import ScopeGuard
 
 _DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
 _IMAGE_REPO = "projectdiscovery/nuclei"
+_VALUE_FLAGS = {"-u", "-tags", "-pt", "-rl", "-c", "-bs", "-timeout", "-retries"}
+_BOOL_FLAGS = {"-no-interactsh", "-disable-unsigned-templates", "-jsonl"}
+_SAFE_TAGS = {"ssl", "misconfig", "exposure"}
+_SAFE_PROTOCOLS = {"http", "ssl", "dns"}
+
+
+def _canonical_url(value: str) -> Optional[str]:
+    try:
+        parsed = urlsplit(str(value))
+        if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+            return None
+        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+        host = parsed.hostname.lower()
+        if ":" in host and not host.startswith("["):
+            host = "[{}]".format(host)
+        query = "?" + parsed.query if parsed.query else ""
+        return "{}://{}:{}{}{}".format(parsed.scheme.lower(), host, port, parsed.path or "/", query)
+    except (TypeError, ValueError):
+        return None
+
+
+def _validate_scan_args(args: List[str], scope_guard: ScopeGuard, target_urls: List[str]) -> str:
+    """Keep nuclei argv bound to the reviewed URLs and a small bounded option set."""
+    reviewed = {_canonical_url(url) for url in target_urls}
+    if not reviewed or None in reviewed:
+        return "target_argument_mismatch"
+    if any(not scope_guard.decide(url).allowed for url in target_urls):
+        return "target_argument_mismatch"
+
+    selected = set()
+    values = {}
+    index = 0
+    while index < len(args):
+        raw = str(args[index])
+        flag, equals, inline_value = raw.partition("=")
+        flag = flag.lower()
+        if flag in _BOOL_FLAGS:
+            if equals:
+                return "unsupported_or_unbounded_arguments"
+            index += 1
+            continue
+        if flag not in _VALUE_FLAGS or (equals and not inline_value):
+            return "unsupported_or_unbounded_arguments"
+        if equals:
+            value = inline_value
+            index += 1
+        else:
+            if index + 1 >= len(args):
+                return "unsupported_or_unbounded_arguments"
+            value = str(args[index + 1])
+            index += 2
+        if not value or "\x00" in value or "\r" in value or "\n" in value or value.startswith("-"):
+            return "unsupported_or_unbounded_arguments"
+        values.setdefault(flag, []).append(value)
+
+    for value in values.get("-u", []):
+        canonical = _canonical_url(value)
+        if canonical is None or canonical not in reviewed or not scope_guard.decide(value).allowed:
+            return "target_argument_mismatch"
+        selected.add(canonical)
+    if selected != reviewed:
+        return "target_argument_mismatch"
+    for value in values.get("-tags", []):
+        tags = {tag.strip().lower() for tag in value.split(",") if tag.strip()}
+        if not tags or not tags <= _SAFE_TAGS:
+            return "unsupported_or_unbounded_arguments"
+    for value in values.get("-pt", []):
+        protocols = {protocol.strip().lower() for protocol in value.split(",") if protocol.strip()}
+        if not protocols or not protocols <= _SAFE_PROTOCOLS:
+            return "unsupported_or_unbounded_arguments"
+    limits = {"-rl": 2, "-c": 1, "-bs": 1, "-timeout": 5, "-retries": 1}
+    for flag, maximum in limits.items():
+        for value in values.get(flag, []):
+            try:
+                number = int(value)
+            except ValueError:
+                return "unsupported_or_unbounded_arguments"
+            minimum = 0 if flag == "-retries" else 1
+            if not minimum <= number <= maximum:
+                return "unsupported_or_unbounded_arguments"
+    return ""
 
 
 class NucleiDockerRunner:
@@ -62,10 +144,14 @@ class NucleiDockerRunner:
     ) -> ToolResult:
         if scope_guard.policy.target_type == "local_web":
             return ToolResult(self.name, "blocked", detail="local_scope_requires_guarded_adapter")
-        for url in target_urls or []:
+        reviewed_urls = list(target_urls or [])
+        for url in reviewed_urls:
             decision = scope_guard.decide(url)
             if not decision.allowed:
                 return ToolResult(self.name, "blocked", detail=decision.reason)
+        reason = _validate_scan_args(list(args), scope_guard, reviewed_urls)
+        if reason:
+            return ToolResult(self.name, "blocked", detail=reason)
         docker = self._docker()
         if docker is None:
             return ToolResult(self.name, "blocked", detail="docker_binary_missing")
