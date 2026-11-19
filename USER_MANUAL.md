@@ -1,10 +1,12 @@
 # SRC-Auto 平台完整使用手册
 
+> **当前版本读取规则：** 当前源码版本为 `v0.14.2`，本次正式发布与验收记录见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)。下方旧版本说明保留用于追溯，不覆盖当前能力或证明所有场景已经验收；实际最新下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。
+
 > **2026-10-14 · v0.14.2：** 任务暂停时优先看直接显示的模型失败诊断；可点击“打开系统设置”，保存配置后由人工发起连接测试，跳转本身不会调用 API。确认原因解除后再决定是否人工续接或新建任务。取消状态不允许当成暂停自动续接。详见 [故障处理说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)。
 
 > **2026-10-14 · v0.14.1 使用入口：** 保留现有桌面启动器、目标录入和人工确认流程。在受控 Agent、本机应用或隔离业务任务中展开“动作菜单与执行校验”，可查看模型实际获准选择的动作、对象、尚缺证据，以及建议是否通过校验、是否真正调用了工具。菜单是最近一轮快照，不是点击执行的新入口。详情见 [本轮指南](docs/V0_14_1_AGENT_CATALOG.md)；正式下载版本以 GitHub Releases 为准。
 
-> **2026-10-09 · v0.14.0 上一正式版：** 「业务验证准备」同页已接通四角色对象对照、标准/DeepSeek Agent 真实任务、取消和完整报告；使用 [L4 操作指南](docs/L4_PREPARATION_PROGRESS.md)。专用合成靶场可手动运行 `START_L4_LAB.ps1`，固定 SQL/惰性 HTML 正负对照不开放任意载荷，不代表已确认 XSS。该版已正式发布，下方更早版本的未发布状态只记录当时情况。
+> **2026-10-09 · v0.14.0 历史正式版：** 「业务验证准备」同页已接通四角色对象对照、标准/DeepSeek Agent 真实任务、取消和完整报告；使用 [L4 操作指南](docs/L4_PREPARATION_PROGRESS.md)。专用合成靶场可手动运行 `START_L4_LAB.ps1`，固定 SQL/惰性 HTML 正负对照不开放任意载荷，不代表已确认 XSS。该版已正式发布，但不是当前或上一正式版；旧版未发布状态只记录当时情况。
 
 > **v0.13.0 使用说明（2026-10-06）：** 自定义本地靶场 / 应用目标库、L3 断网 ZAP 与独立源码审查优先阅读 [统一操作指南](docs/CONTROLLED_LOCAL_SOURCE_GUIDE.md)。本轮真实验收及限制见 [验收报告](docs/CONTROLLED_LOCAL_SOURCE_ACCEPTANCE.md)，分发内容以 [当前发布清单](RELEASE_MANIFEST.md) 为准。源码中的版本、下载包 VERSION 和 release-manifest.json 应一致；下方旧版成绩保留用于追溯。
 
@@ -36,7 +38,7 @@
 
 > 本手册描述当前已经落地的控制层、本地模型接入和本地靶场流程。它不授予任何真实网站测试权限。
 
-> **2026-08-21 当前状态：** 已按操作者授权安装 WSL2 2.7.12、Ubuntu 和 Docker Desktop
+> **2026-08-21 环境状态（历史快照）：** 当时按操作者授权安装 WSL2 2.7.12、Ubuntu 和 Docker Desktop
 > 4.87.0。Ubuntu 位于 `D:\网络安全文件夹\WSL\Ubuntu`，Docker WSL 数据位于
 > `D:\网络安全文件夹\DockerData\wsl`；Docker Desktop 程序本身按官方 per-user 方式
 > 保留在用户目录，属于已批准的系统组件例外。`juice-shop` 当前只映射
