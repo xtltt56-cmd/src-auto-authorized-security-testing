@@ -6,6 +6,8 @@
 
 **状态：v0.14.2 正式版已发布。** [CI](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions/runs/38571694686) 和 [发布工作流](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions/runs/38571694692) 均已通过；匿名下载包的版本、源码提交、SHA-256 与独立运行已核验。本轮修复模型失败诊断、续接残留提示、停止与失败竞争、云端响应无界读取和 Docker 状态误报/串行延迟。使用及真实验收见 [本轮说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)，本机原始工件在 `validation/runtime-diagnostics-20261014`。实际最新发行以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准；后续未发布的工作区改动不自动属于该发行包。v0.14.1 保留为上一正式基线，不覆盖历史标签。
 
+> **v0.15.0 源码准备（未发布）：** 源码版本已升至 `v0.15.0`，包含 L0-L2 升级——工具输出脱敏截断与候选入库、ZAP/nuclei 多源 Finding 闭环、httpx/katana 资产快照与差异、工具失败部分入库、surface-plan 三字段执行桥。Python 3.12 / 3.8 各 617 项通过（1 个 Windows 符号链接条件跳过），3.12 总覆盖率 75%（门禁 68%）。详见 [L0/L1 报告](docs/FINDING_INGEST_L0_L1.md) 与 [L2 报告](docs/L2_SURFACE_INGEST.md)。该版本尚未取得当次发布授权，未通过当次 CI、不可变标签与公开包 SHA-256 核验，GitHub Releases latest 仍为 v0.14.2；源码推送不等于发行完成。nuclei 真实容器执行待 Docker Desktop 启动后复测，外部真实目标出站/审批/会话（L4）仍未开放。
+
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
 ## 本版本包含什么

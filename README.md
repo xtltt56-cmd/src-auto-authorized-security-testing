@@ -30,7 +30,7 @@ Windows 用户不需要安装 Git，也不需要切换开发分支。请从固�
 
 云端模型更名或密钥设置问题：见 [密钥与模型设置说明](docs/OPENROUTER_SETTINGS.md)。新版 Dashboard 的「系统设置」已内置 DeepSeek、智谱和 OpenRouter 设置，不再跳转独立密钥窗口。
 
-> **当前版本读取规则：** 当前源码版本为 `v0.14.2`；正式版本、对应提交与下载校验和以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
+> **当前版本读取规则：** 当前源码版本为 `v0.15.0`；正式版本、对应提交与下载校验和以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。旧版说明仅供追溯，不覆盖 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 的当前范围。Dashboard 启动选择“否”后，服务端硬门会拒绝远程连接测试和云端 Agent；重复启动不会复用与本次选择不一致的授权。
 
 ## 三期严格计划状态（2026-08-26，历史实施记录）
 

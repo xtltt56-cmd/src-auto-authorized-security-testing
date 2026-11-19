@@ -1,6 +1,6 @@
 # 已知问题与诚实限制
 
-> **当前发布读取规则：** 当前源码版本为 `v0.14.2`；版本范围以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 为准，正式发行与下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。下方历史记录只描述对应日期和版本，不能覆盖当前状态或证明未知问题已经解决。
+> **当前发布读取规则：** 当前源码版本为 `v0.15.0`；版本范围以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 为准，正式发行与下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。下方历史记录只描述对应日期和版本，不能覆盖当前状态或证明未知问题已经解决。
 
 ## 2026-10-14 v0.14.2 当前修复
 
