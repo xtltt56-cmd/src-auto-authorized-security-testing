@@ -68,6 +68,9 @@ export type DependencyStatus = {
   message: string
 }
 
+export type FindingQueueStatus = 'candidate' | 'triaged' | 'confirmed' | 'submission_ready' | 'submitted' | 'rejected'
+export type FindingSource = { scanner: string; templateId?: string }
+
 export type Finding = {
   id: string
   url?: string
@@ -79,6 +82,14 @@ export type Finding = {
   evidence: string
   prerequisites: string[]
   impact: string
+  queueStatus?: FindingQueueStatus
+  vulnType?: string
+  cwe?: string
+  cvss?: number | null
+  confidence?: number | null
+  parameter?: string
+  sources?: FindingSource[]
+  fingerprint?: string
 }
 
 export type ReportFile = {

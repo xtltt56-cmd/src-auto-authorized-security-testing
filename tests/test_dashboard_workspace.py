@@ -98,6 +98,40 @@ class WorkspaceTests(unittest.TestCase):
         finally: store.close()
         self.assertEqual(self.workspace.artifacts()['findings'][0]['url'], 'http://127.0.0.1:8084/orders')
 
+    def test_artifacts_surface_queue_status_and_enriched_fields(self):
+        store = Store(self.root / 'data' / 'src_auto.sqlite3')
+        try:
+            run_id = store.create_run('local', 'scope', 'local')
+            base = {'run_id': run_id, 'title': 'Reflected XSS', 'url': 'http://127.0.0.1:8084/search',
+                    'parameter': 'q', 'vuln_type': 'xss', 'severity': 'high', 'confidence': 0.8,
+                    'evidence': 'reflected', 'cwe': 'CWE-79', 'cvss': 6.1}
+            fp = store.insert_candidate(dict(base, scanner='zap', template_id='10016')).fingerprint
+            store.insert_candidate(dict(base, scanner='nuclei', template_id='xss-reflected'))
+            store.transition_finding_status(fp, 'triaged')
+            store.transition_finding_status(fp, 'confirmed', operator='analyst')
+        finally:
+            store.close()
+        finding = self.workspace.artifacts()['findings'][0]
+        self.assertEqual(finding['queueStatus'], 'confirmed')
+        self.assertEqual(finding['state'], '已确认')
+        self.assertEqual(finding['vulnType'], 'xss')
+        self.assertEqual(finding['cwe'], 'CWE-79')
+        self.assertEqual(finding['cvss'], 6.1)
+        self.assertEqual(finding['parameter'], 'q')
+        self.assertEqual({s['scanner'] for s in finding['sources']}, {'zap', 'nuclei'})
+        self.assertTrue(finding['fingerprint'])
+
+    def test_artifacts_legacy_finding_defaults_to_candidate(self):
+        store = Store(self.root / 'data' / 'src_auto.sqlite3')
+        try:
+            run_id = store.create_run('local', 'scope', 'local')
+            store.insert_finding({'run_id': run_id, 'title': 'legacy', 'url': 'http://127.0.0.1/', 'severity': 'low'})
+        finally:
+            store.close()
+        finding = self.workspace.artifacts()['findings'][0]
+        self.assertEqual(finding['queueStatus'], 'candidate')
+        self.assertEqual(finding['state'], '待人工复核')
+
     def test_report_symlink_is_never_followed(self):
         outside = self.root / 'private.txt'
         outside.write_text('do-not-read', encoding='utf-8')

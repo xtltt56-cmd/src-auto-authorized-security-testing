@@ -1,5 +1,5 @@
 import { ArrowLeft, CheckCircle2, FileWarning, ShieldCheck } from 'lucide-react'
-import type { Finding } from '../lib/types'
+import type { Finding, FindingQueueStatus } from '../lib/types'
 
 type FindingDetailProps = {
   finding: Finding | null
@@ -7,11 +7,19 @@ type FindingDetailProps = {
 }
 
 const severityLabel: Record<Finding['severity'], string> = { high: '高风险', medium: '中风险', low: '低风险', info: '提示' }
+const queueLabel: Record<FindingQueueStatus, string> = {
+  candidate: '候选', triaged: '已初判', confirmed: '已确认', submission_ready: '待提交', submitted: '已人工提交', rejected: '已驳回',
+}
 
 export function FindingDetail({ finding, onBack }: FindingDetailProps) {
   if (!finding) {
     return <section className="surface-panel finding-detail empty-detail"><FileWarning size={26} aria-hidden="true" /><h4>选择一个候选</h4><p>从左侧候选队列选择记录，查看脱敏证据、前置条件和人工判断要点。</p></section>
   }
+
+  const hasEnrichment = Boolean(
+    finding.queueStatus || finding.vulnType || finding.cwe || finding.cvss != null
+    || finding.parameter || finding.confidence != null || finding.sources?.length || finding.fingerprint,
+  )
 
   return (
     <section className="surface-panel finding-detail" aria-labelledby="finding-detail-title">
@@ -28,6 +36,21 @@ export function FindingDetail({ finding, onBack }: FindingDetailProps) {
           <div className="detail-copy-block"><h5>前置条件</h5><ul>{finding.prerequisites.map((item) => <li key={item}>{item}</li>)}</ul></div>
           <div className="detail-copy-block"><h5>影响判断</h5><p>{finding.impact}</p></div>
         </div>
+        {hasEnrichment ? (
+          <div className="detail-copy-block finding-classification">
+            <h5>分类与来源</h5>
+            <ul>
+              {finding.queueStatus ? <li>队列状态：{queueLabel[finding.queueStatus]}</li> : null}
+              {finding.vulnType ? <li>漏洞类型：{finding.vulnType}</li> : null}
+              {finding.cwe ? <li>CWE：{finding.cwe}</li> : null}
+              {finding.cvss != null ? <li>CVSS：{finding.cvss}</li> : null}
+              {finding.parameter ? <li>参数：{finding.parameter}</li> : null}
+              {finding.confidence != null ? <li>置信度：{finding.confidence}</li> : null}
+              {finding.sources?.length ? <li>来源：{finding.sources.map((s) => (s.templateId ? `${s.scanner}(${s.templateId})` : s.scanner)).join('；')}</li> : null}
+              {finding.fingerprint ? <li>指纹：{finding.fingerprint}</li> : null}
+            </ul>
+          </div>
+        ) : null}
         <div className="detail-safe-footnote"><CheckCircle2 size={15} aria-hidden="true" />仅展示本地夹具中的候选数据；完整响应、账号、Token 和个人信息不会进入此页面。</div>
       </div>
     </section>

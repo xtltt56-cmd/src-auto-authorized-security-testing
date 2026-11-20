@@ -17,6 +17,7 @@ from .target_review import review_target_selection
 _REPORT_SUFFIXES = frozenset(('.md', '.txt', '.json', '.html', '.log', '.xml'))
 _REPORT_PREVIEW_CHARS = 65536
 _REPORT_EXPORT_BYTES = 4 * 1024 * 1024
+_QUEUE_STATES = frozenset(('candidate', 'triaged', 'confirmed', 'submission_ready', 'submitted', 'rejected'))
 
 
 def safe_text(value, limit=262144):
@@ -212,12 +213,46 @@ class DashboardWorkspace:
             try:
                 connection = sqlite3.connect(db.as_uri() + '?mode=ro', uri=True, timeout=2)
                 connection.row_factory = sqlite3.Row
-                for row in connection.execute('SELECT id,title,url,severity,evidence,run_id FROM findings ORDER BY id DESC LIMIT 100'):
+                columns = {info[1] for info in connection.execute('PRAGMA table_info(findings)')}
+                optional = ('vuln_type', 'cwe', 'cvss', 'confidence', 'parameter', 'sources_json')
+                selected = ['id', 'title', 'url', 'severity', 'evidence', 'run_id', 'status', 'fingerprint']
+                selected += [name for name in optional if name in columns]
+                query = 'SELECT ' + ','.join(selected) + ' FROM findings ORDER BY id DESC LIMIT 100'
+                for row in connection.execute(query):
                     severity = row['severity'] if row['severity'] in ('high', 'medium', 'low', 'info') else 'info'
+                    queue_status = str(row['status'] or 'candidate')
+                    if queue_status not in _QUEUE_STATES:
+                        queue_status = 'candidate'
+                    if queue_status in ('confirmed', 'submission_ready', 'submitted'):
+                        state = '已确认'
+                    elif queue_status == 'rejected':
+                        state = '已驳回'
+                    else:
+                        state = '待人工复核'
+                    sources = []
+                    if 'sources_json' in columns:
+                        try:
+                            raw_sources = json.loads(row['sources_json'] or '[]')
+                        except (ValueError, TypeError):
+                            raw_sources = []
+                        for source in raw_sources if isinstance(raw_sources, list) else []:
+                            if isinstance(source, dict) and source.get('scanner'):
+                                sources.append(dict(scanner=safe_text(source.get('scanner'), 80),
+                                                    templateId=safe_text(source.get('template_id'), 120)))
+                    cvss = row['cvss'] if 'cvss' in columns else None
+                    confidence = row['confidence'] if 'confidence' in columns else None
                     findings.append(dict(id=str(row['id']), title=safe_text(row['title'], 300), url=_safe_url(row['url']), severity=severity,
-                                         source='历史运行 ' + safe_text(row['run_id'], 100), state='待人工复核',
+                                         source='历史运行 ' + safe_text(row['run_id'], 100), state=state,
                                          summary='从本地结果数据库读取，不代表本次靶场启动发现的漏洞',
-                                         evidence=safe_text(row['evidence'], 2000), prerequisites=[], impact='需人工复核'))
+                                         evidence=safe_text(row['evidence'], 2000), prerequisites=[], impact='需人工复核',
+                                         queueStatus=queue_status,
+                                         vulnType=safe_text(row['vuln_type'], 80) if 'vuln_type' in columns else '',
+                                         cwe=safe_text(row['cwe'], 80) if 'cwe' in columns else '',
+                                         cvss=float(cvss) if cvss is not None else None,
+                                         confidence=float(confidence) if confidence is not None else None,
+                                         parameter=safe_text(row['parameter'], 300) if 'parameter' in columns else '',
+                                         sources=sources,
+                                         fingerprint=safe_text(row['fingerprint'], 128)))
             except sqlite3.Error: warnings.append('结果数据库暂时不可读，请稍后刷新')
             finally:
                 if connection is not None: connection.close()
