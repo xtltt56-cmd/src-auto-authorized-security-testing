@@ -380,6 +380,14 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--run-id")
     findings = sub.add_parser("findings", help="查看 Findings")
     findings.add_argument("--run-id")
+    finding_transition = sub.add_parser("finding-transition", help="人工推进 Finding 提交队列状态（仅记录，不提交补天）")
+    finding_transition.add_argument("--fingerprint", required=True)
+    finding_transition.add_argument(
+        "--status", required=True,
+        choices=["candidate", "triaged", "confirmed", "submission_ready", "submitted", "rejected"],
+    )
+    finding_transition.add_argument("--operator", default="")
+    finding_transition.add_argument("--note", default="")
     sub.add_parser("reports", help="查看已生成的报告")
     stop = sub.add_parser("stop", help="请求人工停止")
     stop.add_argument("--run-id")
@@ -572,6 +580,16 @@ def main(argv=None) -> int:
             return 0
         if args.command == "findings":
             _json(store.list_findings(args.run_id))
+            return 0
+        if args.command == "finding-transition":
+            try:
+                target = store.transition_finding_status(
+                    args.fingerprint, args.status, operator=args.operator, note=args.note
+                )
+            except ValueError as exc:
+                _json({"status": "error", "reason": str(exc)})
+                return 1
+            _json({"status": "ok", "fingerprint": args.fingerprint, "new_status": target})
             return 0
         if args.command == "reports":
             _json(store.list_reports())

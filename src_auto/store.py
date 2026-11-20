@@ -541,6 +541,51 @@ class Store:
         )
         self.conn.commit()
 
+    _FINDING_QUEUE = {
+        "candidate": {"triaged", "rejected"},
+        "triaged": {"confirmed", "rejected", "candidate"},
+        "confirmed": {"submission_ready", "rejected"},
+        "submission_ready": {"submitted", "rejected"},
+        "submitted": set(),
+        "rejected": {"candidate"},
+    }
+
+    def transition_finding_status(self, fingerprint: str, new_status: str, operator: str = "", note: str = "") -> str:
+        """Move a finding through the manual submission queue, fail-closed.
+
+        Only reviewed forward steps (plus reject/reopen) are allowed. ``submitted``
+        records a human decision and requires an operator; it never contacts Butian.
+        Invalid transitions, unknown findings/statuses leave the row unchanged.
+        """
+        target = str(new_status or "").strip().lower()
+        if target not in self._FINDING_QUEUE:
+            raise ValueError("unknown_status")
+        row = self.conn.execute(
+            "SELECT status,triage_json FROM findings WHERE fingerprint=?", (fingerprint,)
+        ).fetchone()
+        if row is None:
+            raise ValueError("finding_not_found")
+        current = str(row["status"])
+        if target not in self._FINDING_QUEUE.get(current, set()):
+            raise ValueError("invalid_transition")
+        actor = str(operator or "").strip()
+        if target == "submitted" and not actor:
+            raise ValueError("operator_required")
+        triage = json.loads(row["triage_json"] or "{}")
+        triage["queue"] = {
+            "from": current,
+            "to": target,
+            "operator": actor,
+            "note": redact_data(str(note or ""), 300),
+            "at": utc_now(),
+        }
+        self.conn.execute(
+            "UPDATE findings SET status=?,triage_json=?,last_seen=? WHERE fingerprint=?",
+            (target, json.dumps(redact_data(triage), ensure_ascii=False, sort_keys=True), utc_now(), fingerprint),
+        )
+        self.conn.commit()
+        return target
+
     def list_findings(self, run_id: Optional[str] = None) -> List[Dict[str, Any]]:
         if run_id:
             rows = self.conn.execute(
