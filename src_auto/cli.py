@@ -54,6 +54,7 @@ from .juice_shop import (
 from .scope import ScopeGuard, ScopePolicy
 from .session_vault import SessionVault
 from .scope_resolver import ScopeResolver
+from .scope_confirm import confirm_scope
 from .store import Store
 from .tool_profiles import project_tool_search_paths
 
@@ -508,6 +509,12 @@ def build_parser() -> argparse.ArgumentParser:
     resolve = sub.add_parser("resolve-scope", help="将明确规则快照规范化为候选 Scope")
     resolve.add_argument("--snapshot", required=True)
     resolve.add_argument("--output-dir", required=True)
+    confirm = sub.add_parser("confirm-scope", help="人工确认候选 Scope 生成已授权 Scope（不执行、不联网）")
+    confirm.add_argument("--candidate", required=True)
+    confirm.add_argument("--output-dir", required=True)
+    confirm.add_argument("--operator", default="")
+    confirm.add_argument("--authorization-note", default="")
+    confirm.add_argument("--confirm", action="store_true", help="显式确认授权（不等于执行许可）")
     for command_parser in sub.choices.values():
         output_group = command_parser.add_mutually_exclusive_group()
         output_group.add_argument("--json", dest="json_output", action="store_true", help="只输出机器可读 JSON")
@@ -1247,6 +1254,34 @@ def main(argv=None) -> int:
         if args.command == "resolve-scope":
             path = ScopeResolver().write_candidate(Path(args.output_dir), load_mapping(Path(args.snapshot)))
             _json({"candidate": str(path), "confirmed": False, "allow_network_contact": False})
+            return 0
+        if args.command == "confirm-scope":
+            try:
+                candidate_path = Path(args.candidate).resolve()
+                output_dir = Path(args.output_dir).resolve()
+                candidate_path.relative_to(PROJECT_ROOT.resolve())
+                output_dir.relative_to(PROJECT_ROOT.resolve())
+            except ValueError:
+                _json({"status": "blocked_scope", "reason": "path_outside_project_root", "network_contact": False})
+                return 3
+            try:
+                result = confirm_scope(
+                    candidate_path,
+                    output_dir,
+                    operator=args.operator,
+                    authorization_note=args.authorization_note,
+                    confirm=bool(args.confirm),
+                )
+            except (OSError, ValueError) as exc:
+                _json({"status": "blocked_scope", "reason": str(exc), "network_contact": False})
+                return 3
+            _json({
+                "status": "confirmed",
+                "network_contact": False,
+                "scope_path": result["scope_path"],
+                "scope_hash": result["scope_hash"],
+                "target_id": result["target_id"],
+            })
             return 0
         if args.command == "stop":
             marker = PROJECT_ROOT / "STOP"
