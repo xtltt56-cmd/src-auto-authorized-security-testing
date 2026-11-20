@@ -14,7 +14,7 @@ import subprocess
 import uuid
 from pathlib import Path
 from typing import Iterable, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from .models import ToolResult
 from .redaction import decode_tool_bytes
@@ -26,6 +26,8 @@ _VALUE_FLAGS = {"-u", "-tags", "-pt", "-rl", "-c", "-bs", "-timeout", "-retries"
 _BOOL_FLAGS = {"-no-interactsh", "-disable-unsigned-templates", "-jsonl"}
 _SAFE_TAGS = {"ssl", "misconfig", "exposure"}
 _SAFE_PROTOCOLS = {"http", "ssl", "dns"}
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_HOST_GATEWAY = "host.docker.internal"
 
 
 def _canonical_url(value: str) -> Optional[str]:
@@ -41,6 +43,50 @@ def _canonical_url(value: str) -> Optional[str]:
         return "{}://{}:{}{}{}".format(parsed.scheme.lower(), host, port, parsed.path or "/", query)
     except (TypeError, ValueError):
         return None
+
+
+def _container_url(value: str) -> str:
+    """Adapt a loopback target so the container reaches the host's loopback service.
+
+    Scope validation already ran against the original URL; this only rewrites the
+    address used inside the container. Non-loopback targets and credential-bearing
+    URLs are returned unchanged, so no additional scope is granted.
+    """
+    try:
+        parsed = urlsplit(str(value))
+    except ValueError:
+        return str(value)
+    if (parsed.hostname or "").lower() not in _LOOPBACK_HOSTS:
+        return str(value)
+    if parsed.username or parsed.password:
+        return str(value)
+    port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    netloc = "{}:{}".format(_HOST_GATEWAY, port)
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _container_args(args: List[str]) -> List[str]:
+    """Rewrite only the ``-u`` target values for in-container loopback reachability."""
+    result: List[str] = []
+    index = 0
+    while index < len(args):
+        raw = str(args[index])
+        flag, equals, inline = raw.partition("=")
+        if flag.lower() == "-u":
+            if equals:
+                result.append("-u=" + _container_url(inline))
+                index += 1
+                continue
+            result.append(raw)
+            if index + 1 < len(args):
+                result.append(_container_url(str(args[index + 1])))
+                index += 2
+            else:
+                index += 1
+            continue
+        result.append(raw)
+        index += 1
+    return result
 
 
 def _validate_scan_args(args: List[str], scope_guard: ScopeGuard, target_urls: List[str]) -> str:
@@ -172,9 +218,13 @@ class NucleiDockerRunner:
             info = json.loads(inspected.stdout.decode("utf-8", "replace"))
             if len(info) != 1 or info[0].get("Id") != digest or image not in (info[0].get("RepoDigests") or []):
                 return ToolResult(self.name, "blocked", detail="image_changed")
+            container_args = _container_args(list(args))
             name = "src-auto-nuclei-" + uuid.uuid4().hex[:16]
             created = subprocess.run(
-                self._args(docker, "create", "--name", name, "--pull", "never", "--cap-drop", "ALL", image, *args),
+                self._args(
+                    docker, "create", "--name", name, "--pull", "never", "--cap-drop", "ALL",
+                    "--add-host", _HOST_GATEWAY + ":host-gateway", image, *container_args,
+                ),
                 capture_output=True,
                 timeout=30,
             )

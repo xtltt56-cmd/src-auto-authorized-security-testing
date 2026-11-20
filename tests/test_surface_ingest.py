@@ -398,6 +398,85 @@ class NucleiRunnerTests(unittest.TestCase):
             rm = next(c for c in calls if "rm" in c)
             self.assertIn("container-id", rm)
 
+    def _fake_docker_env(self, root):
+        import hashlib
+
+        (root / "vendor" / "bin").mkdir(parents=True)
+        (root / "vendor" / "bin" / "docker.exe").write_bytes(b"fake-docker")
+        digest = hashlib.sha256(b"fake-docker").hexdigest()
+        (root / "config" / "integrations").mkdir(parents=True)
+        (root / "config" / "integrations" / "passive_scanners.json").write_text(
+            json.dumps({"docker_sha256": digest}), encoding="utf-8"
+        )
+        (root / "tools.lock.yaml").write_text(
+            json.dumps({"tools": {"nuclei": {"image_digest": "sha256:" + "c" * 64}}}), encoding="utf-8"
+        )
+
+    def _fake_run(self, calls):
+        def fake_run(argv, **kwargs):
+            calls.append(list(argv))
+            if "version" in argv:
+                return _Completed(0, b"27.0.0")
+            if "inspect" in argv and "image" in argv:
+                return _Completed(0, json.dumps([{"Id": "sha256:" + "c" * 64, "RepoDigests": ["projectdiscovery/nuclei@sha256:" + "c" * 64]}]).encode())
+            if "create" in argv:
+                return _Completed(0, b"container-id")
+            if "start" in argv:
+                return _Completed(0, NUCLEI_LINE.encode())
+            if "inspect" in argv:
+                return _Completed(0, json.dumps([{"State": {"ExitCode": 0}}]).encode())
+            return _Completed(0, b"")
+
+        return fake_run
+
+    def test_loopback_target_rewritten_for_container(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._fake_docker_env(root)
+            runner = NucleiDockerRunner(root)
+            calls = []
+            with patch("src_auto.nuclei_runner.subprocess.run", side_effect=self._fake_run(calls)):
+                result = runner.run(["-u", "http://localhost:8765/", "-jsonl"], scope(), ["http://localhost:8765/"])
+            self.assertEqual(result.status, "completed")
+            create = next(c for c in calls if "create" in c)
+            # Scope validation already passed for localhost; only the in-container
+            # address is adapted so the container reaches the host loopback service.
+            self.assertIn("http://host.docker.internal:8765/", create)
+            self.assertIn("--add-host", create)
+            self.assertIn("host.docker.internal:host-gateway", create)
+            self.assertNotIn("http://localhost:8765/", create)
+
+    def test_non_loopback_target_not_rewritten(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        guard = ScopeGuard(
+            ScopePolicy.from_mapping(
+                {"target_id": "ext", "allowed_hosts": ["example.com"], "allowed_ports": [443], "confirmed": True, "allow_network_contact": True}
+            )
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._fake_docker_env(root)
+            runner = NucleiDockerRunner(root)
+            calls = []
+            with patch("src_auto.nuclei_runner.subprocess.run", side_effect=self._fake_run(calls)):
+                result = runner.run(["-u", "https://example.com/", "-jsonl"], guard, ["https://example.com/"])
+            self.assertEqual(result.status, "completed")
+            create = next(c for c in calls if "create" in c)
+            self.assertIn("https://example.com/", create)
+            self.assertNotIn("https://host.docker.internal/", create)
+
+    def test_container_url_rewrites_only_loopback(self):
+        from src_auto.nuclei_runner import _container_url
+
+        self.assertEqual(_container_url("http://localhost:8765/"), "http://host.docker.internal:8765/")
+        self.assertEqual(_container_url("http://127.0.0.1:3000/a?b=1"), "http://host.docker.internal:3000/a?b=1")
+        self.assertEqual(_container_url("https://example.com/"), "https://example.com/")
+        # Credential-bearing URLs are never rewritten (and are denied upstream).
+        self.assertEqual(_container_url("http://user:pw@localhost:8765/"), "http://user:pw@localhost:8765/")
+
 
 class _Completed:
     def __init__(self, returncode, stdout):
