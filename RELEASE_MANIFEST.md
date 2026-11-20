@@ -1,12 +1,16 @@
 # SRC-Auto 当前发布清单
 
-**发布标识：** `v0.17.0`
+**发布标识：** `v0.18.0`
 
 **本次复核日期：** 2026-11-20（Asia/Shanghai）
 
-**状态：本清单记录 v0.17.0 的源码范围与验收结果。** GitHub CI、不可变标签和公开发行包的最终状态，以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 与对应 [Actions](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions) 为准；本地验收不代表远端门禁已通过。v0.16.0 及更早发行保留为回退基线，不覆盖历史标签。
+**状态：本清单记录 v0.18.0 发布候选的源码范围与本地验收；尚未创建 GitHub Release。** GitHub CI、不可变标签和公开发行包的最终状态，以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 与对应 [Actions](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/actions) 为准；本地验收不代表远端门禁已通过。v0.17.0 及更早发行保留为回退基线，不覆盖历史标签。
 
-> **v0.17.0 本轮范围与本地验收：** 在 v0.16.0 基础上新增 L4「真实目标出站」链路的前三个增量（区别于既有“L4-A/B/C 业务验证”命名）：①`confirm-scope`（候选 scope 经显式 `--confirm`、operator、authorization note 人工确认为 confirmed legacy scope；缺显式确认、缺授权字段、空 hosts/ports、非法 candidate、已 confirmed、禁止覆盖均 fail-closed；confirm 不执行、不联网，scope_hash 直接衔接 `new`/`run-live`）；②回环目标容器地址映射（Scope 与 argv 校验仍针对原始 `127.0.0.1/localhost`，仅校验后把回环 `-u` 目标改写为 `host.docker.internal` 并加 `--add-host host.docker.internal:host-gateway`，非回环与带凭证 URL 不改写）；③nuclei 输出逆映射（runner 返回前把 gateway host 按 reviewed loopback targets 还原为逻辑回环 host，URL 与 host 字段均还原，completed/error/timeout 均适用），保证 ingest 的 ScopeGuard 判 in-scope。本地回环靶场 Juice Shop（127.0.0.1:3000）实机端到端：confirm-scope 生成 juice-shop-l4 confirmed scope，nuclei 经 `host.docker.internal:3000` 真实访问发现 `Public Swagger API - Detect`（info，CWE-200）；真实库 run_id=`e965b510ee604a9aa5dcc2c383b6ffe6`、scope_hash=`3c91ab1646e424734db8db4743da470762d3fa61c3013e408cd66d245c0ff052`，completed_tools、inserted=1、skipped_out_of_scope=0，一条 swagger-api candidate 入库。全模板扫描两次均 600 秒超时（默认 2051 / exposure+http 1509 模板，`-rl 2` 限速且每容器重装模板库），返回 `partial_tools`，fail-closed 保护按预期工作，completed→真实入库已用真实输出验证。Python 3.12 / 3.8 各 648 项通过、各跳过 1 项符号链接；Python 3.12 总覆盖率 75%（门槛 68%）。Dashboard lint（oxlint 0 错误）、Vitest 76/76、Vite 生产构建通过。出站执行链 0 次模型调用（刻意设计），未启用 DeepSeek/远程 AI；真实外部目标未授权、未触碰，临时开启的 `allow_real_targets` 验证后已恢复 `false`，环境已恢复。GitHub CI、不可变标签和公开包仍需实际工作流验收；历史 v0.16.0 / v0.15.0 验收记录见下文。
+> **v0.18.0 当前发布候选：** 在 v0.17.0 基础上落地 nuclei A 方案：从 pinned nuclei 无色目录正文解析真实模板 ID 与 `metadata.max-request`，按每批约 1000 请求切片，逐批执行、入库及 fingerprint 合并；多模板批超时二分，后批失败保留前批结果，不提高 `-rl 2`、并发或单批 600 秒上限。exposure 实测 1510 个模板、4116 请求预算、真实切片 5 批；`zip-backup-files` 以 1305 请求保持 singleton，仍可能 `partial_tools`，不承诺全模板 100% 完成。修复大于 1 MiB 目录被默认解码上限截断的问题，并在同一容器加入固定模板更新、无目标清单就绪校验及位置参数扫描，解决 `-id` 新容器模板未就绪缺陷。五个固定回环靶场本轮 `swagger-api` 小批链 5/5 `completed_tools`、越界入库 0；Juice Shop 入库 1 条 info 候选，其余四个零候选。该证据不等于五靶场 exposure 全量或 DeepSeek Agent 已通过；本轮云端调用为 0，Agent 复测列入外部测试清单。详见 [分批实施记录](docs/NUCLEI_TIMEOUT_PROBE.md)。
+
+> **v0.18.0 本地门禁：** Python 3.12 / 3.8 各 658 项通过、各跳过 1 项既有 Windows 符号链接用例；Python 3.12 行与分支总覆盖率 **75.44%**（门槛 68%）。`NucleiRunnerTests + NucleiBatchTests` 19/19；发行元数据专项 15/15。Dashboard oxlint 0 警告/0 错误、Vitest 76/76、TypeScript + Vite 生产构建通过。变更文件敏感凭据模式扫描通过，`git diff --check` 通过；五个实验靶场已停止，无 nuclei 扫描容器残留，项目 `allow_real_targets=false` 未改动。DeepSeek/付费 API 调用为 0；GitHub CI、公开 ZIP、远端密钥门禁与正式 Release 尚未执行，不计作通过。
+
+> **v0.17.0 已发布历史（不作为当前成绩）：** 在 v0.16.0 基础上新增 L4「真实目标出站」链路的前三个增量（区别于既有“L4-A/B/C 业务验证”命名）：①`confirm-scope`（候选 scope 经显式 `--confirm`、operator、authorization note 人工确认为 confirmed legacy scope；缺显式确认、缺授权字段、空 hosts/ports、非法 candidate、已 confirmed、禁止覆盖均 fail-closed；confirm 不执行、不联网，scope_hash 直接衔接 `new`/`run-live`）；②回环目标容器地址映射（Scope 与 argv 校验仍针对原始 `127.0.0.1/localhost`，仅校验后把回环 `-u` 目标改写为 `host.docker.internal` 并加 `--add-host host.docker.internal:host-gateway`，非回环与带凭证 URL 不改写）；③nuclei 输出逆映射（runner 返回前把 gateway host 按 reviewed loopback targets 还原为逻辑回环 host，URL 与 host 字段均还原，completed/error/timeout 均适用），保证 ingest 的 ScopeGuard 判 in-scope。本地回环靶场 Juice Shop（127.0.0.1:3000）实机端到端：confirm-scope 生成 juice-shop-l4 confirmed scope，nuclei 经 `host.docker.internal:3000` 真实访问发现 `Public Swagger API - Detect`（info，CWE-200）；真实库 run_id=`e965b510ee604a9aa5dcc2c383b6ffe6`、scope_hash=`3c91ab1646e424734db8db4743da470762d3fa61c3013e408cd66d245c0ff052`，completed_tools、inserted=1、skipped_out_of_scope=0，一条 swagger-api candidate 入库。全模板扫描两次均 600 秒超时（默认 2051 / exposure+http 1509 模板，`-rl 2` 限速且每容器重装模板库），返回 `partial_tools`，fail-closed 保护按预期工作，completed→真实入库已用真实输出验证。Python 3.12 / 3.8 各 648 项通过、各跳过 1 项符号链接；Python 3.12 总覆盖率 75%（门槛 68%）。Dashboard lint（oxlint 0 错误）、Vitest 76/76、Vite 生产构建通过。出站执行链 0 次模型调用（刻意设计），未启用 DeepSeek/远程 AI；真实外部目标未授权、未触碰，临时开启的 `allow_real_targets` 验证后已恢复 `false`，环境已恢复。GitHub CI、不可变标签和公开包仍需实际工作流验收；历史 v0.16.0 / v0.15.0 验收记录见下文。
 
 固定正式下载：[SRC-Auto Windows x64](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest/download/SRC-Auto-Windows-x64.zip)。正式发行提供固定名 ZIP、版本化 ZIP、SHA256SUMS.txt 与 release-manifest.json。源码、不可变标签及包内提交号必须一致，不覆盖历史标签。
 
@@ -24,8 +28,9 @@
 - L3：固定 ZAP 在断网容器分析脱敏 HAR；独立 Bandit 有限 Python / Semgrep 本地 JS/TS 规则源码审查，不运行项目、不上传代码。源码审查可单独启用 DeepSeek 匿名规则摘要辅助，最多 4 次；默认关闭，不发送源码、路径或文件名，不能据此确认漏洞。见 [源码审查说明](docs/SOURCE_AUDIT_USAGE_ZH.md)。
 - 候选提交队列状态机（仅人工记录，绝不自动提交补天）、增强补天报告（漏洞类型/CWE/CVSS/参数/置信度/多来源/复现步骤/修复建议与概览统计）与 Dashboard 候选“分类与来源”展示（队列状态、漏洞类型、多扫描器来源、指纹），旧数据库只读兼容。
 - L4 真实目标出站链前三增量：`confirm-scope` 人工确认候选 scope（不执行、不联网）、回环目标容器地址映射（`host.docker.internal` + host-gateway）与 nuclei 输出逆映射（还原逻辑回环 host）；confirm≠execute，仍由 `allow_real_targets`、confirmed scope、计划确认与 `--execute-live` 四道门控制，真实外部目标未授权、未触碰。
+- L4 nuclei 请求预算分批：真实模板 ID、每批约 1000 请求、逐批入库合并、超时二分与失败部分保留；同容器模板初始化/就绪校验，完整目录上限 64 MiB。限速、并发、ScopeGuard 和 600 秒保护不变，重型 singleton 仍可能明确部分完成。
 - 发行脚本在输出变更前拒绝修改、暂存或未跟踪的非忽略源文件，避免遗漏新模块或用旧提交号描述新内容。两项实际临时 Git 仓库回归先失败后通过。
-- 默认打包重新构建前端；构建失败即停止，不能分发残留旧页面。`VERSION`、Python 包与项目元数据均为 0.17.0。
+- 默认打包重新构建前端；构建失败即停止，不能分发残留旧页面。`VERSION`、Python 包与项目元数据均为 0.18.0。
 
 DeepSeek 实际 API ID 为 `deepseek-flash`，本轮调用成功；展示名称不是接口 ID。Qwen3.5-9B 可人工选择，不自动切换云端。CPU 70%、整机已用 RAM 30 GiB，未知资源不放行。所有候选未确认，不自动提交补天。
 

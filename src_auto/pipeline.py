@@ -209,25 +209,23 @@ class PipelineRunner:
         tool_args = dict(tool_args or {})
         results = []
         ingest_summary = {"assets": 0, "inserted": 0, "merged": 0, "skipped_out_of_scope": 0}
-        for name in sequence:
-            stopped = self._stop_if_requested(run_id, [item["tool"] for item in results])
-            if stopped:
-                return stopped
-            adapter = adapters.get(name)
-            if adapter is None:
-                self.store.set_run_status(run_id, "blocked_adapter")
-                return {"status": "blocked_adapter", "reason": "missing_" + name, "stages": results, "ingest": ingest_summary}
-            result = adapter.run(list(tool_args.get(name, [])), self.scope_guard, target_urls=target_urls)
-            result_dict = dict(getattr(result, "__dict__", result))
+
+        def process_result(name, result_dict, batch=None):
             for key in ("stdout", "stderr", "detail"):
                 if key in result_dict:
                     result_dict[key] = redact_tool_output(result_dict[key], 2000 if key == "detail" else 16000)
+            if batch:
+                result_dict["batch"] = dict(batch)
             results.append({"tool": name, "result": result_dict})
             self.store.record_event(run_id, "info", "external_tool", {"tool": name, "result": result_dict})
-            self.store.save_checkpoint(run_id, "tool_" + name, {"status": result_dict.get("status", "unknown")})
+            self.store.save_checkpoint(run_id, "tool_" + name, {"status": result_dict.get("status", "unknown"), "batch": dict(batch or {})})
+            if batch and batch.get("split"):
+                # Timed-out parent output is not ingested: its children rerun the
+                # same reviewed IDs without increasing rate or the 600s deadline.
+                return None
             if result_dict.get("status") != "completed":
-                # Completed tools keep their ingested output: one flaky tool no
-                # longer voids the whole run. Per-tool status stays in stages.
+                # Completed tools/batches keep their ingested output. A later
+                # failure remains visible as partial instead of voiding the run.
                 self.store.set_run_status(run_id, "partial_tools")
                 return {"status": "partial_tools", "stages": results, "ingest": ingest_summary}
             try:
@@ -237,5 +235,34 @@ class PipelineRunner:
             except Exception as exc:
                 # Ingest failure must not discard tool results; it is audited.
                 self.store.record_event(run_id, "warning", "tool_ingest_failed", {"tool": name, "error": str(exc)[:200]})
+            return None
+
+        for name in sequence:
+            stopped = self._stop_if_requested(run_id, [item["tool"] for item in results])
+            if stopped:
+                return stopped
+            adapter = adapters.get(name)
+            if adapter is None:
+                self.store.set_run_status(run_id, "blocked_adapter")
+                return {"status": "blocked_adapter", "reason": "missing_" + name, "stages": results, "ingest": ingest_summary}
+            batch_run = getattr(adapter, "run_batches", None) if name == "nuclei" else None
+            if batch_run is not None:
+                for event in batch_run(
+                    list(tool_args.get(name, [])), self.scope_guard, target_urls=target_urls
+                ):
+                    stopped = self._stop_if_requested(run_id, [item["tool"] for item in results])
+                    if stopped:
+                        return stopped
+                    result = event["result"]
+                    result_dict = dict(getattr(result, "__dict__", result))
+                    failed = process_result(name, result_dict, event.get("batch"))
+                    if failed:
+                        return failed
+                continue
+            result = adapter.run(list(tool_args.get(name, [])), self.scope_guard, target_urls=target_urls)
+            result_dict = dict(getattr(result, "__dict__", result))
+            failed = process_result(name, result_dict)
+            if failed:
+                return failed
         self.store.set_run_status(run_id, "completed_tools")
         return {"status": "completed_tools", "stages": results, "ingest": ingest_summary}

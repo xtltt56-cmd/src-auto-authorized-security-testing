@@ -1,3 +1,3 @@
 """SRC-Auto: a fail-closed, local-first SRC control layer."""
 
-__version__ = "0.17.0"
+__version__ = "0.18.0"

@@ -466,6 +466,15 @@ class NucleiRunnerTests(unittest.TestCase):
             self.assertIn("--add-host", create)
             self.assertIn("host.docker.internal:host-gateway", create)
             self.assertNotIn("http://localhost:8765/", create)
+            # Fresh containers must install templates before using -id.  The
+            # fixed shell program receives review-bound argv only as positional
+            # parameters; no target or template ID is interpolated into it.
+            shell_program = create[create.index("-c") + 1]
+            self.assertEqual(shell_program, 'nuclei -ut -nc && nuclei -tl -nc >/dev/null && exec nuclei "$@"')
+            self.assertNotIn("http://host.docker.internal:8765/", shell_program)
+            positional = create[create.index(shell_program) + 1:]
+            self.assertEqual(positional[0], "nuclei")
+            self.assertNotIn("-ut", positional)
 
     def test_non_loopback_target_not_rewritten(self):
         from src_auto.nuclei_runner import NucleiDockerRunner
@@ -495,6 +504,208 @@ class NucleiRunnerTests(unittest.TestCase):
         self.assertEqual(_container_url("https://example.com/"), "https://example.com/")
         # Credential-bearing URLs are never rewritten (and are denied upstream).
         self.assertEqual(_container_url("http://user:pw@localhost:8765/"), "http://user:pw@localhost:8765/")
+
+
+class NucleiBatchTests(unittest.TestCase):
+    def test_catalog_uses_real_ids_and_declared_request_costs(self):
+        from src_auto.nuclei_runner import _parse_template_catalog
+
+        text = """Listing available templates
+Template: /root/nuclei-templates/http/one.yaml
+id: alpha
+info:
+  metadata:
+    max-request: 600
+http:
+  - method: GET
+Template: /root/nuclei-templates/ssl/two.yaml
+id: beta
+ssl:
+  - address: \"{{Host}}\"
+"""
+        specs = _parse_template_catalog(text)
+        self.assertEqual([(item.template_id, item.max_request) for item in specs], [("alpha", 600), ("beta", None)])
+
+    def test_catalog_rejects_missing_or_duplicate_ids(self):
+        from src_auto.nuclei_runner import _parse_template_catalog
+
+        missing = "Template: /root/nuclei-templates/http/one.yaml\ninfo:\n  name: no id\n"
+        with self.assertRaises(ValueError):
+            _parse_template_catalog(missing)
+        duplicate = """Template: /root/nuclei-templates/http/one.yaml
+id: alpha
+Template: /root/nuclei-templates/http/two.yaml
+id: alpha
+"""
+        with self.assertRaises(ValueError):
+            _parse_template_catalog(duplicate)
+
+    def test_request_budget_is_literal_and_heavy_template_stays_singleton(self):
+        from src_auto.nuclei_runner import TemplateSpec, _plan_template_batches
+
+        specs = [
+            TemplateSpec("a", "", 600),
+            TemplateSpec("b", "", 500),
+            TemplateSpec("c", "", 400),
+            TemplateSpec("d", "", None),
+            TemplateSpec("heavy", "", 1305),
+        ]
+        batches = _plan_template_batches(specs, request_budget=1000, unknown_request_cost=3)
+        self.assertEqual([[item.template_id for item in batch] for batch in batches], [["a"], ["b", "c", "d"], ["heavy"]])
+        self.assertEqual(
+            [sum(max(1, item.max_request if item.max_request is not None else 3) for item in batch) for batch in batches],
+            [600, 903, 1305],
+        )
+
+    def test_request_budget_divides_across_multiple_targets(self):
+        from src_auto.nuclei_runner import TemplateSpec, _plan_template_batches
+
+        specs = [TemplateSpec("a", "", 600), TemplateSpec("b", "", 600)]
+        batches = _plan_template_batches(specs, request_budget=1000, target_count=2)
+        self.assertEqual([[item.template_id for item in batch] for batch in batches], [["a"], ["b"]])
+
+    def test_large_catalog_is_not_cut_by_tool_output_cap(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        text = """Template: /root/nuclei-templates/http/one.yaml
+id: alpha
+# """ + ("x" * (1024 * 1024 + 100)) + """
+Template: /root/nuclei-templates/http/two.yaml
+id: beta
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            runner = NucleiDockerRunner(Path(temp))
+            with patch.object(runner, "_ready_docker", return_value=(Path("docker"), "image", "")), patch(
+                "src_auto.nuclei_runner.subprocess.run", return_value=_Completed(0, text.encode("utf-8"))
+            ):
+                specs, error = runner._catalog_templates(["-tags", "exposure"])
+        self.assertIsNone(error)
+        self.assertEqual([item.template_id for item in specs], ["alpha", "beta"])
+
+    def test_id_filter_accepts_only_bounded_literal_ids(self):
+        from src_auto.nuclei_runner import _validate_scan_args
+
+        base = ["-u", "http://localhost:8765/", "-tags", "exposure", "-rl", "2"]
+        self.assertEqual(_validate_scan_args(base + ["-id", "alpha,beta-2"], scope(), ["http://localhost:8765/"]), "")
+        for value in ("../alpha", "alpha*", "alpha/beta", "alpha beta", "-templates"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    _validate_scan_args(base + ["-id", value], scope(), ["http://localhost:8765/"]),
+                    "unsupported_or_unbounded_arguments",
+                )
+
+    def _pipeline(self, root, store):
+        return PipelineRunner(store, scope(), root)
+
+    def _run_pipeline(self, specs, fake_run):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            store = Store(root / "db.sqlite3")
+            try:
+                guard = scope()
+                run_id = store.create_run("local", guard.policy.digest(), "real")
+                runner = NucleiDockerRunner(root)
+                args = [
+                    "-u", "http://localhost:8765/", "-tags", "exposure", "-pt", "http",
+                    "-rl", "2", "-c", "1", "-bs", "1", "-jsonl",
+                    "-no-interactsh", "-disable-unsigned-templates",
+                ]
+                with patch.object(runner, "_catalog_templates", return_value=(specs, None)), patch.object(runner, "run", side_effect=fake_run):
+                    result = self._pipeline(root, store).run_external(
+                        run_id,
+                        ["http://localhost:8765/"],
+                        adapters={"nuclei": runner},
+                        execute=True,
+                        sequence=["nuclei"],
+                        tool_args={"nuclei": args},
+                    )
+                return result, store.list_findings(run_id), store.get_run(run_id)["status"]
+            finally:
+                store.close()
+
+    @staticmethod
+    def _finding(template_id):
+        row = json.loads(NUCLEI_LINE)
+        row["template-id"] = template_id
+        row["info"]["name"] = template_id
+        return json.dumps(row)
+
+    def test_each_completed_batch_is_ingested_before_next_batch(self):
+        from src_auto.nuclei_runner import TemplateSpec
+
+        calls = []
+
+        def completed(args, scope_guard, target_urls=None, timeout=600):
+            template_id = args[-1].split(",")[0]
+            calls.append(list(args))
+            return ToolResult("nuclei", "completed", 0, self._finding(template_id))
+
+        result, findings, run_status = self._run_pipeline(
+            [TemplateSpec("alpha", "", 600), TemplateSpec("beta", "", 600)], completed
+        )
+        self.assertEqual(result["status"], "completed_tools")
+        self.assertEqual(run_status, "completed_tools")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["ingest"]["inserted"], 2)
+        self.assertEqual({row["vuln_type"] for row in findings}, {"alpha", "beta"})
+        self.assertEqual([stage["result"]["batch"]["template_count"] for stage in result["stages"]], [1, 1])
+
+    def test_later_timeout_preserves_earlier_batch_finding(self):
+        from src_auto.nuclei_runner import TemplateSpec
+
+        calls = []
+
+        def fail_second(args, scope_guard, target_urls=None, timeout=600):
+            calls.append(list(args))
+            if len(calls) == 1:
+                return ToolResult("nuclei", "completed", 0, self._finding("alpha"))
+            return ToolResult("nuclei", "timeout", detail="batch deadline")
+
+        result, findings, run_status = self._run_pipeline(
+            [TemplateSpec("alpha", "", 600), TemplateSpec("beta", "", 600)], fail_second
+        )
+        self.assertEqual(result["status"], "partial_tools")
+        self.assertEqual(run_status, "partial_tools")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([row["vuln_type"] for row in findings], ["alpha"])
+
+    def test_timeout_splits_batch_without_relaxing_rate_or_deadline(self):
+        from src_auto.nuclei_runner import TemplateSpec
+
+        calls = []
+
+        def split_then_complete(args, scope_guard, target_urls=None, timeout=600):
+            calls.append((list(args), timeout))
+            ids = args[-1].split(",")
+            if len(ids) > 1:
+                return ToolResult("nuclei", "timeout", detail="split required")
+            return ToolResult("nuclei", "completed", 0, self._finding(ids[0]))
+
+        result, findings, run_status = self._run_pipeline(
+            [TemplateSpec("alpha", "", 500), TemplateSpec("beta", "", 500)], split_then_complete
+        )
+        self.assertEqual(result["status"], "completed_tools")
+        self.assertEqual(run_status, "completed_tools")
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(call[1] == 600 for call in calls))
+        self.assertTrue(all("-rl" in call[0] and call[0][call[0].index("-rl") + 1] == "2" for call in calls))
+        self.assertEqual({row["vuln_type"] for row in findings}, {"alpha", "beta"})
+        self.assertTrue(any(stage["result"].get("batch", {}).get("split") for stage in result["stages"]))
+
+    def test_duplicate_fingerprint_merges_across_batches(self):
+        from src_auto.nuclei_runner import TemplateSpec
+
+        def duplicate(args, scope_guard, target_urls=None, timeout=600):
+            return ToolResult("nuclei", "completed", 0, self._finding("alpha"))
+
+        result, findings, run_status = self._run_pipeline(
+            [TemplateSpec("alpha", "", 600), TemplateSpec("beta", "", 600)], duplicate
+        )
+        self.assertEqual(result["status"], "completed_tools")
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(result["ingest"]["inserted"] + result["ingest"]["merged"], 2)
 
 
 class _Completed:

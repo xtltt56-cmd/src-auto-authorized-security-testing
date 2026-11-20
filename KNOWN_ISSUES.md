@@ -1,6 +1,6 @@
 # 已知问题与诚实限制
 
-> **当前发布读取规则：** 当前源码版本为 `v0.17.0`；版本范围以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 为准，正式发行与下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。下方历史记录只描述对应日期和版本，不能覆盖当前状态或证明未知问题已经解决。
+> **当前发布读取规则：** 当前源码版本为 `v0.18.0`；版本范围以 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md) 为准，正式发行与下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。下方历史记录只描述对应日期和版本，不能覆盖当前状态或证明未知问题已经解决。
 
 ## 2026-10-14 v0.14.2 当前修复
 
@@ -12,7 +12,7 @@
 ## 当前仍然存在的能力与验收边界
 
 - 外部真实目标 Agent 和自动提交仍关闭；授权草稿、范围审阅和任务菜单不是执行许可。已验证的实机流程以本机合成靶场/应用为主，不把候选或页面可用性当作真实漏洞或赏金。
-- L4 真实目标出站链（`confirm-scope` → `surface-plan` → `run-live` → 入库）已在本地回环靶场（Juice Shop）端到端验证，但全模板 nuclei 扫描在硬性限速 `-rl 2` 与 600 秒容器保护下会超时返回 `partial_tools`（默认约 2051 模板、每容器重装模板库）；这是 fail-closed 保护而非链路断裂，completed→真实入库已用真实输出验证。该链 0 次模型调用（刻意设计），入库候选可经 `remote-preview`/`remote-triage` 接入 DeepSeek 人工审阅，需人工启用，本版本未实机。真实外部目标未授权、未触碰，临时开启的 `allow_real_targets` 已恢复 `false`。
+- L4 真实目标出站链（`confirm-scope` → 计划审阅 → `run-live` → 入库）已在五个固定回环靶场以 `swagger-api` 小批完成本轮 5/5 实测；Juice Shop 入库 1 条 info 候选，其余四个为扫描完成、零候选，不能解释为五个靶场都有漏洞。exposure 全量现在按真实模板 ID 与请求预算切成 5 批并逐批入库；`zip-backup-files` 等超预算 singleton 仍可能超过 600 秒并返回 `partial_tools`，不承诺 100% 模板完成。每容器模板下载/更新依赖第三方网络，失败会 fail-closed；同一容器已加入显式更新及无目标清单校验。本轮未调用 DeepSeek，五靶场固定配方/云端 Agent 复测仍待外部测试清单执行。真实外部目标未授权、未触碰，`allow_real_targets` 保持 `false`。
 - 源码审查只覆盖批准的 Python / JavaScript / TypeScript 文件和有限规则，不包含 Java、Vue 单文件组件、通用跨文件污点或完整依赖 CVE 检测。DeepSeek 只接收匿名规则摘要，没有看到源码，不能据此确认漏洞或排除误报。详见 [源码审查说明](docs/SOURCE_AUDIT_USAGE_ZH.md)。
 - 业务验证仍为精确回环实例的受控只读角色/对象对比，以及专用合成靶场的固定正负对照；不包含业务写操作、竞态、任意载荷、盲注、存储型或脚本执行 XSS。
 - 可信本地 HTTPS、IPv6 全流程、任意业务结构及全部浏览器/显示器未完整验收。文件覆盖率只针对批准文件，零候选不等于整项目安全。
