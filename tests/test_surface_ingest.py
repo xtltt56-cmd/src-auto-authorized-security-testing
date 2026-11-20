@@ -412,7 +412,9 @@ class NucleiRunnerTests(unittest.TestCase):
             json.dumps({"tools": {"nuclei": {"image_digest": "sha256:" + "c" * 64}}}), encoding="utf-8"
         )
 
-    def _fake_run(self, calls):
+    def _fake_run(self, calls, start_output=None):
+        output = NUCLEI_LINE if start_output is None else start_output
+
         def fake_run(argv, **kwargs):
             calls.append(list(argv))
             if "version" in argv:
@@ -422,12 +424,29 @@ class NucleiRunnerTests(unittest.TestCase):
             if "create" in argv:
                 return _Completed(0, b"container-id")
             if "start" in argv:
-                return _Completed(0, NUCLEI_LINE.encode())
+                return _Completed(0, output.encode())
             if "inspect" in argv:
                 return _Completed(0, json.dumps([{"State": {"ExitCode": 0}}]).encode())
             return _Completed(0, b"")
 
         return fake_run
+
+    def test_loopback_output_restored_to_logical_target(self):
+        from src_auto.nuclei_runner import NucleiDockerRunner
+
+        # The container reports the gateway host; the runner must restore the
+        # logical loopback target, otherwise ingest scope checks drop the finding.
+        gateway_line = NUCLEI_LINE.replace("localhost", "host.docker.internal")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self._fake_docker_env(root)
+            runner = NucleiDockerRunner(root)
+            calls = []
+            with patch("src_auto.nuclei_runner.subprocess.run", side_effect=self._fake_run(calls, start_output=gateway_line)):
+                result = runner.run(["-u", "http://localhost:8765/", "-jsonl"], scope(), ["http://localhost:8765/"])
+            self.assertEqual(result.status, "completed")
+            self.assertNotIn("host.docker.internal", result.stdout)
+            self.assertIn("http://localhost:8765/", result.stdout)
 
     def test_loopback_target_rewritten_for_container(self):
         from src_auto.nuclei_runner import NucleiDockerRunner

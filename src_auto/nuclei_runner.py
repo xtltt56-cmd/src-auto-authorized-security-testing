@@ -89,6 +89,33 @@ def _container_args(args: List[str]) -> List[str]:
     return result
 
 
+def _restore_loopback(text: str, target_urls) -> str:
+    """Map the in-container gateway host back to the logical loopback target.
+
+    The runner rewrites loopback targets to host.docker.internal for reachability,
+    and nuclei reports that gateway host in its output. Restore the original
+    loopback host so downstream ingest scope checks match the confirmed scope.
+    """
+    if not text or _HOST_GATEWAY not in text:
+        return text
+    loopback = []
+    for url in target_urls or []:
+        try:
+            parsed = urlsplit(str(url))
+        except ValueError:
+            continue
+        host = (parsed.hostname or "").lower()
+        if host in _LOOPBACK_HOSTS:
+            port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+            loopback.append((host, port))
+    if not loopback:
+        return text
+    result = text
+    for host, port in loopback:
+        result = result.replace("{}:{}".format(_HOST_GATEWAY, port), "{}:{}".format(host, port))
+    return result.replace(_HOST_GATEWAY, loopback[0][0])
+
+
 def _validate_scan_args(args: List[str], scope_guard: ScopeGuard, target_urls: List[str]) -> str:
     """Keep nuclei argv bound to the reviewed URLs and a small bounded option set."""
     reviewed = {_canonical_url(url) for url in target_urls}
@@ -241,11 +268,17 @@ class NucleiDockerRunner:
                 self.name,
                 "completed" if exit_code == 0 else "error",
                 exit_code,
-                decode_tool_bytes(started.stdout),
-                decode_tool_bytes(started.stderr),
+                _restore_loopback(decode_tool_bytes(started.stdout), reviewed_urls),
+                _restore_loopback(decode_tool_bytes(started.stderr), reviewed_urls),
             )
         except subprocess.TimeoutExpired as exc:
-            return ToolResult(self.name, "timeout", detail=str(exc), stdout=decode_tool_bytes(exc.stdout), stderr=decode_tool_bytes(exc.stderr))
+            return ToolResult(
+                self.name,
+                "timeout",
+                detail=str(exc),
+                stdout=_restore_loopback(decode_tool_bytes(exc.stdout), reviewed_urls),
+                stderr=_restore_loopback(decode_tool_bytes(exc.stderr), reviewed_urls),
+            )
         except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
             return ToolResult(self.name, "error", detail=str(exc)[:400])
         finally:
