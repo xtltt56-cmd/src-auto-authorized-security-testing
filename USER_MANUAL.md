@@ -1,6 +1,6 @@
 # SRC-Auto 平台完整使用手册
 
-> **当前版本读取规则：** 当前源码版本为 `v0.16.0`，本次正式发布与验收记录见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)。下方旧版本说明保留用于追溯，不覆盖当前能力或证明所有场景已经验收；实际最新下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。
+> **当前版本读取规则：** 当前源码版本为 `v0.17.0`，本次正式发布与验收记录见 [RELEASE_MANIFEST.md](RELEASE_MANIFEST.md)。下方旧版本说明保留用于追溯，不覆盖当前能力或证明所有场景已经验收；实际最新下载以 [GitHub Releases](https://github.com/xtltt56-cmd/src-auto-authorized-security-testing/releases/latest) 为准。
 
 > **2026-10-14 · v0.14.2：** 任务暂停时优先看直接显示的模型失败诊断；可点击“打开系统设置”，保存配置后由人工发起连接测试，跳转本身不会调用 API。确认原因解除后再决定是否人工续接或新建任务。取消状态不允许当成暂停自动续接。详见 [故障处理说明](docs/V0_14_2_RUNTIME_DIAGNOSTICS.md)。
 
@@ -449,6 +449,12 @@ STOP 会创建项目根目录的 STOP 文件。只有 resume 会清除它。停�
 
 该命令只处理已经提供的明确规则，不会自动访问平台、猜测域名或授予权限。
 
+取得明确授权后，用 `confirm-scope` 把候选 Scope（`confirmed: false`）人工确认为已授权 Scope：
+
+    python -m src_auto confirm-scope --candidate config/targets/<id>/scope_candidate.yaml --output-dir config/targets/<id> --operator <姓名或工号> --authorization-note "<授权来源/工单>" --confirm
+
+该命令只做离线确认与写文件，不执行、不联网。缺 `--confirm`、缺 operator 或授权说明、hosts/ports 为空、candidate 非法、已是 confirmed 或输出已存在（禁止覆盖）都会 fail-closed 拒绝；确认不等于执行许可。生成的 `scope_hash` 可直接衔接 `new` 与 `run-live`。
+
 常见拒绝原因：
 
 | 原因 | 含义 |
@@ -503,6 +509,12 @@ STOP 会创建项目根目录的 STOP 文件。只有 resume 会清除它。停�
     python -m src_auto run-live --run-id <REAL_RUN_ID> --scope config/targets/<id>/scope_confirmed.yaml --plan config/live_plan.example.yaml --execute-live
 
 第一条命令只验证计划、策略和 Scope；第二条才会按计划创建 `SafeToolAdapter` 并启动工具。它不会自动发现新域名、自动扩大授权范围、处理登录验证码、上传数据或提交补天。计划摘要会写入 SQLite 事件，便于复核。
+
+### 10.1.1 回环靶场的容器地址映射（本版新增）
+
+本机回环靶场（如 127.0.0.1 上的 Juice Shop）经 Docker 容器执行 nuclei 时，容器内无法直接访问宿主 `127.0.0.1`。本版本在通过 Scope 与 argv 校验之后，仅把回环 `-u` 目标改写为 `host.docker.internal` 并附加 `--add-host host.docker.internal:host-gateway`；非回环与带凭证 URL 不改写。runner 返回前再把 `host.docker.internal` 逆映射回逻辑回环 host（URL 与 host 字段，completed/error/timeout 均适用），保证 ingest 的 ScopeGuard 仍判为 in-scope。
+
+注意：全模板 nuclei 扫描在硬性限速 `-rl 2` 与 600 秒容器保护下可能超时并返回 `partial_tools`（默认约 2051 模板，且每个新容器会重装模板库）。这是 fail-closed 保护按预期工作，不是链路断裂；缩小模板标签或目标范围可缩短耗时，是否支持单模板/可调超时仍是未拍板的设计项。
 
 ## 10.2 人工目标选择与范围预览（不联网）
 
@@ -608,6 +620,8 @@ Ollama 服务如果没有运行，手动启动：
 ## 12.1 人工启用 DeepSeek V4.1 Flash 审阅
 
 远程模型是“对已经存在的 Finding 提供第二意见”，不是自动扫描器，也不会参与本地 Ollama 的故障回退。点击图形主菜单的 **本地靶场检测** 后，独立的本地验收启动器才会询问 DeepSeek 是否启用；选择否时，本次进程树设置会话级硬门，所有远程 Provider 在建连前返回 `remote_ai_disabled_for_session`。选择是也不会自动调用，仍必须由人选定 Finding、查看脱敏预览、核对摘要并显式确认 `remote-triage`。
+
+L4 真实目标出站链（confirm-scope → surface-plan → run-live → 入库）本身 **0 次模型调用**——出站执行刻意不使用 AI。但其入库候选（candidate）可接入本节的人工审阅：`remote-preview` 生成脱敏载荷与 SHA-256 摘要（不联网、不调用模型），人工核对后 `remote-triage --confirm-external` 才单次调用 DeepSeek。需启动会话允许云端、有效密钥与摘要确认；本版本未对 L4 候选实机调用。
 
 ### 12.1.1 密钥和提供商状态
 
